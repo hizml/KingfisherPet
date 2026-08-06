@@ -8,6 +8,7 @@ final class Effect {
     let window: NSWindow
 
     init(centeredAt point: CGPoint, size: CGSize, on screen: NSScreen?,
+         level: NSWindow.Level = .floating,
          build: (NSView) -> Void) {
         let rect = NSRect(x: point.x - size.width / 2,
                           y: point.y - size.height / 2,
@@ -17,7 +18,7 @@ final class Effect {
         w.isOpaque = false
         w.backgroundColor = .clear
         w.hasShadow = false
-        w.level = .floating
+        w.level = level
         w.ignoresMouseEvents = true
         w.collectionBehavior = [.canJoinAllSpaces, .stationary]
         w.isReleasedWhenClosed = true
@@ -104,7 +105,7 @@ enum Effects {
     /// 音符:在 point(屏幕坐标,鸟头上方)处 ♪ 上浮淡出
     static func notes(at point: CGPoint, on screen: NSScreen?) {
         let size = CGSize(width: 120, height: 120)
-        let e = Effect(centeredAt: point, size: size, on: screen) { v in
+        let e = Effect(centeredAt: point, size: size, on: screen, level: .statusBar) { v in
             guard let layer = v.layer else { return }
             let c = CGPoint(x: size.width / 2, y: size.height / 2)
             let glyphs = ["♪", "♫", "♬"]
@@ -206,7 +207,7 @@ enum Effects {
         let size = CGSize(width: 90, height: 130)
         // 让窗口底部对齐 point(鸟头),z 从这里往上飞
         let center = CGPoint(x: point.x, y: point.y + size.height / 2)
-        let e = Effect(centeredAt: center, size: size, on: screen) { v in
+        let e = Effect(centeredAt: center, size: size, on: screen, level: .statusBar) { v in
             guard let layer = v.layer else { return }
             let sz = CGFloat.random(in: 22...30)
             let img = outlinedGlyph("z", size: sz)

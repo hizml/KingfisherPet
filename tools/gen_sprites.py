@@ -308,7 +308,8 @@ def render_shadow(name="shadow"):
             dy = (y - cy) / ry
             r = math.sqrt(dx * dx + dy * dy)
             if r < 1.0:
-                a = int(185 * (1 - r) ** 1.5)
+                # 较硬的边缘:中心实、衰减快
+                a = int(215 * (1 - r) ** 2.4)
                 px[x, y] = (0, 0, 0, a)
     img.save(os.path.join(OUT, name + ".png"))
     print("  wrote", name + ".png")
@@ -406,6 +407,10 @@ def main():
     render("sun_0", wing="spread", fluff=True, eye_closed=True)
     render("sun_1", wing="spread", fluff=True)
 
+    # 习性:啄屏幕(低头张嘴啄)
+    render("peck_0", wing="folded", look_down=True, mouth_open=True, body_dy=-2)
+    render("peck_1", wing="folded")
+
     # 显示/隐藏:蛋壳 + 死掉
     render("egg_0", egg_stage=0)
     render("egg_1", egg_stage=1)
@@ -425,7 +430,7 @@ def main():
         "fps": {
             "idle": 4, "walk": 8, "fly": 10, "happy": 6, "sleep": 2,
             "dive": 8, "fly_fish": 10, "eat": 4, "sing": 6, "watch": 3,
-            "sun": 3, "hover": 10, "egg": 4, "dead": 1, "poop": 6
+            "sun": 3, "hover": 10, "egg": 4, "dead": 1, "poop": 6, "peck": 8
         },
         "sequences": {
             "idle":     ["idle_0", "idle_1", "idle_0", "idle_blink"],
@@ -442,7 +447,8 @@ def main():
             "sun":      ["sun_0", "sun_1"],
             "egg":      ["egg_0", "egg_0", "egg_1", "egg_1", "egg_2"],
             "dead":     ["dead"],
-            "poop":     ["poop_0", "poop_1", "poop_0", "poop_1", "poop_0"]
+            "poop":     ["poop_0", "poop_1", "poop_0", "poop_1", "poop_0"],
+            "peck":     ["peck_0", "peck_1"]
         }
     }
     with open(os.path.join(OUT, "sprites.json"), "w") as f:
