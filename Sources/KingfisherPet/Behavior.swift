@@ -17,7 +17,7 @@ final class Behavior: PetViewDelegate {
     private var gen = 0               // 动作代际;新动作/拖动 bump,旧的 hold/动画自动作废
 
     private let size = CGSize(width: 160, height: 160)
-    private let feetOffset: CGFloat = 56   // 脚距窗口底部约 56px
+    private let feetOffset: CGFloat = 27   // 脚距窗口底部约 27px(按 sprite 脚趾坐标)
 
     weak var shadow: ShadowController?
     weak var crack: CrackController?
@@ -158,9 +158,11 @@ final class Behavior: PetViewDelegate {
         }
     }
 
-    // MARK: - 走(沿下方表面:Dock 顶 / 窗口上沿)
+    // MARK: - 走(沿下方表面:Dock 顶 / 窗口上沿;在窗口上只走窗口那么宽)
     private func startWalk() {
         guard let window = window, screen != nil else { finish(); return }
+        let onWin = onWindow                 // 先记下(beginAction 会清)
+        let wid = perchedID
         beginAction()
         enter("walk")
         let a = area
@@ -168,12 +170,23 @@ final class Behavior: PetViewDelegate {
         let dist = CGFloat.random(in: 80...200)
         let startX = window.frame.origin.x
         var targetX = startX + dir * dist
-        targetX = max(a.minX + 8, min(targetX, a.maxX - size.width - 8))
-        view?.facingRight = dir > 0
-        walkStep(startX: startX, to: targetX, duration: max(0.8, Double(dist) / 70))
+        // 走动范围:在窗口上 = 该窗口横向范围;否则屏幕范围
+        var loX = a.minX + 8
+        var hiX = a.maxX - size.width - 8
+        if onWin, let id = wid, let b = WindowTracker.frameOfWindow(id: id) {
+            loX = b.minX
+            hiX = max(b.minX, b.maxX - size.width)
+        }
+        targetX = min(max(targetX, loX), hiX)
+        if abs(targetX - startX) < 20 { finish(); return }     // 没空间走
+        view?.facingRight = targetX > startX
+        walkStep(startX: startX, to: targetX,
+                 duration: max(0.6, Double(abs(targetX - startX)) / 70),
+                 resumePerchID: onWin ? wid : nil)
     }
 
-    private func walkStep(startX: CGFloat, to targetX: CGFloat, duration: TimeInterval) {
+    private func walkStep(startX: CGFloat, to targetX: CGFloat, duration: TimeInterval,
+                          resumePerchID: CGWindowID?) {
         guard let w = window, let scr = screen else { finish(); return }
         let ground = scr.visibleFrame.minY + 6
         let g = gen
@@ -187,7 +200,16 @@ final class Behavior: PetViewDelegate {
                                                     fromY: 99999, groundY: ground)
             w.setFrameOrigin(self.clamp(CGPoint(x: x, y: ly - self.feetOffset)))
             self.shadow?.updateNow()
-            if t >= 1 { tm.invalidate(); self.finish() }
+            if t >= 1 {
+                tm.invalidate()
+                // 走完若仍在某窗口上,恢复"停窗"状态(继续被该窗口跟踪)
+                if let id = resumePerchID, WindowTracker.frameOfWindow(id: id) != nil {
+                    self.onWindow = true
+                    self.perchedID = id
+                    self.startPerchCheck()
+                }
+                self.finish()
+            }
         }
         RunLoop.main.add(timer, forMode: .common)
     }
