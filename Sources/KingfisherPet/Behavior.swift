@@ -17,6 +17,8 @@ final class Behavior: PetViewDelegate {
 
     private let size = CGSize(width: 160, height: 160)
 
+    weak var shadow: ShadowController?            // 地面阴影(随太阳)
+
     init(view: PetView, window: NSWindow) {
         self.view = view
         self.window = window
@@ -29,7 +31,7 @@ final class Behavior: PetViewDelegate {
 
     // MARK: - 启动
     func start() {
-        placeAtTopRight()
+        placeAtBottomRight()
         hatchIn()
     }
 
@@ -60,6 +62,11 @@ final class Behavior: PetViewDelegate {
         view?.state = s
         if s != "sleep" { stopZzz() }
     }
+
+    /// 是否处于"停靠歇脚"状态(非飞行/俯冲/死亡/蛋)——供树枝控制器判断
+    private static let restingStates: Set<String> =
+        ["idle", "walk", "eat", "sing", "watch", "sun", "sleep", "happy", "poop"]
+    func isResting() -> Bool { Self.restingStates.contains(current) }
     private func finish() { busy = false; enter("idle"); scheduleThink() }
     private func hold(_ t: TimeInterval, _ done: @escaping () -> Void) {
         DispatchQueue.main.asyncAfter(deadline: .now() + t, execute: done)
@@ -104,7 +111,7 @@ final class Behavior: PetViewDelegate {
                       duration: max(0.6, Double(dist) / 90.0)) { [weak self] in self?.finish() }
     }
 
-    // MARK: - 飞(随机挪窝)
+    // MARK: - 飞(随机挪窝,偶尔空中拉屎)
     private func startFly() {
         guard let window = window, screen != nil else { finish(); return }
         busy = true; thinkTimer?.invalidate()
@@ -113,10 +120,22 @@ final class Behavior: PetViewDelegate {
         let tx = CGFloat.random(in: a.minX + 8 ... a.maxX - size.width - 8)
         let ty = Bool.random() ? (a.maxY - size.height) : a.minY
         view?.facingRight = tx < window.frame.origin.x ? false : true
+        if Int.random(in: 0..<100) < 35 {
+            hold(Double.random(in: 0.3...0.7)) { [weak self] in self?.airPoop() }
+        }
         animateWindow(to: CGPoint(x: tx, y: ty), duration: 1.3) { [weak self] in self?.finish() }
     }
 
-    // MARK: - 俯冲捕鱼(招牌)
+    /// 空中拉屎:从鸟当前(飞行中)位置往下掉一坨
+    private func airPoop() {
+        guard let w = window else { return }
+        let facingRight = view?.facingRight ?? false
+        let x = w.frame.midX + (facingRight ? -44 : 44)
+        let y = w.frame.minY + 30
+        Effects.poop(at: CGPoint(x: x, y: y), on: screen)
+    }
+
+    // MARK: - 俯冲捕鱼(招牌):抛物线上顶→悬停→直下俯冲;已在高位则直线俯冲
     func startFish() {
         guard let window = window, let scr = screen else { finish(); return }
         busy = true; thinkTimer?.invalidate()
@@ -125,39 +144,73 @@ final class Behavior: PetViewDelegate {
         let diveY = a.minY
         let halfW = size.width / 2
         let targetX = CGFloat.random(in: (a.minX + halfW + 40) ... max(a.minX + halfW + 41, a.maxX - halfW - 40))
+        let alreadyHigh = window.frame.minY > a.maxY - a.height * 0.35
         view?.facingRight = targetX > window.frame.midX
-
-        // ① 飞到顶部
         enter("fly")
-        animateWindow(to: CGPoint(x: targetX - halfW, y: topY), duration: 0.9) { [weak self] in
+        let diveStart = CGPoint(x: targetX - halfW, y: topY)
+
+        if alreadyHigh {
+            // 已在最顶端:直接朝目标直线俯冲(不悬停)
+            diveFish(targetX: targetX, diveY: diveY, topY: topY, a: a, window: window, hover: false)
+        } else {
+            // 抛物线飞到顶点
+            animateArc(to: diveStart, duration: 1.0, apexDy: 70) { [weak self] in
+                guard let self = self else { return }
+                self.diveFish(targetX: targetX, diveY: diveY, topY: topY, a: a, window: window, hover: true)
+            }
+        }
+    }
+
+    /// 俯冲入水 + 水花 + 叼鱼回栖 + 仰头吞(hover=true 时先悬停瞄准)
+    private func diveFish(targetX: CGFloat, diveY: CGFloat, topY: CGFloat,
+                          a: CGRect, window: NSWindow, hover: Bool) {
+        let halfW = size.width / 2
+        let go = { [weak self] in
             guard let self = self else { return }
-            // ② 悬停瞄准
-            self.enter("hover")
-            self.hold(0.7) {
-                // ③ 俯冲入水
-                self.enter("dive")
-                self.animateWindow(to: CGPoint(x: targetX - self.size.width / 2, y: diveY),
-                                   duration: 0.45) { [weak self] in
+            self.enter("dive")
+            self.animateWindow(to: CGPoint(x: targetX - halfW, y: diveY), duration: 0.45) { [weak self] in
+                guard let self = self else { return }
+                Effects.splash(at: CGPoint(x: targetX, y: diveY + 8), on: self.screen)
+                self.enter("fly_fish")
+                let perchX = CGFloat.random(in: (a.minX + 30) ... max(a.minX + 31, a.maxX - self.size.width - 30))
+                let perchY = Bool.random() ? topY : (a.minY + 20)
+                self.view?.facingRight = perchX > window.frame.origin.x
+                self.animateWindow(to: CGPoint(x: perchX, y: perchY), duration: 0.95) { [weak self] in
                     guard let self = self else { return }
-                    // ④ 水花 + 叼鱼弹出
-                    Effects.splash(at: CGPoint(x: targetX, y: diveY + 8), on: self.screen)
-                    self.enter("fly_fish")
-                    let perchX = CGFloat.random(in: (a.minX + 30) ... max(a.minX + 31, a.maxX - self.size.width - 30))
-                    let perchY = Bool.random() ? topY : (a.minY + 20)
-                    self.view?.facingRight = perchX > window.frame.origin.x
-                    self.animateWindow(to: CGPoint(x: perchX, y: perchY), duration: 0.95) { [weak self] in
-                        guard let self = self else { return }
-                        // ⑤ 仰头吞,过一会儿拉屎
-                        self.enter("eat")
-                        SpriteLibrary.shared.playPeep()
-                        self.hold(1.1) {
-                            self.finish()
-                            self.schedulePoop(after: Double.random(in: 4...7))
-                        }
+                    self.enter("eat")
+                    SpriteLibrary.shared.playPeep()
+                    self.hold(1.1) {
+                        self.finish()
+                        self.schedulePoop(after: Double.random(in: 4...7))
                     }
                 }
             }
         }
+        if hover {
+            enter("hover")
+            hold(0.7, go)
+        } else {
+            go()
+        }
+    }
+
+    /// 沿二次贝塞尔(抛物线)从当前位置飞到 end,顶点抬升 apexDy
+    private func animateArc(to end: CGPoint, duration: TimeInterval, apexDy: CGFloat,
+                            done: @escaping () -> Void) {
+        guard let window = window else { done(); return }
+        let start = window.frame.origin
+        let ctrl = CGPoint(x: (start.x + end.x) / 2, y: max(start.y, end.y) + apexDy)
+        let t0 = CACurrentMediaTime()
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] tm in
+            guard let self = self, let w = self.window else { tm.invalidate(); done(); return }
+            let t = min(1, (CACurrentMediaTime() - t0) / duration)
+            let mt = 1 - t
+            let x = mt * mt * start.x + 2 * mt * t * ctrl.x + t * t * end.x
+            let y = mt * mt * start.y + 2 * mt * t * ctrl.y + t * t * end.y
+            w.setFrameOrigin(CGPoint(x: x, y: y))
+            if t >= 1 { tm.invalidate(); done() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     // MARK: - 鸣唱
@@ -250,6 +303,7 @@ final class Behavior: PetViewDelegate {
         onScreen = true
         enter("egg")
         view?.applyNow()                  // 先刷成 egg_0,避免闪现 dead 残影
+        shadow?.setVisible(true)
         window?.makeKeyAndOrderFront(nil)
         hold(1.4) { [weak self] in
             guard let self = self else { return }
@@ -271,6 +325,7 @@ final class Behavior: PetViewDelegate {
             self.animateWindow(to: CGPoint(x: startX, y: endY), duration: 0.85) { [weak self] in
                 guard let self = self else { return }
                 self.window?.orderOut(nil)
+                self.shadow?.setVisible(false)
                 self.busy = false
             }
         }
@@ -293,7 +348,7 @@ final class Behavior: PetViewDelegate {
 
     func toggleVisibility() { setVisible(!onScreen) }
     func setVisible(_ visible: Bool) {
-        if visible { if !onScreen { placeAtTopRight(); hatchIn() } }
+        if visible { if !onScreen { placeAtBottomRight(); hatchIn() } }
         else { if onScreen { fallAway() } }
     }
     var isVisible: Bool { onScreen }
@@ -310,10 +365,12 @@ final class Behavior: PetViewDelegate {
         }, completionHandler: done)
     }
 
-    private func placeAtTopRight() {
+    private func placeAtBottomRight() {
         guard let window = window, screen != nil else { return }
         let a = area
-        let origin = CGPoint(x: a.maxX - size.width - 30, y: a.maxY - size.height)
-        window.setFrame(CGRect(origin: origin, size: size), display: true)
+        // 默认栖息在屏幕底部(桌面/Dock 上),这样影子落在脚下、连贯
+        let origin = CGPoint(x: a.maxX - size.width - 30, y: a.minY)
+        // display:false —— 不立即按旧内容重绘,避免重新显示时闪现 dead 帧
+        window.setFrame(CGRect(origin: origin, size: size), display: false)
     }
 }

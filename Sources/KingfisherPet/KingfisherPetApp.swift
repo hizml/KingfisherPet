@@ -17,6 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var petController: PetWindowController!
     private var soundMenuItem: NSMenuItem!
+    private var shadowCtl: ShadowController!
+    private var branchCtl: BranchController!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 加载资源
@@ -29,6 +31,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 宠物
         petController = PetWindowController()
         petController.show()
+
+        // 地面阴影(随太阳)+ 树枝(高处停靠)
+        if let win = petController.window {
+            shadowCtl = ShadowController(bird: win)
+            shadowCtl.start()
+            petController.behavior.shadow = shadowCtl
+            branchCtl = BranchController(bird: win, behavior: petController.behavior)
+            branchCtl.start()
+        }
 
         if ProcessInfo.processInfo.environment["KF_SNAPSHOT"] != nil {
             writeDebugSnapshot()

@@ -203,8 +203,10 @@ enum Effects {
 
     /// 睡眠 zzz:在 point(鸟头上方)放一个带描边的 z,上浮 + 漂移 + 淡出
     static func zzz(at point: CGPoint, on screen: NSScreen?) {
-        let size = CGSize(width: 90, height: 120)
-        let e = Effect(centeredAt: point, size: size, on: screen) { v in
+        let size = CGSize(width: 90, height: 130)
+        // 让窗口底部对齐 point(鸟头),z 从这里往上飞
+        let center = CGPoint(x: point.x, y: point.y + size.height / 2)
+        let e = Effect(centeredAt: center, size: size, on: screen) { v in
             guard let layer = v.layer else { return }
             let sz = CGFloat.random(in: 22...30)
             let img = outlinedGlyph("z", size: sz)
@@ -212,22 +214,24 @@ enum Effects {
             let z = CALayer()
             z.bounds = CGRect(origin: .zero, size: img.size)
             let startX = size.width / 2 + CGFloat.random(in: -12...12)
-            z.position = CGPoint(x: startX, y: size.height - 18)
+            let startY: CGFloat = 14                        // 窗口底部 ≈ 鸟头
+            z.position = CGPoint(x: startX, y: startY)
             z.contents = cg
             z.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
 
             let pos = CABasicAnimation(keyPath: "position")
-            pos.toValue = NSValue(point: CGPoint(x: startX + CGFloat.random(in: -16...16),
-                                                 y: size.height - 18 - 78))
-            pos.duration = 1.6
+            pos.fromValue = NSValue(point: CGPoint(x: startX, y: startY))
+            pos.toValue = NSValue(point: CGPoint(x: startX + CGFloat.random(in: -18...18),
+                                                 y: size.height - 14))
+            pos.duration = 1.8
             let op = CAKeyframeAnimation(keyPath: "opacity")
             op.values = [0, 1, 1, 0]
-            op.keyTimes = [0, 0.15, 0.7, 1]
-            op.duration = 1.6
+            op.keyTimes = [0, 0.12, 0.7, 1]
+            op.duration = 1.8
             z.opacity = 0
             z.add(pos, forKey: "p"); z.add(op, forKey: "o")
             layer.addSublayer(z)
         }
-        e.close(after: 1.7)
+        e.close(after: 1.9)
     }
 }
