@@ -57,8 +57,17 @@ SpriteLibrary            启动加载所有 png + sprites.json;预计算每帧 a
 特效(`Effects.swift`):水花 / 音符 / 鸟屎 / zzz 是**独立的短命透明 click-through 窗口**(`Effect` 类,靠 `Effect.active` 静态数组保活,播完 `orderOut` 自撤),因为宠物主窗口只有 160×160、装不下屏幕底的水花。俯冲捕鱼入水时在 `(targetX, minY+8)` 放水花;鸣唱时在鸟头上方放音符;拉屎从屁股掉白色鸟屎;打盹时 zzz 从鸟头往上飞(带描边)。**注意**:所有粒子层模型 `opacity` 必须 = 0,否则动画播完后图层回弹到初始位置闪现一下(鬼影 bug)。
 
 两个**常驻**透明 click-through 覆盖层(30fps timer 读鸟窗口位置):
-- `ShadowController`:屏幕底一条,按系统时间算太阳方位(右升左落)驱动一坨 `shadow.png` 柔和阴影;鸟飞高 → 影子变大变淡留地面。
-- `BranchController`:鸟停到屏幕上 40% 区域且处于歇脚状态时,脚下出现 `branch.png` 树枝。
+- `ShadowController`:屏幕底一条,**无自身定时器**,只在鸟移动/拖拽时由 Behavior 调 `updateNow()` 同步刷新 → 零延迟。固定 Dock 上边、正对鸟下方,鸟飞高变大变淡。
+- `BranchController`:鸟停到屏幕上 40% 区域且歇脚(非拖拽/非停窗)时,脚下出现 `branch.png` 树枝。
+
+**窗口层级(谁能超出屏幕)**:
+| 内容 | level | 超屏 |
+|---|---|---|
+| 鸟 | statusBar+1 (26) | 最上,盖一切 |
+| 裂纹 / zzz / 音符 | statusBar (25) | ✓ 可超屏,盖过 Dock/菜单栏 |
+| 阴影 / 树枝 / 水花 / 屎 | floating (3) | 桌面层,不超 |
+| 普通 App | normal (0) | — |
+鸟永远 > 裂纹,保证鸟盖在裂纹上。
 
 抛物线飞行:`Behavior.animateArc(to:duration:apexDy:done:)` 用 60fps Timer 沿二次贝塞尔采点 `setFrameOrigin`(窗口不能直接 CAKeyframe)。俯冲捕鱼:`startFish` 已在高位→直线俯冲,否则抛物线上顶再俯冲。
 

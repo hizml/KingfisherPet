@@ -409,8 +409,8 @@ def main():
     render("sun_0", wing="spread", fluff=True, eye_closed=True)
     render("sun_1", wing="spread", fluff=True)
 
-    # 习性:啄屏幕(头带动猛啄)
-    render("peck_0", wing="folded", look_down=True, mouth_open=True, head_jab=1.0, body_dy=-2)
+    # 习性:啄屏幕(头带动猛啄,闭嘴)
+    render("peck_0", wing="folded", look_down=True, head_jab=1.0, body_dy=-2)
     render("peck_1", wing="folded")
 
     # 显示/隐藏:蛋壳 + 死掉

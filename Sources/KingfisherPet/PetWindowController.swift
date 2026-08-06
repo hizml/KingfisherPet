@@ -16,7 +16,8 @@ final class PetWindowController: NSWindowController, NSWindowDelegate {
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = false
-        window.level = .floating
+        // 层级:鸟(statusBar+1)> 裂纹/zzz/音符(statusBar,可超屏)> Dock/菜单栏 > 普通 App
+        window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
         window.isMovable = false
         window.isMovableByWindowBackground = false
         window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
