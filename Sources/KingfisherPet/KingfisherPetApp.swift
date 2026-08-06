@@ -1,4 +1,6 @@
 import AppKit
+import ServiceManagement
+import Foundation
 
 @main
 enum KingfisherPetApp {
@@ -17,12 +19,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var petController: PetWindowController!
     private var soundMenuItem: NSMenuItem!
+    private var autoLoginMenuItem: NSMenuItem!
     private var shadowCtl: ShadowController!
     private var branchCtl: BranchController!
+
+    private static let kSound = "kingfisher.soundOn"
+    private static let kAutoLogin = "kingfisher.autoLogin"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 加载资源
         _ = SpriteLibrary.shared
+        // 恢复设置
+        let d = UserDefaults.standard
+        SpriteLibrary.shared.soundOn = (d.object(forKey: Self.kSound) as? Bool) ?? true
+        if d.bool(forKey: Self.kAutoLogin) {
+            // 重新注册(更新版后系统可能要求重新允许)
+            try? SMAppService.mainApp.register()
+        }
 
         // 菜单栏图标
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -96,10 +109,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         soundMenuItem = item("啾鸣声:开", action: #selector(toggleSound))
         menu.addItem(soundMenuItem)
+        autoLoginMenuItem = item("开机自启", action: #selector(toggleAutoLogin))
+        menu.addItem(autoLoginMenuItem)
         menu.addItem(.separator())
         menu.addItem(item("关于 翡", action: #selector(showAbout)))
         menu.addItem(item("退出 翡", action: #selector(quit)))
         statusItem.menu = menu
+        refreshMenuState()
+    }
+
+    private func refreshMenuState() {
+        soundMenuItem.title = SpriteLibrary.shared.soundOn ? "啾鸣声:开" : "啾鸣声:关"
+        let on = UserDefaults.standard.bool(forKey: Self.kAutoLogin)
+        autoLoginMenuItem.state = on ? .on : .off
     }
 
     private func item(_ title: String, action: Selector) -> NSMenuItem {
@@ -127,7 +149,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleSound() {
         SpriteLibrary.shared.soundOn.toggle()
+        UserDefaults.standard.set(SpriteLibrary.shared.soundOn, forKey: Self.kSound)
         soundMenuItem.title = SpriteLibrary.shared.soundOn ? "啾鸣声:开" : "啾鸣声:关"
+    }
+
+    @objc private func toggleAutoLogin() {
+        let key = Self.kAutoLogin
+        let on = UserDefaults.standard.bool(forKey: key)
+        if on {
+            try? SMAppService.mainApp.unregister()
+            UserDefaults.standard.set(false, forKey: key)
+        } else {
+            do {
+                try SMAppService.mainApp.register()
+                UserDefaults.standard.set(true, forKey: key)
+            } catch {
+                // 注册失败(用户未在系统设置允许等):不持久化
+            }
+        }
+        autoLoginMenuItem.state = UserDefaults.standard.bool(forKey: key) ? .on : .off
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        petController?.behavior.savePosition()
     }
 
     @objc private func showAbout() {

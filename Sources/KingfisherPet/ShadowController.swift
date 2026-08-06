@@ -91,11 +91,11 @@ final class ShadowController {
         sx = max(a.minX + 24, min(sx, a.maxX - 24))
 
         // 尺寸:鸟越高 → 越大;透明度:鸟越高/夜晚 → 越淡
-        let w = 60 + min(heightAbove * 0.10, 55)
-        let h = 18 + min(heightAbove * 0.02, 14)
-        var op: CGFloat = 0.5 * max(0, 1 - heightAbove / 680)
-        op = max(0.06, op)
-        if night { op *= 0.3 }
+        let w = 68 + min(heightAbove * 0.10, 55)
+        let h = 20 + min(heightAbove * 0.02, 14)
+        var op: CGFloat = 0.85 * max(0, 1 - heightAbove / 680)
+        op = max(0.12, op)
+        if night { op *= 0.35 }
 
         // overlay 内坐标:原点对齐 a.minY(底部)
         shadow.position = CGPoint(x: sx - a.minX, y: groundY - a.minY)

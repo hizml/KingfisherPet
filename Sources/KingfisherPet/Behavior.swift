@@ -31,8 +31,32 @@ final class Behavior: PetViewDelegate {
 
     // MARK: - 启动
     func start() {
-        placeAtBottomRight()
+        if !restorePosition() { placeAtBottomRight() }
         hatchIn()
+    }
+
+    // MARK: - 位置记忆
+    private static let kX = "kingfisher.lastX"
+    private static let kY = "kingfisher.lastY"
+
+    func restorePosition() -> Bool {
+        let d = UserDefaults.standard
+        guard d.object(forKey: Self.kX) != nil,
+              let win = window, let scr = win.screen ?? NSScreen.main else { return false }
+        let origin = CGPoint(x: d.double(forKey: Self.kX), y: d.double(forKey: Self.kY))
+        let f = CGRect(origin: origin, size: size)
+        // 中心点需在可见区内,避免恢复到已不存在的屏外位置
+        if scr.visibleFrame.contains(CGPoint(x: f.midX, y: f.midY)) {
+            win.setFrame(f, display: false)
+            return true
+        }
+        return false
+    }
+
+    func savePosition() {
+        guard let w = window else { return }
+        UserDefaults.standard.set(Double(w.frame.origin.x), forKey: Self.kX)
+        UserDefaults.standard.set(Double(w.frame.origin.y), forKey: Self.kY)
     }
 
     // MARK: - PetViewDelegate
@@ -65,7 +89,7 @@ final class Behavior: PetViewDelegate {
 
     /// 是否处于"停靠歇脚"状态(非飞行/俯冲/死亡/蛋)——供树枝控制器判断
     private static let restingStates: Set<String> =
-        ["idle", "walk", "eat", "sing", "watch", "sun", "sleep", "happy", "poop"]
+        ["idle", "eat", "sing", "watch", "sun", "sleep", "happy", "poop"]
     func isResting() -> Bool { Self.restingStates.contains(current) }
     private func finish() { busy = false; enter("idle"); scheduleThink() }
     private func hold(_ t: TimeInterval, _ done: @escaping () -> Void) {
@@ -83,9 +107,10 @@ final class Behavior: PetViewDelegate {
 
     private func think() {
         guard !busy else { scheduleThink(); return }
+        let high = (window?.frame.minY ?? 0) > (area.maxY - area.height * 0.40)
         switch Int.random(in: 0..<100) {
         case 0..<25:   enter("idle"); scheduleThink()
-        case 25..<47:  startWalk()
+        case 25..<47:  if high { enter("idle"); scheduleThink() } else { startWalk() }  // 高处不走
         case 47..<55:  startFly()
         case 55..<63:  startFish()
         case 63..<71:  startSing()
@@ -123,7 +148,7 @@ final class Behavior: PetViewDelegate {
         if Int.random(in: 0..<100) < 35 {
             hold(Double.random(in: 0.3...0.7)) { [weak self] in self?.airPoop() }
         }
-        animateWindow(to: CGPoint(x: tx, y: ty), duration: 1.3) { [weak self] in self?.finish() }
+        animateFlight(to: CGPoint(x: tx, y: ty), duration: 1.3) { [weak self] in self?.finish() }
     }
 
     /// 空中拉屎:从鸟当前(飞行中)位置往下掉一坨
@@ -153,8 +178,8 @@ final class Behavior: PetViewDelegate {
             // 已在最顶端:直接朝目标直线俯冲(不悬停)
             diveFish(targetX: targetX, diveY: diveY, topY: topY, a: a, window: window, hover: false)
         } else {
-            // 抛物线飞到顶点
-            animateArc(to: diveStart, duration: 1.0, apexDy: 70) { [weak self] in
+            // 自然轨迹飞到顶点
+            animateFlight(to: diveStart, duration: 1.0) { [weak self] in
                 guard let self = self else { return }
                 self.diveFish(targetX: targetX, diveY: diveY, topY: topY, a: a, window: window, hover: true)
             }
@@ -194,19 +219,26 @@ final class Behavior: PetViewDelegate {
         }
     }
 
-    /// 沿二次贝塞尔(抛物线)从当前位置飞到 end,顶点抬升 apexDy
-    private func animateArc(to end: CGPoint, duration: TimeInterval, apexDy: CGFloat,
-                            done: @escaping () -> Void) {
+    /// 自然鸟飞轨迹:三次贝塞尔(先平后升、顶端拉平)+ 拍翅的小幅起伏
+    private func animateFlight(to end: CGPoint, duration: TimeInterval,
+                               done: @escaping () -> Void) {
         guard let window = window else { done(); return }
         let start = window.frame.origin
-        let ctrl = CGPoint(x: (start.x + end.x) / 2, y: max(start.y, end.y) + apexDy)
+        // 控制点:前方低位(先平飞)+ 目标高位附近(顶端拉平)
+        let c1 = CGPoint(x: start.x + (end.x - start.x) * 0.35,
+                         y: start.y + (end.y - start.y) * 0.15)
+        let c2 = CGPoint(x: end.x - (end.x - start.x) * 0.15,
+                         y: end.y - (end.y - start.y) * 0.10)
         let t0 = CACurrentMediaTime()
         let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] tm in
             guard let self = self, let w = self.window else { tm.invalidate(); done(); return }
             let t = min(1, (CACurrentMediaTime() - t0) / duration)
             let mt = 1 - t
-            let x = mt * mt * start.x + 2 * mt * t * ctrl.x + t * t * end.x
-            let y = mt * mt * start.y + 2 * mt * t * ctrl.y + t * t * end.y
+            var x = mt*mt*mt*start.x + 3*mt*mt*t*c1.x + 3*mt*t*t*c2.x + t*t*t*end.x
+            var y = mt*mt*mt*start.y + 3*mt*mt*t*c1.y + 3*mt*t*t*c2.y + t*t*t*end.y
+            let bob = sin(t * .pi * 6)          // 拍翅起伏
+            y += bob * 4
+            x += bob * 1.5
             w.setFrameOrigin(CGPoint(x: x, y: y))
             if t >= 1 { tm.invalidate(); done() }
         }
@@ -270,7 +302,8 @@ final class Behavior: PetViewDelegate {
     }
     private func emitZzz() {
         guard let w = window else { return }
-        Effects.zzz(at: CGPoint(x: w.frame.midX, y: w.frame.maxY + 6), on: screen)
+        // 头在左上:从头部上方出 z,贴近头
+        Effects.zzz(at: CGPoint(x: w.frame.minX + 46, y: w.frame.maxY - 30), on: screen)
     }
     private func stopZzz() { zzzTimer?.invalidate(); zzzTimer = nil }
 
