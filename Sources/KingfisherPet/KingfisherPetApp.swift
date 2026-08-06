@@ -79,6 +79,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
         menu.addItem(item("召唤过来", action: #selector(callOver)))
+        menu.addItem(item("去抓条鱼", action: #selector(doFish)))
+        menu.addItem(item("唱一个", action: #selector(doSing)))
         menu.addItem(item("显示 / 隐藏", action: #selector(toggleVisibility)))
         menu.addItem(.separator())
         soundMenuItem = item("啾鸣声:开", action: #selector(toggleSound))
@@ -100,6 +102,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         petController.behavior.callOver()
     }
 
+    @objc private func doFish() {
+        petController.behavior.startFish()
+    }
+
+    @objc private func doSing() {
+        petController.behavior.startSing()
+    }
+
     @objc private func toggleVisibility() {
         petController.behavior.toggleVisibility()
     }
@@ -112,7 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func showAbout() {
         let alert = NSAlert()
         alert.messageText = "翡 · 翠鸟桌面宠物"
-        alert.informativeText = "一只住在你 Mac 菜单栏的翠鸟。\n\n点击:啾一声卖萌\n拖拽:换位置\n它会自己走动、飞行、打盹。"
+        alert.informativeText = "一只住在你 Mac 菜单栏的翠鸟。\n\n点击:啾一声卖萌\n拖拽:换位置\n它会自己走动、飞行、打盹,还会俯冲捕鱼、鸣唱、探头张望、晒太阳。\n显示时破壳而出,隐藏时死掉从天上掉下来。"
         alert.alertStyle = .informational
         alert.addButton(withTitle: "好")
         if let img = SpriteLibrary.shared.frame("idle_0")?.image {

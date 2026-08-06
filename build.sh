@@ -26,6 +26,8 @@ cp "$BIN" "$APP/Contents/MacOS/${EXEC}"
 cp Resources/Sprites/*.png   "$APP/Contents/Resources/" 2>/dev/null || true
 cp Resources/Sprites/sprites.json "$APP/Contents/Resources/" 2>/dev/null || true
 cp Resources/peep.wav        "$APP/Contents/Resources/" 2>/dev/null || true
+# 去掉生成器自检用的检查图,不进包
+rm -f "$APP/Contents/Resources/contact.png" "$APP/Contents/Resources/eggs_check.png"
 
 echo "==> 3/6 生成图标"
 ICONSET="$(mktemp -d)/AppIcon.iconset"
