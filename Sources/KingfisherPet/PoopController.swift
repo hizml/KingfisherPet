@@ -46,7 +46,6 @@ private final class Poop {
     enum State { case falling, sitting, fading }
     let window: NSWindow
     private let blob = CALayer()
-    private let half: CGFloat = 14
     let x: CGFloat
     var y: CGFloat
     var landingY: CGFloat
@@ -60,7 +59,7 @@ private final class Poop {
         x = start.x
         y = start.y
         landingY = start.y
-        window = NSWindow(contentRect: NSRect(x: start.x - 14, y: start.y - 14, width: 28, height: 28),
+        window = NSWindow(contentRect: NSRect(x: start.x - 15, y: start.y - 20, width: 30, height: 20),
                           styleMask: .borderless, backing: .buffered, defer: false)
         window.isOpaque = false
         window.backgroundColor = .clear
@@ -70,7 +69,7 @@ private final class Poop {
         window.collectionBehavior = [.canJoinAllSpaces, .stationary]
         window.isReleasedWhenClosed = false
 
-        let v = NSView(frame: NSRect(x: 0, y: 0, width: 28, height: 28))
+        let v = NSView(frame: NSRect(x: 0, y: 0, width: 30, height: 20))
         v.wantsLayer = true
         v.layer = CALayer()
         buildBlob()
@@ -80,19 +79,26 @@ private final class Poop {
     }
 
     private func buildBlob() {
-        func drop(_ w: CGFloat, _ h: CGFloat, _ off: CGFloat, _ c: NSColor) -> CALayer {
+        func drop(_ w: CGFloat, _ h: CGFloat, _ cx: CGFloat, _ cy: CGFloat, _ c: NSColor) -> CALayer {
             let l = CALayer()
             l.bounds = CGRect(x: 0, y: 0, width: w, height: h)
-            l.position = CGPoint(x: 14, y: 14 + off)
+            l.position = CGPoint(x: cx, y: cy)
             l.cornerRadius = min(w, h) / 2
             l.backgroundColor = c.cgColor
             return l
         }
-        blob.bounds = CGRect(x: 0, y: 0, width: 28, height: 28)
-        blob.position = CGPoint(x: 14, y: 14)
-        blob.addSublayer(drop(16, 12, 0, NSColor(calibratedWhite: 0.97, alpha: 1)))
-        blob.addSublayer(drop(11, 8, 3, NSColor(calibratedRed: 0.86, green: 0.88, blue: 0.82, alpha: 1)))
-        blob.addSublayer(drop(5, 4, 5, NSColor(calibratedRed: 0.42, green: 0.48, blue: 0.26, alpha: 1)))
+        blob.bounds = CGRect(x: 0, y: 0, width: 30, height: 20)
+        blob.position = CGPoint(x: 15, y: 10)
+        let white = NSColor(calibratedWhite: 0.97, alpha: 1)
+        let off = NSColor(calibratedRed: 0.86, green: 0.88, blue: 0.82, alpha: 1)
+        let dark = NSColor(calibratedRed: 0.42, green: 0.48, blue: 0.26, alpha: 1)
+        // 一摊稀屎:宽扁主体贴窗口底部 + 几滴飞溅 + 一小撮深色
+        blob.addSublayer(drop(24, 8, 15, 7, white))
+        blob.addSublayer(drop(16, 6, 15, 9, off))
+        blob.addSublayer(drop(5, 4, 3, 6, white))
+        blob.addSublayer(drop(4, 3, 27, 7, white))
+        blob.addSublayer(drop(3, 3, 22, 4, white))
+        blob.addSublayer(drop(5, 3, 17, 8, dark))
     }
 
     func update(dt: TimeInterval, ground: CGFloat, screenH: CGFloat) {
@@ -134,7 +140,8 @@ private final class Poop {
     }
 
     private func applyOrigin() {
-        window.setFrameOrigin(CGPoint(x: x - half, y: y - half))
+        // y 是屎的底边 → 窗口底贴地
+        window.setFrameOrigin(CGPoint(x: x - 15, y: y - 20))
     }
 
     /// 重新下落(窗口移走/消失):重新计算落点(Dock / 下一窗口)
