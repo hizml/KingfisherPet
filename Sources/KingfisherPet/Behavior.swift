@@ -169,20 +169,14 @@ final class Behavior: PetViewDelegate {
         let diveY = a.minY
         let halfW = size.width / 2
         let targetX = CGFloat.random(in: (a.minX + halfW + 40) ... max(a.minX + halfW + 41, a.maxX - halfW - 40))
-        let alreadyHigh = window.frame.minY > a.maxY - a.height * 0.35
         view?.facingRight = targetX > window.frame.midX
         enter("fly")
         let diveStart = CGPoint(x: targetX - halfW, y: topY)
 
-        if alreadyHigh {
-            // 已在最顶端:直接朝目标直线俯冲(不悬停)
-            diveFish(targetX: targetX, diveY: diveY, topY: topY, a: a, window: window, hover: false)
-        } else {
-            // 自然轨迹飞到顶点
-            animateFlight(to: diveStart, duration: 1.0) { [weak self] in
-                guard let self = self else { return }
-                self.diveFish(targetX: targetX, diveY: diveY, topY: topY, a: a, window: window, hover: true)
-            }
+        // 一律走自然轨迹飞到顶点 → 悬停 → 俯冲
+        animateFlight(to: diveStart, duration: 1.0) { [weak self] in
+            guard let self = self else { return }
+            self.diveFish(targetX: targetX, diveY: diveY, topY: topY, a: a, window: window, hover: true)
         }
     }
 
