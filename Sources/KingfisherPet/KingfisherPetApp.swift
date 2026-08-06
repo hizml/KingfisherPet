@@ -54,6 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             petController.behavior.shadow = shadowCtl
             branchCtl = BranchController(bird: win, behavior: petController.behavior)
             branchCtl.start()
+            petController.behavior.branch = branchCtl
             crackCtl = CrackController()
             crackCtl.start()
             petController.behavior.crack = crackCtl
