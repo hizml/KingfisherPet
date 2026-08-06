@@ -382,18 +382,18 @@ final class Behavior: PetViewDelegate {
         hold(dur) { [weak self] in self?.finish() }
     }
 
-    // MARK: - 啄屏幕(连啄几次;整组随机决定是否啄裂,啄裂则每啄让裂纹长大)
+    // MARK: - 啄屏幕(先叫一声,再连啄几次;啄裂则每啄让裂纹长大)
     func startPeck() {
         beginAction()
+        SpriteLibrary.shared.playPeep()          // 先叫一声
         let count = Int.random(in: 3...5)
         let willCrack = Int.random(in: 0..<100) < 12
-        peckBurst(remaining: count, crack: willCrack)
+        hold(0.25) { [weak self] in self?.peckBurst(remaining: count, crack: willCrack) }
     }
 
     private func peckBurst(remaining: Int, crack: Bool) {
         guard let w = window else { finish(); return }
-        enter("peck")
-        SpriteLibrary.shared.playPeep()
+        enter("peck")                            // 啄的时候不叫
         if crack {
             let facingRight = view?.facingRight ?? false
             let bx = w.frame.minX + (facingRight ? 156 : 4)
