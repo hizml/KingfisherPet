@@ -164,12 +164,12 @@ final class Behavior: PetViewDelegate {
         animateFlight(to: CGPoint(x: tx, y: ty), duration: 1.3) { [weak self] in self?.finish() }
     }
 
-    /// 空中拉屎:从鸟当前(飞行中)位置往下掉一坨
+    /// 空中拉屎:从鸟当前(飞行中)的屁股位置往下掉一坨
     private func airPoop() {
         guard let w = window else { return }
         let facingRight = view?.facingRight ?? false
-        let x = w.frame.midX + (facingRight ? -44 : 44)
-        let y = w.frame.minY + 30
+        let x = w.frame.midX + (facingRight ? -50 : 50)       // 屁股一侧
+        let y = w.frame.minY + 40
         Effects.poop(at: CGPoint(x: x, y: y), on: screen)
     }
 
@@ -291,27 +291,29 @@ final class Behavior: PetViewDelegate {
         hold(Double.random(in: 3...5)) { [weak self] in self?.finish() }
     }
 
-    // MARK: - 啄屏幕(连啄几次,每次以鸟嘴尖为中心随机啄裂)
+    // MARK: - 啄屏幕(连啄几次;整组随机决定是否啄裂,啄裂则每啄让裂纹长大)
     func startPeck() {
         busy = true; thinkTimer?.invalidate()
-        peckBurst(remaining: Int.random(in: 3...5))
+        let count = Int.random(in: 3...5)                    // 啄次数随机,最大 5
+        let willCrack = Int.random(in: 0..<100) < 45         // 这次连啄是否啄裂
+        peckBurst(remaining: count, crack: willCrack)
     }
 
-    private func peckBurst(remaining: Int) {
+    private func peckBurst(remaining: Int, crack: Bool) {
         guard let w = window else { finish(); return }
         enter("peck")
         SpriteLibrary.shared.playPeep()
-        // 头带动猛啄时,鸟嘴尖位置(按朝向)
-        let facingRight = view?.facingRight ?? false
-        let bx = w.frame.minX + (facingRight ? 128 : 6)
-        let by = w.frame.minY + 92
-        if Int.random(in: 0..<100) < 15 {          // 随机啄裂,不频繁
-            crack?.addCrack(at: CGPoint(x: bx, y: by))
+        if crack {
+            // 头带动猛啄时,鸟嘴尖落点(按朝向):朝左在左下,朝右在右下
+            let facingRight = view?.facingRight ?? false
+            let bx = w.frame.minX + (facingRight ? 156 : 4)
+            let by = w.frame.minY + 72
+            self.crack?.peck(at: CGPoint(x: bx, y: by))      // 已有则扩大,否则新建
         }
         hold(0.3) { [weak self] in
             guard let self = self else { return }
             if remaining > 1 {
-                self.peckBurst(remaining: remaining - 1)
+                self.peckBurst(remaining: remaining - 1, crack: crack)
             } else {
                 self.finish()
             }
@@ -403,8 +405,8 @@ final class Behavior: PetViewDelegate {
         thinkTimer?.invalidate()
         enter("poop")
         let facingRight = view?.facingRight ?? false
-        let buttX = w.frame.midX + (facingRight ? -44 : 44)   // 屁股在尾部一侧
-        let buttY = w.frame.minY + 50
+        let buttX = w.frame.midX + (facingRight ? -50 : 50)   // 屁股(尾部)一侧,左右随朝向
+        let buttY = w.frame.minY + 58
         hold(0.5) { [weak self] in
             guard let self = self else { return }
             Effects.poop(at: CGPoint(x: buttX, y: buttY), on: self.screen)
