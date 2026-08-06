@@ -308,7 +308,7 @@ def render_shadow(name="shadow"):
             dy = (y - cy) / ry
             r = math.sqrt(dx * dx + dy * dy)
             if r < 1.0:
-                a = int(95 * (1 - r) ** 1.6)
+                a = int(185 * (1 - r) ** 1.5)
                 px[x, y] = (0, 0, 0, a)
     img.save(os.path.join(OUT, name + ".png"))
     print("  wrote", name + ".png")
