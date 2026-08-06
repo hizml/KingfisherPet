@@ -143,16 +143,20 @@ def draw_kingfisher(W, H, *, wing="folded", leg_phase=0.0, eye_closed=False,
     # 上喙(尖)
     d.polygon([(hx-30*s, by-5*s), (hx-72*s, by+2*s),
                (hx-72*s, by+6*s), (hx-30*s, by+10*s)], fill=BEAK)
-    # 舌头(先画,层级在下喙之下;舌尖从嘴下露出)
-    if tongue:
-        d.polygon([(hx-60*s, by+14*s), (hx-74*s, by+23*s), (hx-56*s, by+17*s)], fill=(235, 110, 130, 255))
-    # 下喙(三角,尖在嘴尖;张嘴时尖端下落;再加厚)——画在舌头之上
+    # 下喙(三角,尖在嘴尖;张嘴时尖端下落;再加厚)
     d.polygon([(hx-30*s, by+6*s), (hx-72*s, by+7*s + beak_drop),
                (hx-30*s, by+16*s)], fill=(40, 40, 40, 255))
-    # 张嘴时的橙色口腔
+    # 张嘴:橙色口腔 + 嘴里的舌头(画在口腔之上,张嘴可见,像真鸟)
     if mouth_open:
         d.polygon([(hx-32*s, by+6*s), (hx-70*s, by+8*s + beak_drop*0.4),
                    (hx-32*s, by+14*s)], fill=(230, 120, 70, 255))
+        if not tongue:
+            d.ellipse([hx-62*s, by+8*s, hx-42*s, by+15*s + beak_drop*0.3],
+                      fill=(235, 110, 130, 255))
+    # 耷拉舌头(死掉:从张开的嘴外垂下,画在最上)
+    if tongue:
+        d.polygon([(hx-50*s, by+10*s), (hx-74*s, by+13*s + beak_drop),
+                   (hx-78*s, by+26*s), (hx-58*s, by+18*s)], fill=(235, 110, 130, 255))
 
     # ---- 眼睛 ----
     ex, ey = hx - 6*s, hy - 4*s + (6*s if look_down else 0)
