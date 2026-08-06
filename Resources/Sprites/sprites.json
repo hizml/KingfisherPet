@@ -14,7 +14,8 @@
     "hover": 10,
     "egg": 4,
     "dead": 1,
-    "poop": 6
+    "poop": 6,
+    "peck": 8
   },
   "sequences": {
     "idle": [
@@ -94,6 +95,10 @@
       "poop_0",
       "poop_1",
       "poop_0"
+    ],
+    "peck": [
+      "peck_0",
+      "peck_1"
     ]
   }
 }

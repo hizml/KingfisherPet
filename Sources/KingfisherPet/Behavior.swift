@@ -18,6 +18,7 @@ final class Behavior: PetViewDelegate {
     private let size = CGSize(width: 160, height: 160)
 
     weak var shadow: ShadowController?            // 地面阴影(随太阳)
+    weak var crack: CrackController?              // 屏幕裂纹(啄裂)
 
     init(view: PetView, window: NSWindow) {
         self.view = view
@@ -109,14 +110,16 @@ final class Behavior: PetViewDelegate {
         guard !busy else { scheduleThink(); return }
         let high = (window?.frame.minY ?? 0) > (area.maxY - area.height * 0.40)
         switch Int.random(in: 0..<100) {
-        case 0..<25:   enter("idle"); scheduleThink()
-        case 25..<47:  if high { enter("idle"); scheduleThink() } else { startWalk() }  // 高处不走
-        case 47..<55:  startFly()
-        case 55..<63:  startFish()
-        case 63..<71:  startSing()
-        case 71..<79:  startDart()
-        case 79..<87:  startWatch()
-        case 87..<92:  startSun()
+        case 0..<22:   enter("idle"); scheduleThink()
+        case 22..<42:  if high { enter("idle"); scheduleThink() } else { startWalk() }  // 高处不走
+        case 42..<49:  startFly()
+        case 49..<57:  startFish()
+        case 57..<64:  startSing()
+        case 64..<71:  startDart()
+        case 71..<78:  startWatch()
+        case 78..<83:  startSun()
+        case 83..<90:  startPeck()
+        case 90..<95:  startPerchWindow()
         default:       startSleep()
         }
     }
@@ -234,6 +237,7 @@ final class Behavior: PetViewDelegate {
             y += bob * 4
             x += bob * 1.5
             w.setFrameOrigin(CGPoint(x: x, y: y))
+            self.shadow?.updateNow()
             if t >= 1 { tm.invalidate(); done() }
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -274,6 +278,46 @@ final class Behavior: PetViewDelegate {
         busy = true; thinkTimer?.invalidate()
         enter("sun")
         hold(Double.random(in: 3...5)) { [weak self] in self?.finish() }
+    }
+
+    // MARK: - 啄屏幕(连啄几次,每次以鸟嘴尖为中心随机啄裂)
+    func startPeck() {
+        busy = true; thinkTimer?.invalidate()
+        peckBurst(remaining: Int.random(in: 3...5))
+    }
+
+    private func peckBurst(remaining: Int) {
+        guard let w = window else { finish(); return }
+        enter("peck")
+        SpriteLibrary.shared.playPeep()
+        // 鸟嘴尖(按朝向):朝左在左侧,朝右在右侧
+        let facingRight = view?.facingRight ?? false
+        let bx = w.frame.minX + (facingRight ? 146 : 14)
+        let by = w.frame.minY + 78
+        if Int.random(in: 0..<100) < 55 {          // 每啄随机裂
+            crack?.addCrack(at: CGPoint(x: bx, y: by))
+        }
+        hold(0.3) { [weak self] in
+            guard let self = self else { return }
+            if remaining > 1 {
+                self.peckBurst(remaining: remaining - 1)
+            } else {
+                self.finish()
+            }
+        }
+    }
+
+    // MARK: - 停到最前面窗口的上沿
+    func startPerchWindow() {
+        guard let window = window, let scr = screen,
+              let target = WindowTracker.frontPerch(birdWidth: size.width) else { finish(); return }
+        busy = true; thinkTimer?.invalidate()
+        enter("fly")
+        let a = scr.visibleFrame
+        let tx = max(a.minX, min(target.x, a.maxX - size.width))
+        let ty = max(a.minY, min(target.y, a.maxY - size.height))
+        view?.facingRight = tx > window.frame.origin.x
+        animateFlight(to: CGPoint(x: tx, y: ty), duration: 1.1) { [weak self] in self?.finish() }
     }
 
     // MARK: - 打盹
@@ -381,15 +425,20 @@ final class Behavior: PetViewDelegate {
     var isVisible: Bool { onScreen }
 
     // MARK: - 工具
+    /// 线性移动(无缓动),每步同步刷新阴影,避免阴影延迟
     private func animateWindow(to origin: CGPoint, duration: TimeInterval, done: @escaping () -> Void) {
         guard let window = window else { done(); return }
-        var f = window.frame
-        f.origin = origin
-        NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = duration
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            window.animator().setFrame(f, display: true)
-        }, completionHandler: done)
+        let start = window.frame.origin
+        let t0 = CACurrentMediaTime()
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] tm in
+            guard let self = self, let w = self.window else { tm.invalidate(); done(); return }
+            let t = min(1, (CACurrentMediaTime() - t0) / duration)
+            w.setFrameOrigin(CGPoint(x: start.x + (origin.x - start.x) * t,
+                                     y: start.y + (origin.y - start.y) * t))
+            self.shadow?.updateNow()
+            if t >= 1 { tm.invalidate(); done() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     private func placeAtBottomRight() {

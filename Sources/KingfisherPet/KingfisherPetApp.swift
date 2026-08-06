@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var autoLoginMenuItem: NSMenuItem!
     private var shadowCtl: ShadowController!
     private var branchCtl: BranchController!
+    private var crackCtl: CrackController!
 
     private static let kSound = "kingfisher.soundOn"
     private static let kAutoLogin = "kingfisher.autoLogin"
@@ -52,10 +53,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             petController.behavior.shadow = shadowCtl
             branchCtl = BranchController(bird: win, behavior: petController.behavior)
             branchCtl.start()
+            crackCtl = CrackController()
+            crackCtl.start()
+            petController.behavior.crack = crackCtl
         }
 
         if ProcessInfo.processInfo.environment["KF_SNAPSHOT"] != nil {
             writeDebugSnapshot()
+        }
+        if ProcessInfo.processInfo.environment["KF_DEMO"] != nil {
+            // 调试:2.5s 后自动啄一下,便于截图看裂纹
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+                self?.petController.behavior.startPeck()
+            }
         }
     }
 
@@ -105,12 +115,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(item("召唤过来", action: #selector(callOver)))
         menu.addItem(item("去抓条鱼", action: #selector(doFish)))
         menu.addItem(item("唱一个", action: #selector(doSing)))
+        menu.addItem(item("停到窗口上", action: #selector(doPerch)))
+        menu.addItem(item("啄一下", action: #selector(doPeck)))
         menu.addItem(item("显示 / 隐藏", action: #selector(toggleVisibility)))
         menu.addItem(.separator())
         soundMenuItem = item("啾鸣声:开", action: #selector(toggleSound))
         menu.addItem(soundMenuItem)
         autoLoginMenuItem = item("开机自启", action: #selector(toggleAutoLogin))
         menu.addItem(autoLoginMenuItem)
+        menu.addItem(item("修复屏幕", action: #selector(repairScreen)))
         menu.addItem(.separator())
         menu.addItem(item("关于 翡", action: #selector(showAbout)))
         menu.addItem(item("退出 翡", action: #selector(quit)))
@@ -141,6 +154,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func doSing() {
         petController.behavior.startSing()
+    }
+
+    @objc private func doPerch() {
+        petController.behavior.startPerchWindow()
+    }
+
+    @objc private func doPeck() {
+        petController.behavior.startPeck()
+    }
+
+    @objc private func repairScreen() {
+        crackCtl?.clear()
     }
 
     @objc private func toggleVisibility() {
