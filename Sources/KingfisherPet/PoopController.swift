@@ -98,7 +98,7 @@ private final class Poop {
     func update(dt: TimeInterval, ground: CGFloat, screenH: CGFloat) {
         switch state {
         case .falling:
-            y -= 380 * CGFloat(dt)
+            y -= 220 * CGFloat(dt)
             if y <= landingY {
                 y = landingY
                 state = .sitting
@@ -107,12 +107,15 @@ private final class Poop {
             }
             applyOrigin()
         case .sitting:
-            // 落在窗口上时,跟着窗口上沿;窗口移走或消失 → 重新下落到 Dock / 下一窗口
+            // 落在窗口上时,跟着窗口上沿;窗口移走/消失/被盖住 → 重新下落到 Dock / 下一窗口
             if let id = landedID {
                 if let b = WindowTracker.frameOfWindow(id: id) {
                     let topNS = screenH - b.minY
-                    if x < b.minX || x > b.maxX || topNS < y - 12 {
-                        resumeFall(ground: ground)        // 窗口移走
+                    let off = x < b.minX || x > b.maxX || topNS < y - 12
+                    // 遮挡:屎处最前面的窗口不是本窗口(被更大窗口盖住)→ 落下
+                    let occluded = WindowTracker.frontWindowAt(nsPoint: CGPoint(x: x, y: y)) != id
+                    if off || occluded {
+                        resumeFall(ground: ground)
                     } else {
                         y = topNS
                         applyOrigin()

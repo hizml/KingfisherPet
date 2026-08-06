@@ -66,9 +66,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             writeDebugSnapshot()
         }
         if ProcessInfo.processInfo.environment["KF_DEMO"] != nil {
-            // 调试:2.5s 后自动啄一下,便于截图看裂纹
+            // 调试:2.5s 后自动拉一坨,便于截图看下落/落地
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
-                self?.petController.behavior.startPeck()
+                self?.petController.behavior.startPoop()
             }
         }
     }
