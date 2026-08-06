@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var shadowCtl: ShadowController!
     private var branchCtl: BranchController!
     private var crackCtl: CrackController!
+    private var poopCtl: PoopController!
 
     private static let kSound = "kingfisher.soundOn"
     private static let kAutoLogin = "kingfisher.autoLogin"
@@ -56,6 +57,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             crackCtl = CrackController()
             crackCtl.start()
             petController.behavior.crack = crackCtl
+            poopCtl = PoopController()
+            poopCtl.start()
+            petController.behavior.poopCtl = poopCtl
         }
 
         if ProcessInfo.processInfo.environment["KF_SNAPSHOT"] != nil {
