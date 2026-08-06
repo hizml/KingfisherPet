@@ -11,6 +11,7 @@ final class Behavior: PetViewDelegate {
     private var thinkTimer: Timer?
     private var poopTimer: Timer?
     private var zzzTimer: Timer?
+    private var perchChecker: Timer?
     private var current = "idle"
     private var busy = false          // 正在执行一个多阶段动作
     private var onScreen = true       // 用户意图:是否可见
@@ -20,10 +21,15 @@ final class Behavior: PetViewDelegate {
     weak var shadow: ShadowController?            // 地面阴影(随太阳)
     weak var crack: CrackController?              // 屏幕裂纹(啄裂)
 
+    var onWindow = false                          // 是否停在某个窗口上(停窗时不显示树枝)
+    var dragging = false                          // 是否正在被拖拽(拖拽时不显示树枝)
+    private var perchedID: CGWindowID?
+
     init(view: PetView, window: NSWindow) {
         self.view = view
         self.window = window
         view.delegate = self
+        view.onMoved = { [weak self] in self?.shadow?.updateNow() }
     }
 
     // MARK: - 几何
@@ -73,11 +79,14 @@ final class Behavior: PetViewDelegate {
 
     func petViewDidBeginDrag() {
         busy = true
+        dragging = true
+        leavePerch()
         thinkTimer?.invalidate()
         enter("idle")
     }
 
     func petViewDidEndDrag() {
+        dragging = false
         finish()
     }
 
@@ -118,8 +127,9 @@ final class Behavior: PetViewDelegate {
         case 64..<71:  startDart()
         case 71..<78:  startWatch()
         case 78..<83:  startSun()
-        case 83..<90:  startPeck()
-        case 90..<95:  startPerchWindow()
+        case 83..<88:  startPeck()
+        case 88..<92:  startPerchWindow()
+        case 92..<97:  startPoop()
         default:       startSleep()
         }
     }
@@ -220,6 +230,7 @@ final class Behavior: PetViewDelegate {
     private func animateFlight(to end: CGPoint, duration: TimeInterval,
                                done: @escaping () -> Void) {
         guard let window = window else { done(); return }
+        leavePerch()
         let start = window.frame.origin
         // 控制点:前方低位(先平飞)+ 目标高位附近(顶端拉平)
         let c1 = CGPoint(x: start.x + (end.x - start.x) * 0.35,
@@ -290,11 +301,11 @@ final class Behavior: PetViewDelegate {
         guard let w = window else { finish(); return }
         enter("peck")
         SpriteLibrary.shared.playPeep()
-        // 鸟嘴尖(按朝向):朝左在左侧,朝右在右侧
+        // 头带动猛啄时,鸟嘴尖位置(按朝向)
         let facingRight = view?.facingRight ?? false
-        let bx = w.frame.minX + (facingRight ? 146 : 14)
-        let by = w.frame.minY + 78
-        if Int.random(in: 0..<100) < 55 {          // 每啄随机裂
+        let bx = w.frame.minX + (facingRight ? 128 : 6)
+        let by = w.frame.minY + 92
+        if Int.random(in: 0..<100) < 15 {          // 随机啄裂,不频繁
             crack?.addCrack(at: CGPoint(x: bx, y: by))
         }
         hold(0.3) { [weak self] in
@@ -307,17 +318,49 @@ final class Behavior: PetViewDelegate {
         }
     }
 
-    // MARK: - 停到最前面窗口的上沿
+    // MARK: - 停到最前面窗口的上沿(随机;窗口移走就飞走)
     func startPerchWindow() {
         guard let window = window, let scr = screen,
-              let target = WindowTracker.frontPerch(birdWidth: size.width) else { finish(); return }
+              let perch = WindowTracker.frontPerch(birdWidth: size.width) else { finish(); return }
         busy = true; thinkTimer?.invalidate()
         enter("fly")
         let a = scr.visibleFrame
-        let tx = max(a.minX, min(target.x, a.maxX - size.width))
-        let ty = max(a.minY, min(target.y, a.maxY - size.height))
+        let tx = max(a.minX, min(perch.point.x, a.maxX - size.width))
+        let ty = max(a.minY, min(perch.point.y, a.maxY - size.height))
         view?.facingRight = tx > window.frame.origin.x
-        animateFlight(to: CGPoint(x: tx, y: ty), duration: 1.1) { [weak self] in self?.finish() }
+        animateFlight(to: CGPoint(x: tx, y: ty), duration: 1.1) { [weak self] in
+            guard let self = self else { return }
+            self.onWindow = true
+            self.perchedID = perch.id
+            self.startPerchCheck()
+            self.finish()
+        }
+    }
+
+    private func leavePerch() {
+        onWindow = false
+        perchedID = nil
+        stopPerchCheck()
+    }
+    private func startPerchCheck() {
+        stopPerchCheck()
+        let t = Timer(timeInterval: 0.4, repeats: true) { [weak self] _ in self?.checkPerch() }
+        RunLoop.main.add(t, forMode: .common)
+        perchChecker = t
+    }
+    private func stopPerchCheck() {
+        perchChecker?.invalidate()
+        perchChecker = nil
+    }
+    private func checkPerch() {
+        guard let wid = perchedID, let scr = screen, let w = window,
+              let f = WindowTracker.frameOfWindow(id: wid) else {
+            leavePerch(); startFly(); return                 // 窗口没了 → 飞走
+        }
+        let topY = scr.frame.height - f.minY
+        if abs(topY - w.frame.minY) > 24 || abs(f.midX - w.frame.midX) > 120 {
+            leavePerch(); startFly()                          // 窗口挪了 → 飞走
+        }
     }
 
     // MARK: - 打盹
@@ -349,12 +392,13 @@ final class Behavior: PetViewDelegate {
     private func schedulePoop(after t: TimeInterval) {
         poopTimer?.invalidate()
         poopTimer = Timer.scheduledTimer(withTimeInterval: t, repeats: false) { [weak self] _ in
-            self?.tryPoop()
+            self?.startPoop()
         }
     }
 
-    private func tryPoop() {
-        guard !busy, onScreen, let w = window else { return }
+    /// 拉屎(自主随机 / 吃完延时触发)
+    func startPoop() {
+        guard onScreen, let w = window else { finish(); return }
         busy = true
         thinkTimer?.invalidate()
         enter("poop")
@@ -364,8 +408,8 @@ final class Behavior: PetViewDelegate {
         hold(0.5) { [weak self] in
             guard let self = self else { return }
             Effects.poop(at: CGPoint(x: buttX, y: buttY), on: self.screen)
+            self.hold(0.4) { self.finish() }
         }
-        hold(0.9) { [weak self] in self?.finish() }
     }
 
     // MARK: - 显示:破壳而出
@@ -397,6 +441,9 @@ final class Behavior: PetViewDelegate {
                 guard let self = self else { return }
                 self.window?.orderOut(nil)
                 self.shadow?.setVisible(false)
+                // 隐藏期间把帧切成 egg,下次显示不再闪现 dead
+                self.view?.state = "egg"
+                self.view?.applyNow()
                 self.busy = false
             }
         }
@@ -428,6 +475,7 @@ final class Behavior: PetViewDelegate {
     /// 线性移动(无缓动),每步同步刷新阴影,避免阴影延迟
     private func animateWindow(to origin: CGPoint, duration: TimeInterval, done: @escaping () -> Void) {
         guard let window = window else { done(); return }
+        leavePerch()
         let start = window.frame.origin
         let t0 = CACurrentMediaTime()
         let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] tm in

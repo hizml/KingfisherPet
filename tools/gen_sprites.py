@@ -67,7 +67,7 @@ def draw_kingfisher(W, H, *, wing="folded", leg_phase=0.0, eye_closed=False,
                     head_tilt=0.0, hide_legs=False, fish_in_beak=False,
                     look_down=False, x_eye=False, tongue=False,
                     fluff=False, tail_wag=0.0, butt_up=False, sweat=False,
-                    fish_bite=0.0, head_raise_amt=0.0):
+                    fish_bite=0.0, head_raise_amt=0.0, head_jab=0.0):
     """画一只翠鸟,返回 RGBA Image。wing: folded / midup / up / middown / spread"""
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
@@ -128,6 +128,8 @@ def draw_kingfisher(W, H, *, wing="folded", leg_phase=0.0, eye_closed=False,
     head_lift = (14*s if head_up else 0) + head_raise_amt * s
     hx = cx - 46*s + head_tilt * s
     hy = cy - 30*s - head_lift
+    hx -= 18*s * head_jab          # 啄:头向前(左)猛送
+    hy += 12*s * head_jab          # 啄:头向下送
     E(hx, hy, 38*s, 36*s, TEAL)
     d.polygon([(hx-8*s, hy-32*s), (hx-2*s, hy-46*s), (hx+6*s, hy-30*s)], fill=TEAL_D)
 
@@ -301,15 +303,15 @@ def render_shadow(name="shadow"):
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     px = img.load()
     cx, cy = W / 2, H / 2
-    rx, ry = W * 0.46, H * 0.44
+    rx, ry = W * 0.48, H * 0.46
     for y in range(H):
         for x in range(W):
             dx = (x - cx) / rx
             dy = (y - cy) / ry
             r = math.sqrt(dx * dx + dy * dy)
             if r < 1.0:
-                # 较硬的边缘:中心实、衰减快
-                a = int(215 * (1 - r) ** 2.4)
+                # 硬边:中心实、衰减陡(羽化小)
+                a = int(238 * (1 - r) ** 3.2)
                 px[x, y] = (0, 0, 0, a)
     img.save(os.path.join(OUT, name + ".png"))
     print("  wrote", name + ".png")
@@ -407,8 +409,8 @@ def main():
     render("sun_0", wing="spread", fluff=True, eye_closed=True)
     render("sun_1", wing="spread", fluff=True)
 
-    # 习性:啄屏幕(低头张嘴啄)
-    render("peck_0", wing="folded", look_down=True, mouth_open=True, body_dy=-2)
+    # 习性:啄屏幕(头带动猛啄)
+    render("peck_0", wing="folded", look_down=True, mouth_open=True, head_jab=1.0, body_dy=-2)
     render("peck_1", wing="folded")
 
     # 显示/隐藏:蛋壳 + 死掉
