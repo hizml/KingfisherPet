@@ -142,9 +142,12 @@ final class Behavior: PetViewDelegate {
 
     private func think() {
         guard !busy else { scheduleThink(); return }
+        let onWin = onWindow
+        let isLow = (window?.frame.minY ?? 0) < (area.minY + 60)   // Dock 附近
         switch Int.random(in: 0..<100) {
         case 0..<22:   enter("idle"); scheduleThink()
-        case 22..<42:  startWalk()            // 可在 Dock / 窗口上走
+        case 22..<42:  if onWin || isLow { startWalk() }        // 只在 窗口/Dock 上走
+                       else { enter("idle"); scheduleThink() }  // 树枝上不走路
         case 42..<49:  startFly()
         case 49..<57:  startFish()
         case 57..<64:  startSing()
