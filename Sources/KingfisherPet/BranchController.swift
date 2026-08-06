@@ -11,6 +11,7 @@ final class BranchController {
     private let branchLayer = CALayer()
     private var timer: Timer?
     private var shown = false
+    private var eligibleAt: CFTimeInterval = 0   // 条件持续的起始时刻(去抖,避免切换闪现)
 
     private let overlaySize = CGSize(width: 230, height: 96)
 
@@ -58,19 +59,22 @@ final class BranchController {
                          && !beh.dragging && !beh.onWindow
 
         if shouldShow {
-            // 树枝贴在脚下(鸟脚靠近窗口底部)
+            // 去抖:条件持续 0.3s 才出现,避免状态切换时闪一下
+            if eligibleAt == 0 { eligibleAt = CACurrentMediaTime() }
             let origin = CGPoint(x: b.frame.midX - overlaySize.width / 2,
                                  y: b.frame.minY - overlaySize.height * 0.45)
             overlay.setFrameOrigin(origin)
-            if !shown {
+            if !shown, CACurrentMediaTime() - eligibleAt > 0.3 {
                 overlay.orderFrontRegardless()
                 shown = true
-                // 让鸟压在树枝之上
-                b.orderFrontRegardless()
+                b.orderFrontRegardless()      // 让鸟压在树枝之上
             }
-        } else if shown {
-            overlay.orderOut(nil)
-            shown = false
+        } else {
+            eligibleAt = 0
+            if shown {
+                overlay.orderOut(nil)
+                shown = false
+            }
         }
     }
 }

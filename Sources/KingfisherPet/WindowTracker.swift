@@ -72,6 +72,31 @@ enum WindowTracker {
         return (bestY, bestID)
     }
 
+    /// 屏幕某点(NS 坐标)上最前面的普通窗口 id;没有(桌面)返回 nil。用于判断是否被盖住。
+    static func frontWindowAt(nsPoint p: CGPoint) -> CGWindowID? {
+        let opts: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+        guard let infos = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]],
+              let screen = NSScreen.main else { return nil }
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        let cgX = p.x
+        let cgY = screen.frame.height - p.y
+        for info in infos {                                       // 前到后
+            let layer = info[kCGWindowLayer as String] as? Int ?? 99
+            guard layer == 0 else { continue }
+            let pid = info[kCGWindowOwnerPID as String] as? Int32 ?? 0
+            guard pid != myPID else { continue }
+            guard let wid = info[kCGWindowNumber as String] as? CGWindowID else { continue }
+            var bnds = CGRect.zero
+            if let r = info[kCGWindowBounds as String] as? CGRect { bnds = r }
+            else if let d = info[kCGWindowBounds as String] as? [String: CGFloat],
+                    let r = CGRect(dictionaryRepresentation: d as CFDictionary) { bnds = r }
+            else { continue }
+            guard bnds.width > 200, bnds.height > 120 else { continue }
+            if bnds.contains(CGPoint(x: cgX, y: cgY)) { return wid }
+        }
+        return nil
+    }
+
     /// 按 ID 查窗口当前帧(CG 坐标,左上原点);找不到返回 nil
     static func frameOfWindow(id: CGWindowID) -> CGRect? {
         guard let infos = CGWindowListCopyWindowInfo([.optionIncludingWindow], id) as? [[String: Any]],

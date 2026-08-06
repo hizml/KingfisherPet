@@ -158,7 +158,7 @@ final class Behavior: PetViewDelegate {
         }
     }
 
-    // MARK: - 走(沿下方表面:Dock 顶 / 窗口上沿;在窗口上只走窗口那么宽)
+    // MARK: - 走(沿下方表面:Dock 顶 / 窗口上沿;在窗口上走到边就飞走)
     private func startWalk() {
         guard let window = window, screen != nil else { finish(); return }
         let onWin = onWindow                 // 先记下(beginAction 会清)
@@ -169,26 +169,26 @@ final class Behavior: PetViewDelegate {
         let dir: CGFloat = Bool.random() ? 1 : -1
         let dist = CGFloat.random(in: 80...200)
         let startX = window.frame.origin.x
-        var targetX = startX + dir * dist
-        // 走动范围:在窗口上 = 该窗口横向范围;否则屏幕范围
+        let raw = startX + dir * dist
         var loX = a.minX + 8
         var hiX = a.maxX - size.width - 8
         if onWin, let id = wid, let b = WindowTracker.frameOfWindow(id: id) {
             loX = b.minX
             hiX = max(b.minX, b.maxX - size.width)
         }
-        targetX = min(max(targetX, loX), hiX)
-        if abs(targetX - startX) < 20 { finish(); return }     // 没空间走
+        let targetX = min(max(raw, loX), hiX)
+        if abs(targetX - startX) < 20 { finish(); return }
+        let hitEdge = onWin && (raw < loX || raw > hiX)      // 想走更远但到窗口边了
         view?.facingRight = targetX > startX
         walkStep(startX: startX, to: targetX,
                  duration: max(0.6, Double(abs(targetX - startX)) / 70),
-                 resumePerchID: onWin ? wid : nil)
+                 onWin: onWin, wid: wid, flyOff: hitEdge)
     }
 
     private func walkStep(startX: CGFloat, to targetX: CGFloat, duration: TimeInterval,
-                          resumePerchID: CGWindowID?) {
-        guard let w = window, let scr = screen else { finish(); return }
-        let ground = scr.visibleFrame.minY + 6
+                          onWin: Bool, wid: CGWindowID?, flyOff: Bool) {
+        guard let w = window else { finish(); return }
+        let y = w.frame.origin.y              // 表面是平的:行走时高度不变(避免瞬移)
         let g = gen
         let t0 = CACurrentMediaTime()
         let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] tm in
@@ -196,22 +196,28 @@ final class Behavior: PetViewDelegate {
             guard self.gen == g else { tm.invalidate(); return }       // 被取消
             let t = min(1, (CACurrentMediaTime() - t0) / duration)
             let x = startX + (targetX - startX) * t
-            let (ly, _) = WindowTracker.landingSpot(belowX: x + self.size.width / 2,
-                                                    fromY: 99999, groundY: ground)
-            w.setFrameOrigin(self.clamp(CGPoint(x: x, y: ly - self.feetOffset)))
+            w.setFrameOrigin(self.clamp(CGPoint(x: x, y: y)))
             self.shadow?.updateNow()
             if t >= 1 {
                 tm.invalidate()
-                // 走完若仍在某窗口上,恢复"停窗"状态(继续被该窗口跟踪)
-                if let id = resumePerchID, WindowTracker.frameOfWindow(id: id) != nil {
-                    self.onWindow = true
-                    self.perchedID = id
-                    self.startPerchCheck()
-                }
-                self.finish()
+                self.afterWalk(onWin: onWin, wid: wid, flyOff: flyOff)
             }
         }
         RunLoop.main.add(timer, forMode: .common)
+    }
+
+    /// 走完:在窗口上走到边 → 飞走(下一个窗口/别处);窗口没了 → 飞走;否则留下
+    private func afterWalk(onWin: Bool, wid: CGWindowID?, flyOff: Bool) {
+        if onWin, let id = wid {
+            if flyOff || WindowTracker.frameOfWindow(id: id) == nil {
+                if Bool.random() { startPerchWindow() } else { startFly() }
+            } else {
+                onWindow = true; perchedID = id; startPerchCheck()
+                finish()
+            }
+        } else {
+            finish()
+        }
     }
 
     // MARK: - 飞(随机挪窝,偶尔空中拉屎)
@@ -345,14 +351,22 @@ final class Behavior: PetViewDelegate {
         hold(Double.random(in: 1.4...2.2)) { [weak self] in self?.finish() }
     }
 
-    // MARK: - 日光浴(彩蛋):头顶斜上方出现一个照射的太阳
+    // MARK: - 日光浴(彩蛋):斜上方出现照射的太阳;鸟在顶部时贴顶、放空的一侧
     func startSun() {
-        guard let w = window else { finish(); return }
+        guard let w = window, let scr = screen else { finish(); return }
         beginAction()
         enter("sun")
         let dur = Double.random(in: 3...5)
-        let sunAt = CGPoint(x: w.frame.midX + 74, y: w.frame.maxY + 74)
-        Effects.sun(at: sunAt, on: screen, duration: dur)
+        let a = scr.frame                  // 全屏(太阳在 statusBar 层,可盖菜单栏)
+        let bird = w.frame
+        let margin: CGFloat = 70
+        let preferRight = bird.midX < a.midX
+        var sx = bird.midX + (preferRight ? 92 : -92)
+        sx = min(max(sx, a.minX + margin), a.maxX - margin)
+        var sy = bird.maxY + 64
+        let topLimit = a.maxY - margin
+        if sy > topLimit { sy = topLimit }    // 顶部不够就贴顶
+        Effects.sun(at: CGPoint(x: sx, y: sy), on: screen, duration: dur)
         hold(dur) { [weak self] in self?.finish() }
     }
 
@@ -417,10 +431,14 @@ final class Behavior: PetViewDelegate {
     private func checkPerch() {
         guard let wid = perchedID, let scr = screen, let w = window,
               let f = WindowTracker.frameOfWindow(id: wid) else {
-            leavePerch(); startFly(); return
+            leavePerch(); startFly(); return                 // 窗口没了 → 飞走
         }
         let topY = scr.frame.height - f.minY
-        if abs(topY - (w.frame.minY + feetOffset)) > 24 || abs(f.midX - w.frame.midX) > 120 {
+        let moved = abs(topY - (w.frame.minY + feetOffset)) > 24 || abs(f.midX - w.frame.midX) > 120
+        // 遮挡:鸟脚处最前面的窗口不是本窗口(被更大窗口盖住)→ 飞走
+        let feetPt = CGPoint(x: w.frame.midX, y: w.frame.minY + feetOffset)
+        let occluded = WindowTracker.frontWindowAt(nsPoint: feetPt) != wid
+        if moved || occluded {
             leavePerch(); startFly()
         }
     }
