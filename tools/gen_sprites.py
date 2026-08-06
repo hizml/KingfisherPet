@@ -137,19 +137,19 @@ def draw_kingfisher(W, H, *, wing="folded", leg_phase=0.0, eye_closed=False,
     E(hx + 10*s, hy + 6*s, 16*s, 13*s, WHITE)
     E(hx - 4*s, hy + 26*s, 16*s, 10*s, WHITE)
 
-    # ---- 喙(黑色长锥,朝左)----
+    # ---- 喙(尖锥,朝左;张嘴时下喙尖端下落 → 朝前张开,嘴尖仍尖)----
     by = hy + 6*s + (4*s if look_down else 0)
-    beak_drop = 8*s if mouth_open else 0
-    # 上喙
+    beak_drop = 9*s if mouth_open else 0
+    # 上喙(尖)
     d.polygon([(hx-30*s, by-5*s), (hx-72*s, by+2*s),
                (hx-72*s, by+6*s), (hx-30*s, by+10*s)], fill=BEAK)
-    # 下喙(mouth_open 时下移)
-    d.polygon([(hx-30*s, by+8*s), (hx-68*s, by+8*s+beak_drop*0.2),
-               (hx-66*s, by+12*s+beak_drop), (hx-30*s, by+12*s)], fill=(40, 40, 40, 255))
+    # 下喙(三角,尖在嘴尖;张嘴时尖端下落)
+    d.polygon([(hx-30*s, by+8*s), (hx-72*s, by+6*s + beak_drop),
+               (hx-30*s, by+12*s)], fill=(40, 40, 40, 255))
     # 张嘴时的橙色口腔
     if mouth_open:
-        d.polygon([(hx-32*s, by+8*s), (hx-60*s, by+8*s+beak_drop*0.4),
-                   (hx-32*s, by+12*s)], fill=(230, 120, 70, 255))
+        d.polygon([(hx-32*s, by+8*s), (hx-70*s, by+7*s + beak_drop*0.4),
+                   (hx-32*s, by+11*s)], fill=(230, 120, 70, 255))
     # 舌头(死掉)
     if tongue:
         d.polygon([(hx-60*s, by+14*s), (hx-72*s, by+22*s), (hx-58*s, by+16*s)], fill=(235, 110, 130, 255))

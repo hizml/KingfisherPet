@@ -1,8 +1,10 @@
 import AppKit
 import QuartzCore
 
-/// 树枝:鸟停到屏幕高处"歇脚"时,脚下出现一根树枝(不在地面、不跟着飞)。
-/// 一个可移动的透明 click-through 小窗口,30fps 跟随鸟的 x,贴在脚下。
+/// 树枝:鸟停到屏幕高处歇脚时脚下出现一根树枝。
+/// - 和鸟同层(.floating 之上的 statusBar+1),鸟在树枝之上(同级靠 key 序)。
+/// - 飞往高处前可在目的地"提前出现"(showAt),鸟到了无缝接管,而不是到了才冒出来。
+/// - 一个可移动的透明 click-through 小窗口,60fps 跟随鸟的 x,贴在脚下。
 final class BranchController {
 
     private weak var bird: NSWindow?
@@ -11,9 +13,12 @@ final class BranchController {
     private let branchLayer = CALayer()
     private var timer: Timer?
     private var shown = false
-    private var eligibleAt: CFTimeInterval = 0   // 条件持续的起始时刻(去抖,避免切换闪现)
+    private var eligibleAt: CFTimeInterval = 0
+    private var preview: CGPoint?
+    private var previewUntil: CFTimeInterval = 0
 
     private let overlaySize = CGSize(width: 230, height: 96)
+    private let feetOffset: CGFloat = 27
 
     init(bird: NSWindow, behavior: Behavior) {
         self.bird = bird
@@ -23,7 +28,7 @@ final class BranchController {
         overlay.isOpaque = false
         overlay.backgroundColor = .clear
         overlay.hasShadow = false
-        overlay.level = .floating
+        overlay.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)  // 和鸟同层
         overlay.ignoresMouseEvents = true
         overlay.collectionBehavior = [.canJoinAllSpaces, .stationary]
         overlay.isReleasedWhenClosed = false
@@ -50,24 +55,54 @@ final class BranchController {
         timer = t
     }
 
+    /// 飞往高处前在"脚的落点"提前显示树枝;鸟到了由常规跟踪无缝接管
+    func showAt(_ feetPoint: CGPoint) {
+        preview = feetPoint
+        previewUntil = CACurrentMediaTime() + 5
+        position(feetX: feetPoint.x, feetY: feetPoint.y)
+        if !shown {
+            overlay.orderFrontRegardless()
+            shown = true
+            bird?.orderFrontRegardless()
+        }
+    }
+
+    private func position(feetX: CGFloat, feetY: CGFloat) {
+        overlay.setFrameOrigin(CGPoint(x: feetX - overlaySize.width / 2,
+                                       y: feetY - overlaySize.height / 2))
+    }
+
     private func tick() {
+        let now = CACurrentMediaTime()
+
+        // 预览模式:树枝固定在目的地,直到鸟到了或超时
+        if let p = preview {
+            if now > previewUntil {
+                preview = nil
+                if shown { overlay.orderOut(nil); shown = false }
+                return
+            }
+            position(feetX: p.x, feetY: p.y)
+            if let b = bird, let beh = behavior {
+                let arrived = beh.isResting() && abs(b.frame.midX - p.x) < 40
+                if arrived { preview = nil; eligibleAt = now }
+            }
+            return
+        }
+
         guard let b = bird, let beh = behavior, let scr = b.screen ?? NSScreen.main else { return }
         let a = scr.visibleFrame
-        // 高处 = 屏幕上 40% 区域;且处于歇脚状态
         let high = b.frame.minY > a.maxY - a.height * 0.40
         let shouldShow = beh.isResting() && high && b.isVisible
                          && !beh.dragging && !beh.onWindow
 
         if shouldShow {
-            // 去抖:条件持续 0.3s 才出现,避免状态切换时闪一下
-            if eligibleAt == 0 { eligibleAt = CACurrentMediaTime() }
-            let origin = CGPoint(x: b.frame.midX - overlaySize.width / 2,
-                                 y: b.frame.minY - overlaySize.height * 0.45)
-            overlay.setFrameOrigin(origin)
-            if !shown, CACurrentMediaTime() - eligibleAt > 0.3 {
+            if eligibleAt == 0 { eligibleAt = now }
+            position(feetX: b.frame.midX, feetY: b.frame.minY + feetOffset)
+            if !shown, now - eligibleAt > 0.3 {
                 overlay.orderFrontRegardless()
                 shown = true
-                b.orderFrontRegardless()      // 让鸟压在树枝之上
+                b.orderFrontRegardless()      // 鸟压在树枝之上
             }
         } else {
             eligibleAt = 0

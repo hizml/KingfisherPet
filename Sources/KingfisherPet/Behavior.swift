@@ -22,6 +22,7 @@ final class Behavior: PetViewDelegate {
     weak var shadow: ShadowController?
     weak var crack: CrackController?
     weak var poopCtl: PoopController?
+    weak var branch: BranchController?
 
     var onWindow = false
     var dragging = false
@@ -118,7 +119,7 @@ final class Behavior: PetViewDelegate {
     }
 
     private static let restingStates: Set<String> =
-        ["idle", "eat", "sing", "watch", "sun", "sleep", "happy", "poop"]
+        ["idle", "eat", "sing", "watch", "sun", "sleep", "happy", "poop", "peck"]
     func isResting() -> Bool { Self.restingStates.contains(current) }
     private func finish() { busy = false; enter("idle"); scheduleThink() }
 
@@ -232,6 +233,10 @@ final class Behavior: PetViewDelegate {
         let tx = CGFloat.random(in: a.minX + 8 ... a.maxX - size.width - 8)
         let ty = Bool.random() ? (a.maxY - size.height) : (a.minY - feetOffset)
         view?.facingRight = tx > window.frame.origin.x
+        // 飞往高处歇脚:树枝提前在目的地出现
+        if ty > a.maxY - a.height * 0.4 {
+            branch?.showAt(CGPoint(x: tx + size.width / 2, y: ty + feetOffset))
+        }
         if Int.random(in: 0..<100) < 35 {
             hold(Double.random(in: 0.3...0.7)) { [weak self] in self?.airPoop() }
         }
@@ -328,8 +333,12 @@ final class Behavior: PetViewDelegate {
     func startSing() {
         beginAction()
         enter("sing")
-        Effects.notes(at: CGPoint(x: window?.frame.midX ?? 0,
-                                  y: (window?.frame.maxY ?? 0) + 14), on: screen)
+        // 音符从头上方出,左右随朝向
+        let facingRight = view?.facingRight ?? false
+        let w = window?.frame ?? .zero
+        let x = w.minX + (facingRight ? 110 : 50)
+        let y = w.maxY - 34
+        Effects.notes(at: CGPoint(x: x, y: y), on: screen)
         SpriteLibrary.shared.playPeep()
         hold(Double.random(in: 1.2...1.6)) { [weak self] in self?.finish() }
     }
@@ -466,7 +475,11 @@ final class Behavior: PetViewDelegate {
     }
     private func emitZzz() {
         guard let w = window else { return }
-        Effects.zzz(at: CGPoint(x: w.frame.minX + 46, y: w.frame.maxY - 30), on: screen)
+        // 从头上方出,左右随朝向(头在朝向一侧)
+        let facingRight = view?.facingRight ?? false
+        let x = w.frame.minX + (facingRight ? 110 : 50)
+        let y = w.frame.maxY - 34
+        Effects.zzz(at: CGPoint(x: x, y: y), on: screen)
     }
     private func stopZzz() { zzzTimer?.invalidate(); zzzTimer = nil }
 
