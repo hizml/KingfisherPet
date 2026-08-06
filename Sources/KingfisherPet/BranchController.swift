@@ -55,6 +55,7 @@ final class BranchController {
         // 高处 = 屏幕上 40% 区域;且处于歇脚状态
         let high = b.frame.minY > a.maxY - a.height * 0.40
         let shouldShow = beh.isResting() && high && b.isVisible
+                         && !beh.dragging && !beh.onWindow
 
         if shouldShow {
             // 树枝贴在脚下(鸟脚靠近窗口底部)

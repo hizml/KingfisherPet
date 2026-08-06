@@ -12,6 +12,9 @@ final class PetView: NSView {
 
     weak var delegate: PetViewDelegate?
 
+    /// 窗口被移动时同步调用(让阴影等跟随,零延迟)
+    var onMoved: (() -> Void)?
+
     /// 当前状态(改了会重置动画)
     var state: String = "idle" {
         didSet {
@@ -159,6 +162,7 @@ final class PetView: NSView {
         o.x += dx
         o.y += dy
         window?.setFrameOrigin(o)
+        onMoved?()
     }
 
     override func mouseUp(with event: NSEvent) {
