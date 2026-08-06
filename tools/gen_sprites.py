@@ -381,8 +381,8 @@ def main():
     render("fly_1", wing="midup")
     render("fly_2", wing="up")
     render("fly_3", wing="middown")
-    render("happy_0", wing="folded", heart_eye=True, blush=True, body_dy=-2)
-    render("happy_1", wing="midup",  heart_eye=True, blush=True, body_dy=-8)
+    render("happy_0", wing="folded", mouth_open=True, heart_eye=True, blush=True, body_dy=-2)
+    render("happy_1", wing="midup",  mouth_open=True, heart_eye=True, blush=True, body_dy=-8)
     render("sleep_0", wing="folded", eye_closed=True, body_dy=0)
     render("sleep_1", wing="folded", eye_closed=True, body_dy=-2)
 
