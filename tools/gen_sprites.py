@@ -143,13 +143,13 @@ def draw_kingfisher(W, H, *, wing="folded", leg_phase=0.0, eye_closed=False,
     # 上喙(尖)
     d.polygon([(hx-30*s, by-5*s), (hx-72*s, by+2*s),
                (hx-72*s, by+6*s), (hx-30*s, by+10*s)], fill=BEAK)
-    # 下喙(三角,尖在嘴尖;张嘴时尖端下落)
-    d.polygon([(hx-30*s, by+8*s), (hx-72*s, by+6*s + beak_drop),
-               (hx-30*s, by+12*s)], fill=(40, 40, 40, 255))
+    # 下喙(三角,尖在嘴尖;张嘴时尖端下落;略厚)
+    d.polygon([(hx-30*s, by+7*s), (hx-72*s, by+7*s + beak_drop),
+               (hx-30*s, by+14*s)], fill=(40, 40, 40, 255))
     # 张嘴时的橙色口腔
     if mouth_open:
-        d.polygon([(hx-32*s, by+8*s), (hx-70*s, by+7*s + beak_drop*0.4),
-                   (hx-32*s, by+11*s)], fill=(230, 120, 70, 255))
+        d.polygon([(hx-32*s, by+7*s), (hx-70*s, by+8*s + beak_drop*0.4),
+                   (hx-32*s, by+13*s)], fill=(230, 120, 70, 255))
     # 舌头(死掉)
     if tongue:
         d.polygon([(hx-60*s, by+14*s), (hx-72*s, by+22*s), (hx-58*s, by+16*s)], fill=(235, 110, 130, 255))
@@ -437,12 +437,12 @@ def main():
         "sequences": {
             "idle":     ["idle_0", "idle_1", "idle_0", "idle_blink"],
             "walk":     ["walk_0", "walk_1", "walk_2", "walk_3"],
-            "fly":      ["fly_0", "fly_1", "fly_2", "fly_3"],
+            "fly":      ["fly_1", "fly_2", "fly_3", "fly_2"],   # 空中全程扇翅
             "hover":    ["fly_1", "fly_2", "fly_1", "fly_3"],   # 悬停=原地振翅
             "happy":    ["happy_0", "happy_1", "happy_0", "happy_1"],
             "sleep":    ["sleep_0", "sleep_1"],
             "dive":     ["dive_0"],
-            "fly_fish": ["fly_fish_0", "fly_fish_1", "fly_fish_2", "fly_fish_3"],
+            "fly_fish": ["fly_fish_1", "fly_fish_2", "fly_fish_3", "fly_fish_2"],
             "eat":      ["eat_0", "eat_0", "eat_1", "eat_2"],
             "sing":     ["sing_0", "sing_1"],
             "watch":    ["watch_0", "watch_1"],
