@@ -145,7 +145,9 @@ def draw_kingfisher(W, H, *, wing="folded", leg_phase=0.0, eye_closed=False,
         d.polygon([(hx-32*s, by+6*s), (hx-70*s, by+8*s + beak_drop*0.4),
                    (hx-32*s, by+14*s)], fill=(230, 120, 70, 255))
         if not tongue:
-            d.ellipse([hx-68*s, by+7*s, hx-50*s, by+13*s], fill=(235, 110, 130, 255))
+            # 舌头贴近下喙、随下喙下落
+            d.ellipse([hx-66*s, by+9*s + beak_drop*0.4, hx-48*s, by+15*s + beak_drop*0.4],
+                      fill=(235, 110, 130, 255))
     # 上喙(尖)
     d.polygon([(hx-30*s, by-5*s), (hx-72*s, by+2*s),
                (hx-72*s, by+6*s), (hx-30*s, by+10*s)], fill=BEAK)
@@ -203,18 +205,19 @@ def draw_kingfisher(W, H, *, wing="folded", leg_phase=0.0, eye_closed=False,
         leg(left_x, left_x, lift=left_lift)
         leg(right_x, right_x, lift=right_lift)
 
-    # ---- 叼鱼/吞鱼(fish_bite: 0=完整 1=吃完)----
+    # ---- 叼鱼/吞鱼:鱼头(右端)贴嘴尖;bite 增大送入嘴里(右移、缩短)----
     bite = 0.0 if fish_in_beak else fish_bite
     if fish_in_beak or (0.0 < fish_bite < 1.0):
         fl = 14*s * (1 - bite * 0.85)
         if fl > 2*s:
-            fx = (hx - 78*s) + bite * 34*s    # 鱼往喙里送
-            fy = by + 24*s - bite * 8*s
-            d.ellipse([fx-fl, fy-7*s, fx+fl, fy+7*s], fill=FISH_BODY)
-            d.polygon([(fx+fl*0.8, fy), (fx+fl*1.8, fy-8*s),
-                       (fx+fl*1.8, fy+8*s)], fill=FISH_DARK)
+            right = (hx - 72*s) + bite * 30*s          # 鱼头从嘴尖随 bite 进嘴
+            left = right - 2 * fl
+            fy = by + 16*s - bite * 6*s
+            d.ellipse([left, fy - 7*s, right, fy + 7*s], fill=FISH_BODY)
+            d.polygon([(left, fy), (left - 14*s, fy - 8*s),
+                       (left - 14*s, fy + 8*s)], fill=FISH_DARK)   # 尾在左
             if bite < 0.6:
-                d.ellipse([fx-4*s, fy-2*s, fx+1*s, fy+3*s], fill=EYE)  # 鱼眼
+                d.ellipse([right - 6*s, fy - 3*s, right - 1*s, fy + 2*s], fill=EYE)  # 鱼眼靠头
 
     # ---- 红晕 ----
     if blush:
