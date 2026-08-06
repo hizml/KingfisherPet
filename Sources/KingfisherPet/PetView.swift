@@ -164,7 +164,7 @@ final class PetView: NSView {
         // 限制:脚不低于 Dock 顶(原点 y >= minY - 56)、不出屏
         if let a = NSScreen.main?.visibleFrame, let win = window {
             o.x = min(max(o.x, a.minX), a.maxX - win.frame.width)
-            o.y = min(max(o.y, a.minY - 56), a.maxY - win.frame.height)
+            o.y = min(max(o.y, a.minY - 27), a.maxY - win.frame.height)
         }
         window?.setFrameOrigin(o)
         onMoved?()
