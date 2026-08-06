@@ -52,6 +52,10 @@ SpriteLibrary            启动加载所有 png + sprites.json;预计算每帧 a
 - **逐帧**:60fps Timer 推进 `animTime`,`applyFrame()` 按 `sprites.json` 的序列+fps 选当前帧,赋给 `CALayer.contents`(按帧名去重避免重设)。
 - **转向**:`facingRight` → `spriteLayer.setAffineTransform(scaleX:-1)`,水平翻转。
 
+状态机 `Behavior` 的状态(都对应 `sprites.json` 里的序列):idle / walk / fly / hover / dive / fly_fish / eat / sing / dart / watch / sun / sleep / happy / egg / dead。多阶段动作(如 `startFish`)用 `animateWindow(...){ done }` 的完成回调 + `hold(t){}` 串成阶段链。
+
+特效(`Effects.swift`):水花 / 音符是**独立的短命透明 click-through 窗口**(`Effect` 类,靠 `Effect.active` 静态数组保活,播完 `orderOut` 自撤),因为宠物主窗口只有 160×160、装不下屏幕底的水花。俯冲捕鱼入水时在 `(targetX, minY+8)` 放水花;鸣唱时在鸟头上方放音符。
+
 ## 已知坑
 
 - **`screencapture` 被屏幕录制权限挡**:`screencapture` 报 `could not create image from display`。验证窗口外观用快照:设环境变量 `KF_SNAPSHOT=1` 直接跑二进制,App 会在 `/tmp/kf_snapshot.png` 用 `cacheDisplay` 自渲染视图、并在 `/tmp/kf_debug.log` 写窗口/屏幕坐标。代码见 `KingfisherPetApp.writeDebugSnapshot`(受 `KF_SNAPSHOT` 门控)。

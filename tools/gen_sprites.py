@@ -3,7 +3,7 @@
 """
 翠鸟(翡)桌面宠物 sprite 生成器
 扁平卡通风,侧视朝左,4x 超采样后缩到 256x256 抗锯齿,透明背景。
-输出到 ../Resources/Sprites/*.png 以及 sprites.json。
+输出到 ../Resources/Sprites/*.png 以及 sprites.json、../Resources/peep.wav。
 """
 import math, os, json, wave, struct
 from PIL import Image, ImageDraw
@@ -13,25 +13,25 @@ SS = 4            # 超采样倍数
 SIZE = 256        # 输出尺寸
 
 # ---- 配色 ----
-TEAL   = (22, 166, 179, 255)   # 背/头/翅膀
-TEAL_D = (15, 120, 132, 255)   # 翅膀暗部
-ORANGE = (240, 145, 59, 255)   # 胸/腹
+TEAL   = (22, 166, 179, 255)
+TEAL_D = (15, 120, 132, 255)
+ORANGE = (240, 145, 59, 255)
 ORANGE_D = (214, 110, 36, 255)
-WHITE  = (253, 246, 230, 255)  # 颊/喉斑
-BEAK   = (26, 26, 26, 255)     # 喙
-EYE    = (24, 28, 32, 255)     # 眼
-LEG    = (224, 96, 48, 255)    # 爪
-BLUSH  = (244, 122, 142, 180)  # 害羞红晕
+WHITE  = (253, 246, 230, 255)
+BEAK   = (26, 26, 26, 255)
+EYE    = (24, 28, 32, 255)
+LEG    = (224, 96, 48, 255)
+BLUSH  = (244, 122, 142, 180)
 HEART  = (235, 84, 110, 255)
 ZCOLOR = (150, 196, 206, 255)
 SHADOW = (0, 0, 0, 55)
+FISH_BODY = (202, 214, 222, 255)
+FISH_DARK = (150, 168, 180, 255)
+EGG_SHELL = (252, 244, 224, 255)
+EGG_SPCK  = (196, 158, 96, 255)
 
 
 def heart(d, cx, cy, r, color):
-    pts = []
-    for t in (0.0, 0.2, 0.4, 0.6, 0.8):
-        pass
-    # 用参数方程画心形
     poly = []
     for deg in range(0, 360, 8):
         t = math.radians(deg)
@@ -42,47 +42,56 @@ def heart(d, cx, cy, r, color):
 
 
 def draw_kingfisher(W, H, *, wing="folded", leg_phase=0.0, eye_closed=False,
-                   body_dy=0, blush=False, heart_eye=False, zzz=False):
-    """画一只翠鸟,返回 RGBA Image。wing: folded / midup / up / middown"""
+                    body_dy=0, blush=False, heart_eye=False, zzz=False,
+                    head_up=False, mouth_open=False, alert=False,
+                    head_tilt=0.0, hide_legs=False, fish_in_beak=False,
+                    look_down=False, x_eye=False, tongue=False,
+                    fluff=False):
+    """画一只翠鸟,返回 RGBA Image。wing: folded / midup / up / middown / spread"""
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    s = W / 256.0  # 缩放因子
+    s = W / 256.0
 
     def E(cx, cy, rx, ry, fill):
         d.ellipse([cx - rx, cy - ry, cx + rx, cy + ry], fill=fill)
 
     cx, cy = W * 0.54, H * 0.58 + body_dy * s
 
-    # 脚下软阴影
-    d.ellipse([cx - 60*s, H*0.90, cx + 60*s, H*0.90 + 14*s], fill=SHADOW)
+    # 脚下软阴影(死掉/飞行时不要)
+    if not (hide_legs or wing in ("up", "midup", "middown")):
+        d.ellipse([cx - 60*s, H*0.90, cx + 60*s, H*0.90 + 14*s], fill=SHADOW)
 
     # ---- 身体(橙腹)----
-    E(cx, cy + 6*s, 62*s, 52*s, ORANGE)
-    # 腹部高光
+    body_rx = 62*s + (8*s if fluff else 0)
+    body_ry = 52*s + (8*s if fluff else 0)
+    E(cx, cy + 6*s, body_rx, body_ry, ORANGE)
     E(cx - 10*s, cy + 16*s, 30*s, 26*s, (255, 196, 120, 255))
 
     # ---- 背/披风(青)----
     d.pieslice([cx-72*s, cy-44*s, cx+74*s, cy+34*s], 180, 360, fill=TEAL)
-    # 背部羽毛暗纹
     d.pieslice([cx-10*s, cy-44*s, cx+74*s, cy+10*s], 180, 360, fill=TEAL_D)
 
     # ---- 尾巴(青,右后)----
     tail = [(cx+58*s, cy-2*s), (cx+96*s, cy-22*s),
             (cx+98*s, cy-4*s), (cx+64*s, cy+14*s)]
     d.polygon(tail, fill=TEAL)
-    d.polygon([(cx+74*s, cy-6*s), (cx+92*s, cy-18*s),
-               (cx+84*s, cy-4*s)], fill=TEAL_D)
+    d.polygon([(cx+74*s, cy-6*s), (cx+92*s, cy-18*s), (cx+84*s, cy-4*s)], fill=TEAL_D)
 
     # ---- 翅膀 ----
     wcx, wcy = cx + 4*s, cy + 2*s
     if wing == "folded":
-        # 收拢的翅膀:斜椭圆
         d.ellipse([wcx-40*s, wcy-22*s, wcx+40*s, wcy+22*s], fill=TEAL_D)
         d.ellipse([wcx-30*s, wcy-14*s, wcx+34*s, wcy+16*s], fill=TEAL)
-        # 飞羽分隔线
         d.line([(wcx-20*s, wcy+10*s), (wcx+30*s, wcy-6*s)], fill=TEAL_D, width=max(2, int(3*s)))
+    elif wing == "spread":
+        # 日光浴:两翼向两侧展开
+        for sign in (-1, 1):
+            base = (wcx, wcy + 2*s)
+            tip  = (wcx + sign*86*s, wcy - 18*s)
+            mid  = (wcx + sign*60*s, wcy + 26*s)
+            d.polygon([base, tip, mid], fill=TEAL_D)
+            d.polygon([(base[0], base[1]+6*s), (tip[0], tip[1]+10*s), (mid[0], mid[1]-4*s)], fill=TEAL)
     else:
-        # 扑翅:上展的弧形
         angle = {"midup": -0.5, "up": -1.1, "middown": 0.2}[wing]
         span = 70*s
         tip = (wcx + math.cos(angle)*span*0.2, wcy + math.sin(angle)*span)
@@ -94,55 +103,78 @@ def draw_kingfisher(W, H, *, wing="folded", leg_phase=0.0, eye_closed=False,
         d.line([base_l, tip], fill=TEAL_D, width=max(2, int(3*s)))
 
     # ---- 头(青圆,左前)----
-    hx, hy = cx - 46*s, cy - 30*s
+    head_lift = (14*s) if head_up else 0
+    hx = cx - 46*s + head_tilt * s
+    hy = cy - 30*s - head_lift
     E(hx, hy, 38*s, 36*s, TEAL)
-    # 头顶小撮冠羽
     d.polygon([(hx-8*s, hy-32*s), (hx-2*s, hy-46*s), (hx+6*s, hy-30*s)], fill=TEAL_D)
 
     # ---- 白颊/耳斑 ----
     E(hx + 10*s, hy + 6*s, 16*s, 13*s, WHITE)
-    # 喉部白斑
     E(hx - 4*s, hy + 26*s, 16*s, 10*s, WHITE)
 
     # ---- 喙(黑色长锥,朝左)----
-    by = hy + 6*s
+    by = hy + 6*s + (4*s if look_down else 0)
+    beak_drop = 8*s if mouth_open else 0
+    # 上喙
     d.polygon([(hx-30*s, by-5*s), (hx-72*s, by+2*s),
-               (hx-72*s, by+8*s), (hx-30*s, by+12*s)], fill=BEAK)
-    # 喙基高光
-    d.polygon([(hx-34*s, by-3*s), (hx-50*s, by), (hx-40*s, by+3*s)], fill=(70,70,70,255))
+               (hx-72*s, by+6*s), (hx-30*s, by+10*s)], fill=BEAK)
+    # 下喙(mouth_open 时下移)
+    d.polygon([(hx-30*s, by+8*s), (hx-68*s, by+8*s+beak_drop*0.2),
+               (hx-66*s, by+12*s+beak_drop), (hx-30*s, by+12*s)], fill=(40, 40, 40, 255))
+    # 张嘴时的橙色口腔
+    if mouth_open:
+        d.polygon([(hx-32*s, by+8*s), (hx-60*s, by+8*s+beak_drop*0.4),
+                   (hx-32*s, by+12*s)], fill=(230, 120, 70, 255))
+    # 舌头(死掉)
+    if tongue:
+        d.polygon([(hx-60*s, by+14*s), (hx-72*s, by+22*s), (hx-58*s, by+16*s)], fill=(235, 110, 130, 255))
 
     # ---- 眼睛 ----
-    ex, ey = hx - 6*s, hy - 4*s
+    ex, ey = hx - 6*s, hy - 4*s + (6*s if look_down else 0)
     if heart_eye:
         heart(d, ex, ey, 13*s, HEART)
+    elif x_eye:
+        # 死掉:X 眼
+        r = 7*s
+        for a, b in [((ex-r, ey-r),(ex+r, ey+r)), ((ex-r, ey+r),(ex+r, ey-r))]:
+            d.line([a, b], fill=EYE, width=max(2, int(3*s)))
     elif eye_closed:
-        # 闭眼:一道弯线
         d.arc([ex-10*s, ey-5*s, ex+10*s, ey+9*s], 200, 340, fill=EYE, width=max(2, int(4*s)))
     else:
         E(ex, ey, 8*s, 8*s, WHITE)
-        E(ex + 1*s, ey + 1*s, 6*s, 6*s, EYE)
+        pr = 5*s if alert else 6*s
+        E(ex + 1*s, ey + 1*s, pr, pr, EYE)
         d.ellipse([ex-1*s, ey-4*s, ex+4*s, ey+1*s], fill=WHITE)
+        if alert:  # 锐利眉头
+            d.line([(ex-9*s, ey-9*s), (ex+2*s, ey-6*s)], fill=EYE, width=max(2, int(3*s)))
 
     # ---- 爪(橙)----
     def leg(x_top, x_bot, lift=False):
         y_top = cy + 40*s
         y_bot = (cy + 58*s) if not lift else (cy + 46*s)
         d.line([(x_top, y_top), (x_bot, y_bot)], fill=LEG, width=max(2, int(4*s)))
-        # 脚趾
         for dx in (-6*s, 0, 6*s):
             d.line([(x_bot, y_bot), (x_bot+dx, y_bot+7*s)], fill=LEG, width=max(2, int(3*s)))
-    # walk: leg_phase 0..1 控制左右脚前后
-    left_x  = cx - 16*s + math.cos(leg_phase*math.pi) * 8*s
-    right_x = cx + 16*s - math.cos(leg_phase*math.pi) * 8*s
-    left_lift  = math.sin(leg_phase*math.pi*2) > 0.3
-    right_lift = math.sin(leg_phase*math.pi*2 + math.pi) > 0.3
-    if wing in ("up", "midup", "middown"):
-        # 飞行:爪收起贴腹
-        for x_top in (cx-14*s, cx+12*s):
-            d.line([(x_top, cy+34*s), (x_top+2*s, cy+44*s)], fill=LEG, width=max(2,int(4*s)))
+    if wing in ("up", "midup", "middown") or hide_legs:
+        if not hide_legs:  # 飞行收爪
+            for x_top in (cx-14*s, cx+12*s):
+                d.line([(x_top, cy+34*s), (x_top+2*s, cy+44*s)], fill=LEG, width=max(2, int(4*s)))
     else:
+        left_x  = cx - 16*s + math.cos(leg_phase*math.pi) * 8*s
+        right_x = cx + 16*s - math.cos(leg_phase*math.pi) * 8*s
+        left_lift  = math.sin(leg_phase*math.pi*2) > 0.3
+        right_lift = math.sin(leg_phase*math.pi*2 + math.pi) > 0.3
         leg(left_x, left_x, lift=left_lift)
         leg(right_x, right_x, lift=right_lift)
+
+    # ---- 叼鱼(在喙尖下方)----
+    if fish_in_beak:
+        fx = hx - 78*s
+        fy = by + 24*s
+        d.ellipse([fx-14*s, fy-7*s, fx+14*s, fy+7*s], fill=FISH_BODY)
+        d.polygon([(fx+12*s, fy), (fx+26*s, fy-8*s), (fx+26*s, fy+8*s)], fill=FISH_DARK)
+        d.ellipse([fx-4*s, fy-2*s, fx+1*s, fy+3*s], fill=EYE)  # 鱼眼
 
     # ---- 红晕 ----
     if blush:
@@ -150,57 +182,185 @@ def draw_kingfisher(W, H, *, wing="folded", leg_phase=0.0, eye_closed=False,
 
     # ---- Zzz ----
     if zzz:
-        for i, (tx, ty, ts) in enumerate([(hx+40*s, hy-30*s, 16),
-                                           (hx+54*s, hy-46*s, 22),
-                                           (hx+70*s, hy-66*s, 30)]):
+        for i, (tx, ty) in enumerate([(hx+40*s, hy-30*s),
+                                       (hx+54*s, hy-46*s),
+                                       (hx+70*s, hy-66*s)]):
             d.text((tx-6*s, ty-12*s), "Z", fill=ZCOLOR)
 
     return img
 
 
-def render(name, **kw):
-    big = draw_kingfisher(SIZE*SS, SIZE*SS, **kw)
+def draw_egg(W, H, stage):
+    """stage: 0 整蛋 1 裂纹 2 破壳探头"""
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    s = W / 256.0
+    cx, cy = W * 0.5, H * 0.66
+    rx, ry = 58*s, 74*s
+    import random
+    rnd = random.Random(7)
+
+    if stage < 2:
+        # 整蛋 + 斑点 + 阴影
+        d.ellipse([cx-rx, cy-ry, cx+rx, cy+ry], fill=EGG_SHELL)
+        for _ in range(14):
+            ang = rnd.random()*math.pi*2
+            rr = rnd.random()*0.8
+            px = cx + math.cos(ang)*rx*rr
+            py = cy + math.sin(ang)*ry*rr
+            d.ellipse([px-3*s, py-3*s, px+3*s, py+3*s], fill=EGG_SPCK)
+        d.ellipse([cx-rx*0.7, cy+ry*0.5, cx+rx*0.7, cy+ry*0.5+10*s], fill=SHADOW)
+        if stage >= 1:
+            pts = [(cx-6*s, cy-ry*0.8), (cx+8*s, cy-ry*0.4), (cx-6*s, cy),
+                   (cx+10*s, cy+ry*0.3), (cx-4*s, cy+ry*0.7)]
+            for i in range(len(pts)-1):
+                d.line([pts[i], pts[i+1]], fill=EGG_SPCK, width=max(2, int(3*s)))
+    else:
+        # 破壳:下半壳杯 + 两片碎壳 + 探出的鸟头
+        rimY = cy - ry*0.12
+        cup = [(cx-rx, rimY)]
+        n = 9
+        for i in range(n+1):
+            t = i / n
+            xx = cx - rx + 2*rx*t
+            yy = rimY + (7*s if i % 2 else -7*s)
+            cup.append((xx, yy))
+        cup.append((cx+rx, rimY))
+        steps = 26
+        for i in range(1, steps):
+            t = math.pi + math.pi*(i/steps)   # 下半椭圆
+            cup.append((cx + rx*math.cos(t), cy + ry*math.sin(t)))
+        d.polygon(cup, fill=EGG_SHELL)
+        for _ in range(10):
+            ang = math.pi*rnd.random() + math.pi
+            rr = rnd.random()*0.8
+            px = cx + math.cos(ang)*rx*rr
+            py = cy + math.sin(ang)*ry*rr
+            d.ellipse([px-3*s, py-3*s, px+3*s, py+3*s], fill=EGG_SPCK)
+        d.ellipse([cx-rx*0.7, cy+ry*0.6, cx+rx*0.7, cy+ry*0.6+10*s], fill=SHADOW)
+        # 两片碎壳
+        d.polygon([(cx-rx*0.5, rimY-2*s), (cx-rx*0.95, rimY-28*s),
+                   (cx-rx*0.1, rimY-22*s), (cx-rx*0.2, rimY+2*s)], fill=EGG_SHELL)
+        d.polygon([(cx+rx*0.5, rimY-2*s), (cx+rx*0.95, rimY-28*s),
+                   (cx+rx*0.1, rimY-22*s), (cx+rx*0.2, rimY+2*s)], fill=EGG_SHELL)
+        # 探出的鸟头
+        hcx, hcy = cx, rimY - 24*s
+        d.ellipse([hcx-28*s, hcy-26*s, hcx+28*s, hcy+24*s], fill=TEAL)
+        d.polygon([(hcx-28*s, hcy-4*s), (hcx-58*s, hcy+2*s), (hcx-28*s, hcy+8*s)], fill=BEAK)
+        d.ellipse([hcx+6*s, hcy-14*s, hcx+20*s, hcy], fill=WHITE)
+        d.ellipse([hcx+10*s, hcy-10*s, hcx+18*s, hcy-2*s], fill=EYE)
+    return img
+
+
+def render(name, rotate=0, egg_stage=None, **kw):
+    if egg_stage is not None:
+        big = draw_egg(SIZE*SS, SIZE*SS, egg_stage)
+    else:
+        big = draw_kingfisher(SIZE*SS, SIZE*SS, **kw)
+    if rotate:
+        big = big.rotate(rotate, resample=Image.BICUBIC, expand=False)
     small = big.resize((SIZE, SIZE), Image.LANCZOS)
     small.save(os.path.join(OUT, name + ".png"))
     print("  wrote", name + ".png")
 
 
+def montage(names, out="contact.png"):
+    """把若干帧拼成一张检查图"""
+    cols = 4
+    rows = math.ceil(len(names)/cols)
+    cell = SIZE
+    sheet = Image.new("RGBA", (cols*cell, rows*cell), (24, 28, 34, 255))
+    from PIL import ImageFont
+    for i, (label, fn) in enumerate(names):
+        r, c = divmod(i, cols)
+        p = os.path.join(OUT, fn + ".png")
+        if os.path.exists(p):
+            im = Image.open(p).convert("RGBA")
+            sheet.alpha_composite(im, (c*cell, r*cell))
+    sheet.save(os.path.join(OUT, out))
+    print("  wrote", out)
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
-    # idle:轻微上下浮动
+    # 基础
     render("idle_0", wing="folded", body_dy=0)
     render("idle_1", wing="folded", body_dy=-3)
     render("idle_blink", wing="folded", eye_closed=True)
-    # walk: 4 帧,腿前后交替
     render("walk_0", wing="folded", leg_phase=0.0)
     render("walk_1", wing="folded", leg_phase=0.25)
     render("walk_2", wing="folded", leg_phase=0.5)
     render("walk_3", wing="folded", leg_phase=0.75)
-    # fly: 4 帧扑翅
     render("fly_0", wing="folded")
     render("fly_1", wing="midup")
     render("fly_2", wing="up")
     render("fly_3", wing="middown")
-    # happy(被点):心眼+红晕+小跳
     render("happy_0", wing="folded", heart_eye=True, blush=True, body_dy=-2)
     render("happy_1", wing="midup",  heart_eye=True, blush=True, body_dy=-8)
-    # sleep:闭眼+Zzz+呼吸
     render("sleep_0", wing="folded", eye_closed=True, zzz=True, body_dy=0)
     render("sleep_1", wing="folded", eye_closed=True, zzz=True, body_dy=-2)
 
+    # 习性:俯冲捕鱼相关
+    render("dive_0", wing="folded", hide_legs=True, rotate=90)          # 流线型朝下
+    render("fly_fish_0", wing="folded", fish_in_beak=True)
+    render("fly_fish_1", wing="midup",  fish_in_beak=True)
+    render("fly_fish_2", wing="up",     fish_in_beak=True)
+    render("fly_fish_3", wing="middown", fish_in_beak=True)
+    render("eat_0", wing="folded", fish_in_beak=True, head_up=True)
+    render("eat_1", wing="folded", head_up=True, eye_closed=True)        # 仰头吞下,眯眼满足
+
+    # 习性:鸣唱
+    render("sing_0", wing="folded", head_up=True, mouth_open=True)
+    render("sing_1", wing="midup",  head_up=True, mouth_open=True)
+
+    # 习性:栖枝守候(锐利眼神 + 歪头)
+    render("watch_0", wing="folded", alert=True)
+    render("watch_1", wing="folded", alert=True, head_tilt=-4)
+
+    # 习性:日光浴(展翅蓬毛)
+    render("sun_0", wing="spread", fluff=True, eye_closed=True)
+    render("sun_1", wing="spread", fluff=True)
+
+    # 显示/隐藏:蛋壳 + 死掉
+    render("egg_0", egg_stage=0)
+    render("egg_1", egg_stage=1)
+    render("egg_2", egg_stage=2)
+    render("dead", wing="up", x_eye=True, tongue=True, hide_legs=True, rotate=180)
+
     seq = {
-        "fps": {"idle": 4, "walk": 8, "fly": 10, "happy": 6, "sleep": 2},
+        "fps": {
+            "idle": 4, "walk": 8, "fly": 10, "happy": 6, "sleep": 2,
+            "dive": 8, "fly_fish": 10, "eat": 5, "sing": 6, "watch": 3,
+            "sun": 3, "hover": 10, "egg": 4, "dead": 1
+        },
         "sequences": {
-            "idle":  ["idle_0", "idle_1", "idle_0", "idle_blink"],
-            "walk":  ["walk_0", "walk_1", "walk_2", "walk_3"],
-            "fly":   ["fly_0", "fly_1", "fly_2", "fly_3"],
-            "happy": ["happy_0", "happy_1", "happy_0", "happy_1"],
-            "sleep": ["sleep_0", "sleep_1"]
+            "idle":     ["idle_0", "idle_1", "idle_0", "idle_blink"],
+            "walk":     ["walk_0", "walk_1", "walk_2", "walk_3"],
+            "fly":      ["fly_0", "fly_1", "fly_2", "fly_3"],
+            "hover":    ["fly_1", "fly_2", "fly_1", "fly_3"],   # 悬停=原地振翅
+            "happy":    ["happy_0", "happy_1", "happy_0", "happy_1"],
+            "sleep":    ["sleep_0", "sleep_1"],
+            "dive":     ["dive_0"],
+            "fly_fish": ["fly_fish_0", "fly_fish_1", "fly_fish_2", "fly_fish_3"],
+            "eat":      ["eat_0", "eat_1"],
+            "sing":     ["sing_0", "sing_1"],
+            "watch":    ["watch_0", "watch_1"],
+            "sun":      ["sun_0", "sun_1"],
+            "egg":      ["egg_0", "egg_0", "egg_1", "egg_1", "egg_2"],
+            "dead":     ["dead"]
         }
     }
     with open(os.path.join(OUT, "sprites.json"), "w") as f:
         json.dump(seq, f, indent=2)
     print("  wrote sprites.json")
+
+    # 检查图
+    montage([
+        ("dive", "dive_0"), ("fly_fish", "fly_fish_0"), ("eat", "eat_0"),
+        ("sing", "sing_0"), ("watch", "watch_0"), ("sun", "sun_0"),
+        ("egg0", "egg_0"), ("egg1", "egg_1"), ("egg2", "egg_2"),
+        ("dead", "dead"),
+    ])
 
 
 def gen_peep():
@@ -210,17 +370,13 @@ def gen_peep():
     dur = 0.16
     n = int(sr * dur)
     frames = []
+    phase = 0.0
     for i in range(n):
         t = i / sr
-        # 频率从 1700Hz 扫到 2600Hz
         f = 1700 + (2600 - 1700) * (i / n)
-        # 加一点颤音
         f += 40 * math.sin(2 * math.pi * 18 * t)
-        env = math.sin(math.pi * i / n)            # 正弦包络(淡入淡出)
+        env = math.sin(math.pi * i / n)
         amp = 0.35 * env
-        # 累积相位
-        if i == 0:
-            phase = 0.0
         phase += 2 * math.pi * f / sr
         s = amp * math.sin(phase)
         frames.append(int(max(-1, min(1, s)) * 32767))

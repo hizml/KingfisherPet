@@ -4,7 +4,16 @@
     "walk": 8,
     "fly": 10,
     "happy": 6,
-    "sleep": 2
+    "sleep": 2,
+    "dive": 8,
+    "fly_fish": 10,
+    "eat": 5,
+    "sing": 6,
+    "watch": 3,
+    "sun": 3,
+    "hover": 10,
+    "egg": 4,
+    "dead": 1
   },
   "sequences": {
     "idle": [
@@ -25,6 +34,12 @@
       "fly_2",
       "fly_3"
     ],
+    "hover": [
+      "fly_1",
+      "fly_2",
+      "fly_1",
+      "fly_3"
+    ],
     "happy": [
       "happy_0",
       "happy_1",
@@ -34,6 +49,41 @@
     "sleep": [
       "sleep_0",
       "sleep_1"
+    ],
+    "dive": [
+      "dive_0"
+    ],
+    "fly_fish": [
+      "fly_fish_0",
+      "fly_fish_1",
+      "fly_fish_2",
+      "fly_fish_3"
+    ],
+    "eat": [
+      "eat_0",
+      "eat_1"
+    ],
+    "sing": [
+      "sing_0",
+      "sing_1"
+    ],
+    "watch": [
+      "watch_0",
+      "watch_1"
+    ],
+    "sun": [
+      "sun_0",
+      "sun_1"
+    ],
+    "egg": [
+      "egg_0",
+      "egg_0",
+      "egg_1",
+      "egg_1",
+      "egg_2"
+    ],
+    "dead": [
+      "dead"
     ]
   }
 }

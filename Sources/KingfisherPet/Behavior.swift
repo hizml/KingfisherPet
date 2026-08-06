@@ -1,7 +1,8 @@
 import AppKit
 import Foundation
 
-/// 宠物行为状态机:决定 idle / walk / fly / sleep / happy,并移动窗口
+/// 宠物行为状态机:idle / walk / fly / hover / dive / fly_fish / eat / sing /
+/// dart / watch / sun / sleep / happy / egg / dead,并移动窗口、触发特效。
 final class Behavior: PetViewDelegate {
 
     private weak var window: NSWindow?
@@ -9,8 +10,8 @@ final class Behavior: PetViewDelegate {
 
     private var thinkTimer: Timer?
     private var current = "idle"
-    private var busy = false          // 正在执行 walk/fly 这种带动画的动作
-    private var onScreen = true
+    private var busy = false          // 正在执行一个多阶段动作
+    private var onScreen = true       // 用户意图:是否可见
 
     private let size = CGSize(width: 160, height: 160)
 
@@ -20,11 +21,14 @@ final class Behavior: PetViewDelegate {
         view.delegate = self
     }
 
+    // MARK: - 几何
+    private var screen: NSScreen? { window?.screen ?? NSScreen.main }
+    private var area: CGRect { screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero }
+
     // MARK: - 启动
     func start() {
         placeAtTopRight()
-        enter("idle")
-        scheduleThink()
+        hatchIn()
     }
 
     // MARK: - PetViewDelegate
@@ -32,38 +36,27 @@ final class Behavior: PetViewDelegate {
         SpriteLibrary.shared.playPeep()
         enter("happy")
         busy = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
-            guard let self = self else { return }
-            if self.current == "happy" {
-                self.busy = false
-                self.enter("idle")
-                self.scheduleThink()
-            }
+        hold(0.8) { [weak self] in
+            guard let self = self, self.current == "happy" else { return }
+            self.finish()
         }
     }
 
     func petViewDidBeginDrag() {
         busy = true
         thinkTimer?.invalidate()
-        enter("drag")   // 无序列 → 用 idle_0 占位
-        view?.facingRight = view?.facingRight ?? false
+        enter("idle")
     }
 
     func petViewDidEndDrag() {
-        busy = false
-        enter("idle")
-        scheduleThink()
+        finish()
     }
 
-    // MARK: - 状态切换
-    private func enter(_ s: String) {
-        current = s
-        if s == "drag" {
-            // 拖拽时停帧,用 idle_0
-            view?.state = "idle"
-        } else {
-            view?.state = s
-        }
+    // MARK: - 状态
+    private func enter(_ s: String) { current = s; view?.state = s }
+    private func finish() { busy = false; enter("idle"); scheduleThink() }
+    private func hold(_ t: TimeInterval, _ done: @escaping () -> Void) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + t, execute: done)
     }
 
     // MARK: - 定时思考
@@ -77,78 +70,186 @@ final class Behavior: PetViewDelegate {
 
     private func think() {
         guard !busy else { scheduleThink(); return }
-        let r = Int.random(in: 0..<100)
-        switch r {
-        case 0..<40:        // 继续待机
-            enter("idle"); scheduleThink()
-        case 40..<72:       // 沿栖息地走一段
-            startWalk()
-        case 72..<90:       // 飞到新位置
-            startFly()
-        default:            // 打盹
-            startSleep()
+        switch Int.random(in: 0..<100) {
+        case 0..<25:   enter("idle"); scheduleThink()
+        case 25..<47:  startWalk()
+        case 47..<55:  startFly()
+        case 55..<63:  startFish()
+        case 63..<71:  startSing()
+        case 71..<79:  startDart()
+        case 79..<87:  startWatch()
+        case 87..<92:  startSun()
+        default:       startSleep()
         }
     }
 
-    // MARK: - 动作:走
+    // MARK: - 走
     private func startWalk() {
-        guard let window = window, let screen = window.screen ?? NSScreen.main else {
-            enter("idle"); scheduleThink(); return
-        }
-        busy = true
+        guard let window = window, screen != nil else { finish(); return }
+        busy = true; thinkTimer?.invalidate()
         enter("walk")
-        let area = screen.visibleFrame
-        let cur = window.frame.origin
+        let a = area, cur = window.frame.origin
         let step = CGFloat.random(in: 60...180) * (Bool.random() ? 1 : -1)
-        var targetX = cur.x + step
-        targetX = max(area.minX + 8, min(targetX, area.maxX - size.width - 8))
-        view?.facingRight = targetX < cur.x ? false : true   // 朝左=默认;向右走要翻转
-        let target = CGPoint(x: targetX, y: cur.y)
-        let dist = abs(targetX - cur.x)
-        animateWindow(to: target, duration: max(0.6, Double(dist) / 90.0)) { [weak self] in
-            guard let self = self else { return }
-            self.busy = false
-            self.enter("idle")
-            self.scheduleThink()
-        }
+        var tx = cur.x + step
+        tx = max(a.minX + 8, min(tx, a.maxX - size.width - 8))
+        view?.facingRight = tx > cur.x
+        let dist = abs(tx - cur.x)
+        animateWindow(to: CGPoint(x: tx, y: cur.y),
+                      duration: max(0.6, Double(dist) / 90.0)) { [weak self] in self?.finish() }
     }
 
-    // MARK: - 动作:飞
+    // MARK: - 飞(随机挪窝)
     private func startFly() {
-        guard let window = window, let screen = window.screen ?? NSScreen.main else {
-            enter("idle"); scheduleThink(); return
-        }
-        busy = true
+        guard let window = window, screen != nil else { finish(); return }
+        busy = true; thinkTimer?.invalidate()
         enter("fly")
-        let area = screen.visibleFrame
-        let targetX = CGFloat.random(in: area.minX + 8 ... area.maxX - size.width - 8)
-        // 顶部(菜单栏下)或底部(Dock 上)随机栖息
-        let perchTop = Bool.random()
-        let targetY = perchTop
-            ? (area.maxY - size.height)
-            : area.minY
-        view?.facingRight = targetX < window.frame.origin.x ? false : true
-        animateWindow(to: CGPoint(x: targetX, y: targetY), duration: 1.3) { [weak self] in
-            guard let self = self else { return }
-            self.busy = false
-            self.enter("idle")
-            self.scheduleThink()
-        }
+        let a = area
+        let tx = CGFloat.random(in: a.minX + 8 ... a.maxX - size.width - 8)
+        let ty = Bool.random() ? (a.maxY - size.height) : a.minY
+        view?.facingRight = tx < window.frame.origin.x ? false : true
+        animateWindow(to: CGPoint(x: tx, y: ty), duration: 1.3) { [weak self] in self?.finish() }
     }
 
-    // MARK: - 动作:睡
-    private func startSleep() {
-        busy = true
-        enter("sleep")
-        DispatchQueue.main.asyncAfter(deadline: .now() + Double.random(in: 5...9)) { [weak self] in
+    // MARK: - 俯冲捕鱼(招牌)
+    func startFish() {
+        guard let window = window, let scr = screen else { finish(); return }
+        busy = true; thinkTimer?.invalidate()
+        let a = scr.visibleFrame
+        let topY = a.maxY - size.height
+        let diveY = a.minY
+        let halfW = size.width / 2
+        let targetX = CGFloat.random(in: (a.minX + halfW + 40) ... max(a.minX + halfW + 41, a.maxX - halfW - 40))
+        view?.facingRight = targetX > window.frame.midX
+
+        // ① 飞到顶部
+        enter("fly")
+        animateWindow(to: CGPoint(x: targetX - halfW, y: topY), duration: 0.9) { [weak self] in
             guard let self = self else { return }
-            if self.current == "sleep" {
-                self.busy = false
-                self.enter("idle")
-                self.scheduleThink()
+            // ② 悬停瞄准
+            self.enter("hover")
+            self.hold(0.7) {
+                // ③ 俯冲入水
+                self.enter("dive")
+                self.animateWindow(to: CGPoint(x: targetX - self.size.width / 2, y: diveY),
+                                   duration: 0.45) { [weak self] in
+                    guard let self = self else { return }
+                    // ④ 水花 + 叼鱼弹出
+                    Effects.splash(at: CGPoint(x: targetX, y: diveY + 8), on: self.screen)
+                    self.enter("fly_fish")
+                    let perchX = CGFloat.random(in: (a.minX + 30) ... max(a.minX + 31, a.maxX - self.size.width - 30))
+                    let perchY = Bool.random() ? topY : (a.minY + 20)
+                    self.view?.facingRight = perchX < window.frame.origin.x
+                    self.animateWindow(to: CGPoint(x: perchX, y: perchY), duration: 0.95) { [weak self] in
+                        guard let self = self else { return }
+                        // ⑤ 仰头吞
+                        self.enter("eat")
+                        SpriteLibrary.shared.playPeep()
+                        self.hold(1.1) { self.finish() }
+                    }
+                }
             }
         }
     }
+
+    // MARK: - 鸣唱
+    func startSing() {
+        busy = true; thinkTimer?.invalidate()
+        enter("sing")
+        Effects.notes(at: CGPoint(x: window?.frame.midX ?? 0,
+                                  y: (window?.frame.maxY ?? 0) + 14), on: screen)
+        SpriteLibrary.shared.playPeep()
+        hold(Double.random(in: 1.2...1.6)) { [weak self] in self?.finish() }
+    }
+
+    // MARK: - 低空快飞掠过
+    func startDart() {
+        guard let window = window, screen != nil else { finish(); return }
+        busy = true; thinkTimer?.invalidate()
+        enter("fly")
+        let a = area
+        let toLeft = Bool.random()
+        let tx = toLeft ? (a.minX + 20) : (a.maxX - size.width - 20)
+        view?.facingRight = !toLeft
+        animateWindow(to: CGPoint(x: tx, y: window.frame.origin.y),
+                      duration: 0.55) { [weak self] in self?.finish() }
+    }
+
+    // MARK: - 栖枝守候探头
+    func startWatch() {
+        busy = true; thinkTimer?.invalidate()
+        enter("watch")
+        hold(Double.random(in: 1.4...2.2)) { [weak self] in self?.finish() }
+    }
+
+    // MARK: - 日光浴(彩蛋)
+    func startSun() {
+        busy = true; thinkTimer?.invalidate()
+        enter("sun")
+        hold(Double.random(in: 3...5)) { [weak self] in self?.finish() }
+    }
+
+    // MARK: - 打盹
+    func startSleep() {
+        busy = true; thinkTimer?.invalidate()
+        enter("sleep")
+        hold(Double.random(in: 5...9)) { [weak self] in
+            guard let self = self, self.current == "sleep" else { return }
+            self.finish()
+        }
+    }
+
+    // MARK: - 显示:破壳而出
+    func hatchIn() {
+        busy = true; thinkTimer?.invalidate()
+        onScreen = true
+        window?.makeKeyAndOrderFront(nil)
+        enter("egg")
+        hold(1.4) { [weak self] in
+            guard let self = self else { return }
+            self.finish()
+        }
+    }
+
+    // MARK: - 隐藏:死掉 → 自由落体掉出屏幕
+    func fallAway() {
+        guard let window = window, let scr = screen else { onScreen = false; return }
+        busy = true; thinkTimer?.invalidate()
+        onScreen = false
+        enter("dead")
+        let a = scr.visibleFrame
+        let startX = window.frame.origin.x
+        hold(0.3) { [weak self] in
+            guard let self = self else { return }
+            let endY = a.minY - self.size.height - 400
+            self.animateWindow(to: CGPoint(x: startX, y: endY), duration: 0.85) { [weak self] in
+                guard let self = self else { return }
+                self.window?.orderOut(nil)
+                self.busy = false
+            }
+        }
+    }
+
+    // MARK: - 外部控制
+    func callOver() {
+        guard let window = window, let scr = screen else { return }
+        busy = false; thinkTimer?.invalidate()
+        enter("fly")
+        let a = scr.visibleFrame
+        let mx = NSEvent.mouseLocation.x
+        let tx = max(a.minX + 8, min(mx - size.width / 2, a.maxX - size.width - 8))
+        let ty = a.minY + a.height * 0.55
+        view?.facingRight = tx < window.frame.origin.x
+        animateWindow(to: CGPoint(x: tx, y: ty), duration: 1.0) { [weak self] in
+            self?.finish()
+        }
+    }
+
+    func toggleVisibility() { setVisible(!onScreen) }
+    func setVisible(_ visible: Bool) {
+        if visible { if !onScreen { placeAtTopRight(); hatchIn() } }
+        else { if onScreen { fallAway() } }
+    }
+    var isVisible: Bool { onScreen }
 
     // MARK: - 工具
     private func animateWindow(to origin: CGPoint, duration: TimeInterval, done: @escaping () -> Void) {
@@ -163,43 +264,9 @@ final class Behavior: PetViewDelegate {
     }
 
     private func placeAtTopRight() {
-        guard let window = window, let screen = window.screen ?? NSScreen.main else { return }
-        let area = screen.visibleFrame
-        let origin = CGPoint(x: area.maxX - size.width - 30,
-                             y: area.maxY - size.height)
+        guard let window = window, screen != nil else { return }
+        let a = area
+        let origin = CGPoint(x: a.maxX - size.width - 30, y: a.maxY - size.height)
         window.setFrame(CGRect(origin: origin, size: size), display: true)
     }
-
-    // MARK: - 外部控制(菜单调用)
-    func callOver() {
-        busy = false
-        thinkTimer?.invalidate()
-        enter("fly")
-        guard let window = window, let screen = window.screen ?? NSScreen.main else { return }
-        let area = screen.visibleFrame
-        // 飞到屏幕中部偏上,靠近鼠标 X
-        let mx = NSEvent.mouseLocation.x
-        let targetX = max(area.minX + 8, min(mx - size.width / 2, area.maxX - size.width - 8))
-        let targetY = area.minY + area.height * 0.55
-        view?.facingRight = targetX < window.frame.origin.x ? false : true
-        animateWindow(to: CGPoint(x: targetX, y: targetY), duration: 1.0) { [weak self] in
-            self?.enter("idle")
-            self?.scheduleThink()
-        }
-    }
-
-    func toggleVisibility() {
-        setVisible(!onScreen)
-    }
-
-    func setVisible(_ visible: Bool) {
-        onScreen = visible
-        if visible {
-            window?.makeKeyAndOrderFront(nil)
-        } else {
-            window?.orderOut(nil)
-        }
-    }
-
-    var isVisible: Bool { onScreen }
 }
