@@ -108,7 +108,21 @@ final class Behavior: PetViewDelegate {
 
     func petViewDidEndDrag() {
         dragging = false
-        finish()
+        if isAirborne() {
+            startFly()          // 空中松手 → 自己飞走落下
+        } else {
+            finish()
+        }
+    }
+
+    /// 脚下没有近表面(Dock/窗口)= 在空中
+    private func isAirborne() -> Bool {
+        guard let w = window, let scr = screen else { return true }
+        let ground = scr.visibleFrame.minY + 6
+        let feetY = w.frame.minY + feetOffset
+        let (ly, _) = WindowTracker.landingSpot(belowX: w.frame.midX,
+                                                fromY: feetY + 40, groundY: ground)
+        return abs(ly - feetY) > 30
     }
 
     // MARK: - 状态
