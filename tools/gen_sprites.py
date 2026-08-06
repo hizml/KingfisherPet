@@ -6,7 +6,7 @@
 输出到 ../Resources/Sprites/*.png 以及 sprites.json、../Resources/peep.wav。
 """
 import math, os, json, wave, struct
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 OUT = os.path.join(os.path.dirname(__file__), "..", "Resources", "Sprites")
 SS = 4            # 超采样倍数
@@ -25,6 +25,26 @@ BLUSH  = (244, 122, 142, 180)
 HEART  = (235, 84, 110, 255)
 ZCOLOR = (150, 196, 206, 255)
 SHADOW = (0, 0, 0, 55)
+
+# 系统字体(用于 zzz 等文字),带缓存
+_FONT_PATHS = ["/System/Library/Fonts/Helvetica.ttc",
+               "/System/Library/Fonts/Supplemental/Arial.ttf"]
+_FONT_CACHE = {}
+
+def font(size):
+    if size in _FONT_CACHE:
+        return _FONT_CACHE[size]
+    f = None
+    for p in _FONT_PATHS:
+        try:
+            f = ImageFont.truetype(p, size)
+            break
+        except Exception:
+            pass
+    if f is None:
+        f = ImageFont.load_default()
+    _FONT_CACHE[size] = f
+    return f
 FISH_BODY = (202, 214, 222, 255)
 FISH_DARK = (150, 168, 180, 255)
 EGG_SHELL = (252, 244, 224, 255)
@@ -46,7 +66,8 @@ def draw_kingfisher(W, H, *, wing="folded", leg_phase=0.0, eye_closed=False,
                     head_up=False, mouth_open=False, alert=False,
                     head_tilt=0.0, hide_legs=False, fish_in_beak=False,
                     look_down=False, x_eye=False, tongue=False,
-                    fluff=False):
+                    fluff=False, tail_wag=0.0, butt_up=False, sweat=False,
+                    fish_bite=0.0, head_raise_amt=0.0):
     """画一只翠鸟,返回 RGBA Image。wing: folded / midup / up / middown / spread"""
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
@@ -71,11 +92,14 @@ def draw_kingfisher(W, H, *, wing="folded", leg_phase=0.0, eye_closed=False,
     d.pieslice([cx-72*s, cy-44*s, cx+74*s, cy+34*s], 180, 360, fill=TEAL)
     d.pieslice([cx-10*s, cy-44*s, cx+74*s, cy+10*s], 180, 360, fill=TEAL_D)
 
-    # ---- 尾巴(青,右后)----
-    tail = [(cx+58*s, cy-2*s), (cx+96*s, cy-22*s),
-            (cx+98*s, cy-4*s), (cx+64*s, cy+14*s)]
+    # ---- 尾巴(青,右后;butt_up 翘起 + tail_wag 左右摆)----
+    ty = (-14*s) if butt_up else 0
+    tw = tail_wag * s
+    tail = [(cx+58*s+tw, cy-2*s+ty), (cx+96*s+tw, cy-22*s+ty),
+            (cx+98*s+tw, cy-4*s+ty), (cx+64*s+tw, cy+14*s+ty)]
     d.polygon(tail, fill=TEAL)
-    d.polygon([(cx+74*s, cy-6*s), (cx+92*s, cy-18*s), (cx+84*s, cy-4*s)], fill=TEAL_D)
+    d.polygon([(cx+74*s+tw, cy-6*s+ty), (cx+92*s+tw, cy-18*s+ty),
+               (cx+84*s+tw, cy-4*s+ty)], fill=TEAL_D)
 
     # ---- 翅膀 ----
     wcx, wcy = cx + 4*s, cy + 2*s
@@ -103,7 +127,7 @@ def draw_kingfisher(W, H, *, wing="folded", leg_phase=0.0, eye_closed=False,
         d.line([base_l, tip], fill=TEAL_D, width=max(2, int(3*s)))
 
     # ---- 头(青圆,左前)----
-    head_lift = (14*s) if head_up else 0
+    head_lift = (14*s if head_up else 0) + head_raise_amt * s
     hx = cx - 46*s + head_tilt * s
     hy = cy - 30*s - head_lift
     E(hx, hy, 38*s, 36*s, TEAL)
@@ -149,6 +173,12 @@ def draw_kingfisher(W, H, *, wing="folded", leg_phase=0.0, eye_closed=False,
         if alert:  # 锐利眉头
             d.line([(ex-9*s, ey-9*s), (ex+2*s, ey-6*s)], fill=EYE, width=max(2, int(3*s)))
 
+    # ---- 用力汗滴 ----
+    if sweat:
+        sx, sy = hx + 30*s, hy - 16*s
+        d.polygon([(sx-4*s, sy), (sx, sy-12*s), (sx+4*s, sy)], fill=(120, 200, 230, 255))
+        d.ellipse([sx-4*s, sy-2*s, sx+4*s, sy+6*s], fill=(120, 200, 230, 255))
+
     # ---- 爪(橙)----
     def leg(x_top, x_bot, lift=False):
         y_top = cy + 40*s
@@ -168,24 +198,29 @@ def draw_kingfisher(W, H, *, wing="folded", leg_phase=0.0, eye_closed=False,
         leg(left_x, left_x, lift=left_lift)
         leg(right_x, right_x, lift=right_lift)
 
-    # ---- 叼鱼(在喙尖下方)----
-    if fish_in_beak:
-        fx = hx - 78*s
-        fy = by + 24*s
-        d.ellipse([fx-14*s, fy-7*s, fx+14*s, fy+7*s], fill=FISH_BODY)
-        d.polygon([(fx+12*s, fy), (fx+26*s, fy-8*s), (fx+26*s, fy+8*s)], fill=FISH_DARK)
-        d.ellipse([fx-4*s, fy-2*s, fx+1*s, fy+3*s], fill=EYE)  # 鱼眼
+    # ---- 叼鱼/吞鱼(fish_bite: 0=完整 1=吃完)----
+    bite = 0.0 if fish_in_beak else fish_bite
+    if fish_in_beak or (0.0 < fish_bite < 1.0):
+        fl = 14*s * (1 - bite * 0.85)
+        if fl > 2*s:
+            fx = (hx - 78*s) + bite * 34*s    # 鱼往喙里送
+            fy = by + 24*s - bite * 8*s
+            d.ellipse([fx-fl, fy-7*s, fx+fl, fy+7*s], fill=FISH_BODY)
+            d.polygon([(fx+fl*0.8, fy), (fx+fl*1.8, fy-8*s),
+                       (fx+fl*1.8, fy+8*s)], fill=FISH_DARK)
+            if bite < 0.6:
+                d.ellipse([fx-4*s, fy-2*s, fx+1*s, fy+3*s], fill=EYE)  # 鱼眼
 
     # ---- 红晕 ----
     if blush:
         E(hx + 14*s, hy + 14*s, 8*s, 6*s, BLUSH)
 
-    # ---- Zzz ----
+    # ---- Zzz(用真字体,递增小写 z,经典睡觉符号)----
     if zzz:
-        for i, (tx, ty) in enumerate([(hx+40*s, hy-30*s),
-                                       (hx+54*s, hy-46*s),
-                                       (hx+70*s, hy-66*s)]):
-            d.text((tx-6*s, ty-12*s), "Z", fill=ZCOLOR)
+        for tx, ty, sz in [(hx + 34*s, hy - 22*s, 20),
+                           (hx + 52*s, hy - 42*s, 30),
+                           (hx + 74*s, hy - 68*s, 42)]:
+            d.text((tx, ty), "z", font=font(int(sz*s)), fill=ZCOLOR)
 
     return img
 
@@ -297,8 +332,8 @@ def main():
     render("fly_3", wing="middown")
     render("happy_0", wing="folded", heart_eye=True, blush=True, body_dy=-2)
     render("happy_1", wing="midup",  heart_eye=True, blush=True, body_dy=-8)
-    render("sleep_0", wing="folded", eye_closed=True, zzz=True, body_dy=0)
-    render("sleep_1", wing="folded", eye_closed=True, zzz=True, body_dy=-2)
+    render("sleep_0", wing="folded", eye_closed=True, body_dy=0)
+    render("sleep_1", wing="folded", eye_closed=True, body_dy=-2)
 
     # 习性:俯冲捕鱼相关
     render("dive_0", wing="folded", hide_legs=True, rotate=90)          # 流线型朝下
@@ -306,8 +341,10 @@ def main():
     render("fly_fish_1", wing="midup",  fish_in_beak=True)
     render("fly_fish_2", wing="up",     fish_in_beak=True)
     render("fly_fish_3", wing="middown", fish_in_beak=True)
-    render("eat_0", wing="folded", fish_in_beak=True, head_up=True)
-    render("eat_1", wing="folded", head_up=True, eye_closed=True)        # 仰头吞下,眯眼满足
+    render("eat_0", wing="folded", fish_in_beak=True, head_up=True, mouth_open=True)
+    render("eat_1", wing="folded", fish_bite=0.55, head_up=True, mouth_open=True)
+    render("eat_2", wing="folded", fish_bite=1.0, head_up=True,
+           head_raise_amt=10, eye_closed=True)                            # 仰脖吞下,眯眼满足
 
     # 习性:鸣唱
     render("sing_0", wing="folded", head_up=True, mouth_open=True)
@@ -327,11 +364,15 @@ def main():
     render("egg_2", egg_stage=2)
     render("dead", wing="up", x_eye=True, tongue=True, hide_legs=True, rotate=180)
 
+    # 吃完拉屎:翘屁股 + 尾巴摆 + 汗滴
+    render("poop_0", wing="folded", butt_up=True, tail_wag=-5, sweat=True, body_dy=4)
+    render("poop_1", wing="folded", butt_up=True, tail_wag=5, sweat=True, body_dy=4)
+
     seq = {
         "fps": {
             "idle": 4, "walk": 8, "fly": 10, "happy": 6, "sleep": 2,
-            "dive": 8, "fly_fish": 10, "eat": 5, "sing": 6, "watch": 3,
-            "sun": 3, "hover": 10, "egg": 4, "dead": 1
+            "dive": 8, "fly_fish": 10, "eat": 4, "sing": 6, "watch": 3,
+            "sun": 3, "hover": 10, "egg": 4, "dead": 1, "poop": 6
         },
         "sequences": {
             "idle":     ["idle_0", "idle_1", "idle_0", "idle_blink"],
@@ -342,12 +383,13 @@ def main():
             "sleep":    ["sleep_0", "sleep_1"],
             "dive":     ["dive_0"],
             "fly_fish": ["fly_fish_0", "fly_fish_1", "fly_fish_2", "fly_fish_3"],
-            "eat":      ["eat_0", "eat_1"],
+            "eat":      ["eat_0", "eat_0", "eat_1", "eat_2"],
             "sing":     ["sing_0", "sing_1"],
             "watch":    ["watch_0", "watch_1"],
             "sun":      ["sun_0", "sun_1"],
             "egg":      ["egg_0", "egg_0", "egg_1", "egg_1", "egg_2"],
-            "dead":     ["dead"]
+            "dead":     ["dead"],
+            "poop":     ["poop_0", "poop_1", "poop_0", "poop_1", "poop_0"]
         }
     }
     with open(os.path.join(OUT, "sprites.json"), "w") as f:
@@ -356,10 +398,11 @@ def main():
 
     # 检查图
     montage([
-        ("dive", "dive_0"), ("fly_fish", "fly_fish_0"), ("eat", "eat_0"),
+        ("dive", "dive_0"), ("fly_fish", "fly_fish_0"), ("eat0", "eat_0"),
+        ("eat1", "eat_1"), ("eat2", "eat_2"),
         ("sing", "sing_0"), ("watch", "watch_0"), ("sun", "sun_0"),
         ("egg0", "egg_0"), ("egg1", "egg_1"), ("egg2", "egg_2"),
-        ("dead", "dead"),
+        ("dead", "dead"), ("poop", "poop_0"),
     ])
 
 
