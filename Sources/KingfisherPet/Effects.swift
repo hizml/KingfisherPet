@@ -235,4 +235,53 @@ enum Effects {
         }
         e.close(after: 1.9)
     }
+
+    /// 日光浴的太阳:在 point 处一个旋转光芒 + 脉冲的太阳盘,持续 duration 秒
+    static func sun(at point: CGPoint, on screen: NSScreen?, duration: TimeInterval) {
+        let size = CGSize(width: 120, height: 120)
+        let e = Effect(centeredAt: point, size: size, on: screen, level: .statusBar) { v in
+            guard let layer = v.layer else { return }
+            let c = CGPoint(x: size.width / 2, y: size.height / 2)
+
+            // 光芒(三角形)
+            let rays = CAShapeLayer()
+            rays.bounds = CGRect(origin: .zero, size: size)
+            rays.position = c
+            let path = CGMutablePath()
+            let n = 12, inner: CGFloat = 22, outer: CGFloat = 48, hw: CGFloat = 0.13
+            for i in 0..<n {
+                let a = CGFloat(i) / CGFloat(n) * 2 * .pi
+                path.move(to: CGPoint(x: c.x + cos(a - hw) * inner, y: c.y + sin(a - hw) * inner))
+                path.addLine(to: CGPoint(x: c.x + cos(a) * outer, y: c.y + sin(a) * outer))
+                path.addLine(to: CGPoint(x: c.x + cos(a + hw) * inner, y: c.y + sin(a + hw) * inner))
+            }
+            rays.path = path
+            rays.fillColor = NSColor(calibratedRed: 1, green: 0.8, blue: 0.25, alpha: 0.92).cgColor
+            let rot = CABasicAnimation(keyPath: "transform.rotation.z")
+            rot.fromValue = 0.0
+            rot.toValue = 2.0 * Double.pi
+            rot.duration = 14
+            rot.repeatCount = .infinity
+            rays.add(rot, forKey: "r")
+
+            // 太阳盘
+            let disk = CALayer()
+            disk.bounds = CGRect(x: 0, y: 0, width: 40, height: 40)
+            disk.position = c
+            disk.cornerRadius = 20
+            disk.backgroundColor = NSColor(calibratedRed: 1, green: 0.86, blue: 0.38, alpha: 1).cgColor
+            let pulse = CABasicAnimation(keyPath: "transform.scale")
+            pulse.fromValue = 0.95
+            pulse.toValue = 1.1
+            pulse.duration = 1.4
+            pulse.autoreverses = true
+            pulse.repeatCount = .infinity
+            pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            disk.add(pulse, forKey: "p")
+
+            layer.addSublayer(rays)
+            layer.addSublayer(disk)
+        }
+        e.close(after: duration)
+    }
 }

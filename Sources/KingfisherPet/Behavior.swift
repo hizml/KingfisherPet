@@ -284,11 +284,15 @@ final class Behavior: PetViewDelegate {
         hold(Double.random(in: 1.4...2.2)) { [weak self] in self?.finish() }
     }
 
-    // MARK: - 日光浴(彩蛋)
+    // MARK: - 日光浴(彩蛋):头顶斜上方出现一个照射的太阳
     func startSun() {
+        guard let w = window else { finish(); return }
         busy = true; thinkTimer?.invalidate()
         enter("sun")
-        hold(Double.random(in: 3...5)) { [weak self] in self?.finish() }
+        let dur = Double.random(in: 3...5)
+        let sunAt = CGPoint(x: w.frame.midX + 74, y: w.frame.maxY + 74)   // 头顶斜上方
+        Effects.sun(at: sunAt, on: screen, duration: dur)
+        hold(dur) { [weak self] in self?.finish() }
     }
 
     // MARK: - 啄屏幕(连啄几次;整组随机决定是否啄裂,啄裂则每啄让裂纹长大)
