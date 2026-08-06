@@ -54,7 +54,13 @@ SpriteLibrary            启动加载所有 png + sprites.json;预计算每帧 a
 
 状态机 `Behavior` 的状态(都对应 `sprites.json` 里的序列):idle / walk / fly / hover / dive / fly_fish / eat / sing / dart / watch / sun / sleep / happy / egg / dead。多阶段动作(如 `startFish`)用 `animateWindow(...){ done }` 的完成回调 + `hold(t){}` 串成阶段链。
 
-特效(`Effects.swift`):水花 / 音符是**独立的短命透明 click-through 窗口**(`Effect` 类,靠 `Effect.active` 静态数组保活,播完 `orderOut` 自撤),因为宠物主窗口只有 160×160、装不下屏幕底的水花。俯冲捕鱼入水时在 `(targetX, minY+8)` 放水花;鸣唱时在鸟头上方放音符。
+特效(`Effects.swift`):水花 / 音符 / 鸟屎 / zzz 是**独立的短命透明 click-through 窗口**(`Effect` 类,靠 `Effect.active` 静态数组保活,播完 `orderOut` 自撤),因为宠物主窗口只有 160×160、装不下屏幕底的水花。俯冲捕鱼入水时在 `(targetX, minY+8)` 放水花;鸣唱时在鸟头上方放音符;拉屎从屁股掉白色鸟屎;打盹时 zzz 从鸟头往上飞(带描边)。**注意**:所有粒子层模型 `opacity` 必须 = 0,否则动画播完后图层回弹到初始位置闪现一下(鬼影 bug)。
+
+两个**常驻**透明 click-through 覆盖层(30fps timer 读鸟窗口位置):
+- `ShadowController`:屏幕底一条,按系统时间算太阳方位(右升左落)驱动一坨 `shadow.png` 柔和阴影;鸟飞高 → 影子变大变淡留地面。
+- `BranchController`:鸟停到屏幕上 40% 区域且处于歇脚状态时,脚下出现 `branch.png` 树枝。
+
+抛物线飞行:`Behavior.animateArc(to:duration:apexDy:done:)` 用 60fps Timer 沿二次贝塞尔采点 `setFrameOrigin`(窗口不能直接 CAKeyframe)。俯冲捕鱼:`startFish` 已在高位→直线俯冲,否则抛物线上顶再俯冲。
 
 ## 已知坑
 

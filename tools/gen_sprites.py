@@ -78,9 +78,7 @@ def draw_kingfisher(W, H, *, wing="folded", leg_phase=0.0, eye_closed=False,
 
     cx, cy = W * 0.54, H * 0.58 + body_dy * s
 
-    # 脚下软阴影(死掉/飞行时不要)
-    if not (hide_legs or wing in ("up", "midup", "middown")):
-        d.ellipse([cx - 60*s, H*0.90, cx + 60*s, H*0.90 + 14*s], fill=SHADOW)
+    # (脚下阴影由 ShadowController 运行时按太阳角度绘制,这里不再写死)
 
     # ---- 身体(橙腹)----
     body_rx = 62*s + (8*s if fluff else 0)
@@ -244,7 +242,6 @@ def draw_egg(W, H, stage):
             px = cx + math.cos(ang)*rx*rr
             py = cy + math.sin(ang)*ry*rr
             d.ellipse([px-3*s, py-3*s, px+3*s, py+3*s], fill=EGG_SPCK)
-        d.ellipse([cx-rx*0.7, cy+ry*0.5, cx+rx*0.7, cy+ry*0.5+10*s], fill=SHADOW)
         if stage >= 1:
             pts = [(cx-6*s, cy-ry*0.8), (cx+8*s, cy-ry*0.4), (cx-6*s, cy),
                    (cx+10*s, cy+ry*0.3), (cx-4*s, cy+ry*0.7)]
@@ -272,7 +269,6 @@ def draw_egg(W, H, stage):
             px = cx + math.cos(ang)*rx*rr
             py = cy + math.sin(ang)*ry*rr
             d.ellipse([px-3*s, py-3*s, px+3*s, py+3*s], fill=EGG_SPCK)
-        d.ellipse([cx-rx*0.7, cy+ry*0.6, cx+rx*0.7, cy+ry*0.6+10*s], fill=SHADOW)
         # 两片碎壳
         d.polygon([(cx-rx*0.5, rimY-2*s), (cx-rx*0.95, rimY-28*s),
                    (cx-rx*0.1, rimY-22*s), (cx-rx*0.2, rimY+2*s)], fill=EGG_SHELL)
@@ -296,6 +292,58 @@ def render(name, rotate=0, egg_stage=None, **kw):
         big = big.rotate(rotate, resample=Image.BICUBIC, expand=False)
     small = big.resize((SIZE, SIZE), Image.LANCZOS)
     small.save(os.path.join(OUT, name + ".png"))
+    print("  wrote", name + ".png")
+
+
+def render_shadow(name="shadow"):
+    """柔和的地面阴影:径向渐变椭圆(黑色 alpha 软衰减)。由 ShadowController 缩放使用。"""
+    W, H = 256, 96
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    px = img.load()
+    cx, cy = W / 2, H / 2
+    rx, ry = W * 0.46, H * 0.44
+    for y in range(H):
+        for x in range(W):
+            dx = (x - cx) / rx
+            dy = (y - cy) / ry
+            r = math.sqrt(dx * dx + dy * dy)
+            if r < 1.0:
+                a = int(95 * (1 - r) ** 1.6)
+                px[x, y] = (0, 0, 0, a)
+    img.save(os.path.join(OUT, name + ".png"))
+    print("  wrote", name + ".png")
+
+
+def render_branch(name="branch"):
+    """一根带叶小树枝:鸟停在高处时脚下停靠用。"""
+    SS = 4
+    W, H = 256 * SS, 96 * SS
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    s = SS
+    cy = H * 0.52
+    # 枝干
+    d.line([(W * 0.08, cy + 2 * s), (W * 0.92, cy - 2 * s)],
+           fill=(104, 70, 40, 255), width=int(11 * s))
+    d.line([(W * 0.10, cy + 1 * s), (W * 0.90, cy - 1 * s)],
+           fill=(140, 98, 56, 255), width=int(6 * s))
+    # 小分枝节
+    for fx in (0.30, 0.62):
+        d.ellipse([W * fx - 4 * s, cy - 5 * s, W * fx + 4 * s, cy + 5 * s],
+                  fill=(90, 60, 34, 255))
+    # 叶子
+    leaf = (88, 168, 78, 255)
+    leaf_d = (60, 128, 56, 255)
+    for lx, ang, sc in [(0.30, 0.7, 1.0), (0.50, -0.6, 0.9), (0.66, 0.5, 1.0), (0.80, -0.5, 0.8)]:
+        cx = W * lx
+        l = 30 * s * sc
+        ex = cx + math.cos(ang) * l
+        ey = cy - math.sin(ang) * l
+        d.ellipse([min(cx, ex) - 9 * s, min(cy, ey) - 11 * s,
+                   max(cx, ex) + 9 * s, max(cy, ey) + 11 * s], fill=leaf)
+        d.ellipse([min(cx, ex) - 3 * s, min(cy, ey) - 4 * s,
+                   max(cx, ex) + 3 * s, max(cy, ey) + 4 * s], fill=leaf_d)
+    img.resize((256, 96), Image.LANCZOS).save(os.path.join(OUT, name + ".png"))
     print("  wrote", name + ".png")
 
 
@@ -363,6 +411,11 @@ def main():
     render("egg_1", egg_stage=1)
     render("egg_2", egg_stage=2)
     render("dead", wing="up", x_eye=True, tongue=True, hide_legs=True, rotate=180)
+
+    # 地面阴影贴图(运行时按太阳角度缩放)
+    render_shadow()
+    # 树枝贴图(高处停靠)
+    render_branch()
 
     # 吃完拉屎:翘屁股 + 尾巴摆 + 汗滴
     render("poop_0", wing="folded", butt_up=True, tail_wag=-5, sweat=True, body_dy=4)
