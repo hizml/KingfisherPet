@@ -143,13 +143,13 @@ def draw_kingfisher(W, H, *, wing="folded", leg_phase=0.0, eye_closed=False,
     # 上喙(尖)
     d.polygon([(hx-30*s, by-5*s), (hx-72*s, by+2*s),
                (hx-72*s, by+6*s), (hx-30*s, by+10*s)], fill=BEAK)
-    # 下喙(三角,尖在嘴尖;张嘴时尖端下落;略厚)
-    d.polygon([(hx-30*s, by+7*s), (hx-72*s, by+7*s + beak_drop),
-               (hx-30*s, by+14*s)], fill=(40, 40, 40, 255))
+    # 下喙(三角,尖在嘴尖;张嘴时尖端下落;再加厚)
+    d.polygon([(hx-30*s, by+6*s), (hx-72*s, by+7*s + beak_drop),
+               (hx-30*s, by+16*s)], fill=(40, 40, 40, 255))
     # 张嘴时的橙色口腔
     if mouth_open:
-        d.polygon([(hx-32*s, by+7*s), (hx-70*s, by+8*s + beak_drop*0.4),
-                   (hx-32*s, by+13*s)], fill=(230, 120, 70, 255))
+        d.polygon([(hx-32*s, by+6*s), (hx-70*s, by+8*s + beak_drop*0.4),
+                   (hx-32*s, by+14*s)], fill=(230, 120, 70, 255))
     # 舌头(死掉)
     if tongue:
         d.polygon([(hx-60*s, by+14*s), (hx-72*s, by+22*s), (hx-58*s, by+16*s)], fill=(235, 110, 130, 255))
