@@ -7,13 +7,14 @@
     "sleep": 2,
     "dive": 8,
     "fly_fish": 10,
-    "eat": 5,
+    "eat": 4,
     "sing": 6,
     "watch": 3,
     "sun": 3,
     "hover": 10,
     "egg": 4,
-    "dead": 1
+    "dead": 1,
+    "poop": 6
   },
   "sequences": {
     "idle": [
@@ -61,7 +62,9 @@
     ],
     "eat": [
       "eat_0",
-      "eat_1"
+      "eat_0",
+      "eat_1",
+      "eat_2"
     ],
     "sing": [
       "sing_0",
@@ -84,6 +87,13 @@
     ],
     "dead": [
       "dead"
+    ],
+    "poop": [
+      "poop_0",
+      "poop_1",
+      "poop_0",
+      "poop_1",
+      "poop_0"
     ]
   }
 }

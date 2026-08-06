@@ -107,6 +107,14 @@ final class PetView: NSView {
         currentFrame = frame
     }
 
+    /// 立即刷到当前状态的第一帧(用于重新显示前,避免闪现上一状态残影)
+    func applyNow() {
+        animTime = 0
+        lastTick = 0
+        lastName = ""
+        applyFrame()
+    }
+
     private var currentFrame: PetFrame?
 
     // MARK: - 点击穿透(透明像素点透传到后面的 App)

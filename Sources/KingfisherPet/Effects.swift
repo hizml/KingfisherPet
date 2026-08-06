@@ -63,6 +63,7 @@ enum Effects {
             rs.fromValue = 0.3; rs.toValue = 3.2; rs.duration = 0.55
             let ro = CABasicAnimation(keyPath: "opacity")
             ro.fromValue = 0.9; ro.toValue = 0; ro.duration = 0.55
+            ring.opacity = 0
             ring.add(rs, forKey: "s"); ring.add(ro, forKey: "o")
             layer.addSublayer(ring)
 
@@ -92,6 +93,7 @@ enum Effects {
                 ]
                 let op = CABasicAnimation(keyPath: "opacity")
                 op.fromValue = 1; op.toValue = 0; op.duration = 0.6
+                drop.opacity = 0
                 drop.add(pos, forKey: "p"); drop.add(op, forKey: "o")
                 layer.addSublayer(drop)
             }
@@ -130,10 +132,102 @@ enum Effects {
                 op.duration = 1.2
                 op.beginTime = now + Double(i) * 0.25
                 op.fillMode = .forwards
+                t.opacity = 0
                 t.add(pos, forKey: "p"); t.add(op, forKey: "o")
                 layer.addSublayer(t)
             }
         }
         e.close(after: 1.6)
+    }
+
+    /// 鸟屎:从 point(屁股位置,屏幕坐标)处掉出一小坨白色鸟屎(尿酸白 + 一小撮深色),摆动+淡出
+    static func poop(at point: CGPoint, on screen: NSScreen?) {
+        let size = CGSize(width: 70, height: 220)
+        let center = CGPoint(x: point.x, y: point.y - size.height / 2)
+        let e = Effect(centeredAt: center, size: size, on: screen) { v in
+            guard let layer = v.layer else { return }
+            let top = CGPoint(x: size.width / 2, y: size.height - 16)
+            let bot = CGPoint(x: size.width / 2, y: 14)
+
+            // 小坨白色鸟屎:主体白 + 米白 + 一小撮深绿(粪便)
+            let blob = CALayer()
+            blob.bounds = CGRect(x: 0, y: 0, width: 30, height: 30)
+            blob.position = top
+            func drop(w: CGFloat, h: CGFloat, off: CGFloat, c: NSColor) -> CALayer {
+                let l = CALayer()
+                l.bounds = CGRect(x: 0, y: 0, width: w, height: h)
+                l.position = CGPoint(x: 15, y: 15 + off)
+                l.cornerRadius = min(w, h) / 2
+                l.backgroundColor = c.cgColor
+                return l
+            }
+            blob.addSublayer(drop(w: 16, h: 12, off: 0, c: NSColor(calibratedWhite: 0.97, alpha: 1)))
+            blob.addSublayer(drop(w: 11, h: 8,  off: 3, c: NSColor(calibratedRed: 0.86, green: 0.88, blue: 0.82, alpha: 1)))
+            blob.addSublayer(drop(w: 5,  h: 4,  off: 5, c: NSColor(calibratedRed: 0.42, green: 0.48, blue: 0.26, alpha: 1)))
+
+            // 下落 + 左右摆
+            let mid = CGPoint(x: top.x - 5, y: (top.y + bot.y) / 2)
+            let lower = CGPoint(x: top.x + 5, y: bot.y + (top.y - bot.y) * 0.25)
+            let pos = CAKeyframeAnimation(keyPath: "position")
+            pos.values = [top, mid, lower, bot]
+            pos.keyTimes = [0, 0.4, 0.75, 1]
+            pos.duration = 1.0
+            pos.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            let op = CAKeyframeAnimation(keyPath: "opacity")
+            op.values = [1, 1, 0]
+            op.keyTimes = [0, 0.8, 1]
+            op.duration = 1.0
+            blob.opacity = 0
+            blob.add(pos, forKey: "p"); blob.add(op, forKey: "o")
+            layer.addSublayer(blob)
+        }
+        e.close(after: 1.2)
+    }
+
+    /// 带描边的字形(填充 + 描边),用于 zzz
+    private static func outlinedGlyph(_ ch: String, size: CGFloat) -> NSImage {
+        let str = NSAttributedString(string: ch, attributes: [
+            .font: NSFont.systemFont(ofSize: size, weight: .bold),
+            .foregroundColor: NSColor(calibratedWhite: 0.96, alpha: 0.95),
+            .strokeColor: NSColor(calibratedHue: 0.52, saturation: 0.45,
+                                  brightness: 0.55, alpha: 0.95),
+            .strokeWidth: -3.0          // 负值 = 填充 + 描边
+        ])
+        let bbox = str.size()
+        let img = NSImage(size: bbox)
+        img.lockFocus()
+        str.draw(at: .zero)
+        img.unlockFocus()
+        return img
+    }
+
+    /// 睡眠 zzz:在 point(鸟头上方)放一个带描边的 z,上浮 + 漂移 + 淡出
+    static func zzz(at point: CGPoint, on screen: NSScreen?) {
+        let size = CGSize(width: 90, height: 120)
+        let e = Effect(centeredAt: point, size: size, on: screen) { v in
+            guard let layer = v.layer else { return }
+            let sz = CGFloat.random(in: 22...30)
+            let img = outlinedGlyph("z", size: sz)
+            guard let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+            let z = CALayer()
+            z.bounds = CGRect(origin: .zero, size: img.size)
+            let startX = size.width / 2 + CGFloat.random(in: -12...12)
+            z.position = CGPoint(x: startX, y: size.height - 18)
+            z.contents = cg
+            z.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
+
+            let pos = CABasicAnimation(keyPath: "position")
+            pos.toValue = NSValue(point: CGPoint(x: startX + CGFloat.random(in: -16...16),
+                                                 y: size.height - 18 - 78))
+            pos.duration = 1.6
+            let op = CAKeyframeAnimation(keyPath: "opacity")
+            op.values = [0, 1, 1, 0]
+            op.keyTimes = [0, 0.15, 0.7, 1]
+            op.duration = 1.6
+            z.opacity = 0
+            z.add(pos, forKey: "p"); z.add(op, forKey: "o")
+            layer.addSublayer(z)
+        }
+        e.close(after: 1.7)
     }
 }

@@ -9,6 +9,8 @@ final class Behavior: PetViewDelegate {
     private weak var view: PetView?
 
     private var thinkTimer: Timer?
+    private var poopTimer: Timer?
+    private var zzzTimer: Timer?
     private var current = "idle"
     private var busy = false          // 正在执行一个多阶段动作
     private var onScreen = true       // 用户意图:是否可见
@@ -53,7 +55,11 @@ final class Behavior: PetViewDelegate {
     }
 
     // MARK: - 状态
-    private func enter(_ s: String) { current = s; view?.state = s }
+    private func enter(_ s: String) {
+        current = s
+        view?.state = s
+        if s != "sleep" { stopZzz() }
+    }
     private func finish() { busy = false; enter("idle"); scheduleThink() }
     private func hold(_ t: TimeInterval, _ done: @escaping () -> Void) {
         DispatchQueue.main.asyncAfter(deadline: .now() + t, execute: done)
@@ -138,13 +144,16 @@ final class Behavior: PetViewDelegate {
                     self.enter("fly_fish")
                     let perchX = CGFloat.random(in: (a.minX + 30) ... max(a.minX + 31, a.maxX - self.size.width - 30))
                     let perchY = Bool.random() ? topY : (a.minY + 20)
-                    self.view?.facingRight = perchX < window.frame.origin.x
+                    self.view?.facingRight = perchX > window.frame.origin.x
                     self.animateWindow(to: CGPoint(x: perchX, y: perchY), duration: 0.95) { [weak self] in
                         guard let self = self else { return }
-                        // ⑤ 仰头吞
+                        // ⑤ 仰头吞,过一会儿拉屎
                         self.enter("eat")
                         SpriteLibrary.shared.playPeep()
-                        self.hold(1.1) { self.finish() }
+                        self.hold(1.1) {
+                            self.finish()
+                            self.schedulePoop(after: Double.random(in: 4...7))
+                        }
                     }
                 }
             }
@@ -192,18 +201,56 @@ final class Behavior: PetViewDelegate {
     func startSleep() {
         busy = true; thinkTimer?.invalidate()
         enter("sleep")
+        startZzz()
         hold(Double.random(in: 5...9)) { [weak self] in
             guard let self = self, self.current == "sleep" else { return }
             self.finish()
         }
     }
 
+    private func startZzz() {
+        zzzTimer?.invalidate()
+        emitZzz()
+        zzzTimer = Timer.scheduledTimer(withTimeInterval: 0.9, repeats: true) { [weak self] _ in
+            self?.emitZzz()
+        }
+    }
+    private func emitZzz() {
+        guard let w = window else { return }
+        Effects.zzz(at: CGPoint(x: w.frame.midX, y: w.frame.maxY + 6), on: screen)
+    }
+    private func stopZzz() { zzzTimer?.invalidate(); zzzTimer = nil }
+
+    // MARK: - 吃完拉屎
+    private func schedulePoop(after t: TimeInterval) {
+        poopTimer?.invalidate()
+        poopTimer = Timer.scheduledTimer(withTimeInterval: t, repeats: false) { [weak self] _ in
+            self?.tryPoop()
+        }
+    }
+
+    private func tryPoop() {
+        guard !busy, onScreen, let w = window else { return }
+        busy = true
+        thinkTimer?.invalidate()
+        enter("poop")
+        let facingRight = view?.facingRight ?? false
+        let buttX = w.frame.midX + (facingRight ? -44 : 44)   // 屁股在尾部一侧
+        let buttY = w.frame.minY + 50
+        hold(0.5) { [weak self] in
+            guard let self = self else { return }
+            Effects.poop(at: CGPoint(x: buttX, y: buttY), on: self.screen)
+        }
+        hold(0.9) { [weak self] in self?.finish() }
+    }
+
     // MARK: - 显示:破壳而出
     func hatchIn() {
         busy = true; thinkTimer?.invalidate()
         onScreen = true
-        window?.makeKeyAndOrderFront(nil)
         enter("egg")
+        view?.applyNow()                  // 先刷成 egg_0,避免闪现 dead 残影
+        window?.makeKeyAndOrderFront(nil)
         hold(1.4) { [weak self] in
             guard let self = self else { return }
             self.finish()
@@ -238,7 +285,7 @@ final class Behavior: PetViewDelegate {
         let mx = NSEvent.mouseLocation.x
         let tx = max(a.minX + 8, min(mx - size.width / 2, a.maxX - size.width - 8))
         let ty = a.minY + a.height * 0.55
-        view?.facingRight = tx < window.frame.origin.x
+        view?.facingRight = tx > window.frame.origin.x
         animateWindow(to: CGPoint(x: tx, y: ty), duration: 1.0) { [weak self] in
             self?.finish()
         }
