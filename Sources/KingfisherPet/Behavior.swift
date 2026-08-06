@@ -299,7 +299,7 @@ final class Behavior: PetViewDelegate {
     func startPeck() {
         busy = true; thinkTimer?.invalidate()
         let count = Int.random(in: 3...5)                    // 啄次数随机,最大 5
-        let willCrack = Int.random(in: 0..<100) < 45         // 这次连啄是否啄裂
+        let willCrack = Int.random(in: 0..<100) < 25         // 这次连啄是否啄裂(~25%)
         peckBurst(remaining: count, crack: willCrack)
     }
 
