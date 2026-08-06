@@ -1,0 +1,21 @@
+# Python 虚拟环境与缓存
+.venv/
+__pycache__/
+*.pyc
+
+# SwiftPM 构建
+.build/
+.swiftpm/
+Package.resolved
+
+# 打包产物
+build/
+*.app
+*.dmg
+
+# 系统
+.DS_Store
+
+# 调试快照
+/tmp/kf_*.png
+/tmp/kf_*.log

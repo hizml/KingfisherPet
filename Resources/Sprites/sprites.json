@@ -1,0 +1,39 @@
+{
+  "fps": {
+    "idle": 4,
+    "walk": 8,
+    "fly": 10,
+    "happy": 6,
+    "sleep": 2
+  },
+  "sequences": {
+    "idle": [
+      "idle_0",
+      "idle_1",
+      "idle_0",
+      "idle_blink"
+    ],
+    "walk": [
+      "walk_0",
+      "walk_1",
+      "walk_2",
+      "walk_3"
+    ],
+    "fly": [
+      "fly_0",
+      "fly_1",
+      "fly_2",
+      "fly_3"
+    ],
+    "happy": [
+      "happy_0",
+      "happy_1",
+      "happy_0",
+      "happy_1"
+    ],
+    "sleep": [
+      "sleep_0",
+      "sleep_1"
+    ]
+  }
+}
