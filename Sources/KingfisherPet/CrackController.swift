@@ -1,15 +1,16 @@
 import AppKit
 import QuartzCore
 
-/// 屏幕裂纹:全屏透明 click-through 覆盖层。裂纹可生长——同位置续啄会扩大已有裂纹,
-/// 大小随啄的次数增长(有上限),裂纹数量有上限。层级低于鸟(鸟永远盖在裂纹上)。
+/// 屏幕裂纹:全屏透明 click-through 覆盖层。裂纹像真玻璃碎——放射裂 + 同心环裂 + 分叉 + 碎屑;
+/// 同位置续啄会扩大已有裂纹,大小随次数增长(有上限),裂纹数量有上限。
+/// 层级 statusBar:可超出屏幕、盖过 Dock/菜单栏;鸟用更高层级盖在裂纹上。
 final class CrackController {
 
     private let overlay: NSWindow
     private var cracks: [Crack] = []
     private var origin = CGPoint.zero
-    private let maxCracks = 6
-    private let maxRadius: CGFloat = 170
+    private let maxCracks = 8
+    private let maxRadius: CGFloat = 180
 
     init() {
         overlay = NSWindow(contentRect: .zero, styleMask: .borderless,
@@ -17,7 +18,6 @@ final class CrackController {
         overlay.isOpaque = false
         overlay.backgroundColor = .clear
         overlay.hasShadow = false
-        // 提到 statusBar:可盖过 Dock/菜单栏、延伸到屏幕边外;鸟会用更高层级盖在裂纹上
         overlay.level = .statusBar
         overlay.ignoresMouseEvents = true
         overlay.collectionBehavior = [.canJoinAllSpaces, .stationary]
@@ -43,7 +43,7 @@ final class CrackController {
         overlay.setFrame(scr.frame, display: true)
     }
 
-    /// 啄一下:附近有裂纹就扩大,否则新建一道小裂纹;受数量/尺寸上限约束
+    /// 啄一下:附近(55px 内)有裂纹就扩大,否则新建一道;老裂纹始终保留,直到"修复屏幕"
     func peck(at point: CGPoint) {
         guard let layer = overlay.contentView?.layer else { return }
         if overlay.frame.width == 0 { sizeToScreen() }
@@ -54,7 +54,7 @@ final class CrackController {
             return
         }
         guard cracks.count < maxCracks else { return }
-        let cr = Crack(center: c, radius: 42, max: maxRadius)
+        let cr = Crack(center: c, radius: 44, max: maxRadius)
         layer.addSublayer(cr.container)
         cracks.append(cr)
     }
@@ -66,7 +66,7 @@ final class CrackController {
     }
 }
 
-/// 单条裂纹:可生长。路径用 CGMutablePath,扩大时追加新裂纹线。
+/// 单条裂纹(玻璃碎):放射裂 + 同心环裂 + 分叉 + 碎屑;可生长。
 final class Crack {
     let container = CALayer()
     let center: CGPoint
@@ -81,41 +81,50 @@ final class Crack {
         self.radius = radius
         self.maxRadius = max
 
-        for layer in [dark, light] {
-            layer.fillColor = .clear
-            layer.lineCap = .round
-            layer.lineJoin = .round
-            container.addSublayer(layer)
+        for l in [dark, light] {
+            l.fillColor = .clear
+            l.lineCap = .round
+            l.lineJoin = .round
+            container.addSublayer(l)
         }
-        dark.strokeColor = NSColor(calibratedWhite: 0.05, alpha: 0.55).cgColor
+        dark.strokeColor = NSColor(calibratedWhite: 0.05, alpha: 0.6).cgColor
         dark.lineWidth = 2.2
         light.strokeColor = NSColor(calibratedWhite: 1, alpha: 0.7).cgColor
         light.lineWidth = 0.8
 
         // 中心冲击点
         let dot = CALayer()
-        dot.bounds = CGRect(x: 0, y: 0, width: 6, height: 6)
+        dot.bounds = CGRect(x: 0, y: 0, width: 7, height: 7)
         dot.position = center
-        dot.cornerRadius = 3
-        dot.backgroundColor = NSColor(calibratedWhite: 0.1, alpha: 0.6).cgColor
+        dot.cornerRadius = 3.5
+        dot.backgroundColor = NSColor(calibratedWhite: 0.08, alpha: 0.65).cgColor
         container.addSublayer(dot)
 
-        for _ in 0..<4 { appendRay(length: radius) }
+        for _ in 0..<5 { appendRay(length: radius) }
+        appendArc(radius: radius * 0.55)
+        for _ in 0..<3 { appendChip(r: radius * 0.45) }
         rebuild()
     }
 
-    /// 扩大:加长、加线,直到上限
+    /// 扩大:加长、加放射裂 + 同心环 + 碎屑,直到上限(不加弹跳动画,避免"刷新"感)
     func grow() {
         guard radius < maxRadius else { return }
         radius = min(maxRadius, radius + 18)
         appendRay(length: radius)
-        appendRay(length: radius * 0.7)
+        appendRay(length: radius * 0.8)
+        appendArc(radius: radius * 0.62)
+        if Bool.random() { appendChip(r: radius * 0.5) }
         rebuild()
-        // 轻微冲击反馈
-        let s = CABasicAnimation(keyPath: "transform.scale")
-        s.fromValue = 0.96; s.toValue = 1.0; s.duration = 0.12
-        s.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        container.add(s, forKey: "g")
+        // 轻微震动(玻璃被敲的余震),很轻、1px 量级
+        let o = container.position
+        let shake = CAKeyframeAnimation(keyPath: "position")
+        shake.values = [NSValue(point: o),
+                        NSValue(point: CGPoint(x: o.x + 1.2, y: o.y - 0.8)),
+                        NSValue(point: CGPoint(x: o.x - 1.0, y: o.y + 0.6)),
+                        NSValue(point: o)]
+        shake.keyTimes = [0, 0.3, 0.6, 1]
+        shake.duration = 0.12
+        container.add(shake, forKey: "shake")
     }
 
     private func appendRay(length: CGFloat) {
@@ -131,9 +140,42 @@ final class Crack {
             p = CGPoint(x: center.x + cos(ang + drift) * length * f + jx,
                         y: center.y + sin(ang + drift) * length * f + jy)
             path.addLine(to: p)
+            // 中段偶尔分叉
+            if s == segs / 2 && Bool.random() {
+                let ba = ang + CGFloat.random(in: -1.0...1.0)
+                path.addLine(to: CGPoint(x: p.x + cos(ba) * 12, y: p.y + sin(ba) * 12))
+                path.move(to: p)
+            }
         }
         let br = ang + CGFloat.random(in: -0.6...0.6)
         path.addLine(to: CGPoint(x: p.x + cos(br) * 16, y: p.y + sin(br) * 16))
+    }
+
+    /// 同心环裂(玻璃被击打后的一圈环形裂缝),用多段折线近似
+    private func appendArc(radius r: CGFloat) {
+        let start = CGFloat.random(in: 0...(2 * .pi))
+        let span = CGFloat.random(in: 0.7...1.6)
+        let steps = 9
+        for i in 0..<steps {
+            let a0 = start + span * CGFloat(i) / CGFloat(steps)
+            let a1 = start + span * CGFloat(i + 1) / CGFloat(steps)
+            let j0 = CGFloat.random(in: -3...3)
+            let j1 = CGFloat.random(in: -3...3)
+            path.move(to: CGPoint(x: center.x + cos(a0) * (r + j0), y: center.y + sin(a0) * (r + j0)))
+            path.addLine(to: CGPoint(x: center.x + cos(a1) * (r + j1), y: center.y + sin(a1) * (r + j1)))
+        }
+    }
+
+    /// 中心附近的小三角碎屑
+    private func appendChip(r: CGFloat) {
+        let ang = CGFloat.random(in: 0...(2 * .pi))
+        let d = CGFloat.random(in: 0...r)
+        let cx = center.x + cos(ang) * d
+        let cy = center.y + sin(ang) * d
+        path.move(to: CGPoint(x: cx, y: cy))
+        path.addLine(to: CGPoint(x: cx + CGFloat.random(in: -7...7), y: cy + CGFloat.random(in: -7...7)))
+        path.addLine(to: CGPoint(x: cx + CGFloat.random(in: -7...7), y: cy + CGFloat.random(in: -7...7)))
+        path.closeSubpath()
     }
 
     private func rebuild() {

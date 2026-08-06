@@ -9,6 +9,8 @@ final class ShadowController {
     private weak var bird: NSWindow?
     private let overlay: NSWindow
     private let shadow = CALayer()
+    private var lastW: CGFloat = -1
+    private var lastH: CGFloat = -1
 
     init(bird: NSWindow) {
         self.bird = bird
@@ -74,7 +76,11 @@ final class ShadowController {
         op = max(0.16, op)
 
         shadow.position = CGPoint(x: sx - a.minX, y: groundY - a.minY)
-        shadow.bounds = CGRect(x: 0, y: 0, width: w, height: h)
+        // 只在尺寸变化时才改 bounds(避免每帧重光栅化图片 → 阴影延迟)
+        if abs(w - lastW) > 0.5 || abs(h - lastH) > 0.5 {
+            shadow.bounds = CGRect(x: 0, y: 0, width: w, height: h)
+            lastW = w; lastH = h
+        }
         shadow.opacity = Float(op)
     }
 }
