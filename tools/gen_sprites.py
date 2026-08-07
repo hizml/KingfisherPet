@@ -204,18 +204,19 @@ def draw_kingfisher(W, H, *, wing="folded", leg_phase=0.0, eye_closed=False,
         leg(left_x, left_x, lift=left_lift)
         leg(right_x, right_x, lift=right_lift)
 
-    # ---- 叼鱼/吞鱼:鱼在嘴下方(避免伸出画布被裁);bite 增大抬进嘴里、缩短 ----
+    # ---- 叼鱼/吞鱼:鱼从嘴尖竖直下垂(头在嘴尖、身朝下);bite 增大抬进嘴里、缩短 ----
     bite = 0.0 if fish_in_beak else fish_bite
     if fish_in_beak or (0.0 < fish_bite < 1.0):
-        fl = 12*s * (1 - bite * 0.85)
-        if fl > 2*s:
-            fcx = (hx - 60*s) + bite * 18*s            # 随 bite 右移向嘴
-            fcy = (by + 20*s) - bite * 12*s            # 随 bite 上抬进嘴
-            d.ellipse([fcx - fl, fcy - 6*s, fcx + fl, fcy + 6*s], fill=FISH_BODY)
-            d.polygon([(fcx - fl, fcy), (fcx - fl - 10*s, fcy - 6*s),
-                       (fcx - fl - 10*s, fcy + 6*s)], fill=FISH_DARK)   # 尾在左
+        fl = 18*s * (1 - bite * 0.85)                  # 鱼长(竖向)
+        fw = 6*s
+        if fl > 3*s:
+            fcx = (hx - 72*s) + bite * 10*s            # 鱼头在嘴尖,随 bite 进嘴
+            fcy = by + 8*s + fl / 2 - bite * fl * 0.4   # 鱼中心,随 bite 上抬
+            d.ellipse([fcx - fw, fcy - fl/2, fcx + fw, fcy + fl/2], fill=FISH_BODY)
+            d.polygon([(fcx, fcy + fl/2), (fcx - 6*s, fcy + fl/2 + 9*s),
+                       (fcx + 6*s, fcy + fl/2 + 9*s)], fill=FISH_DARK)   # 尾在下
             if bite < 0.6:
-                d.ellipse([fcx + fl - 5*s, fcy - 3*s, fcx + fl, fcy + 2*s], fill=EYE)  # 鱼眼靠头
+                d.ellipse([fcx - 2*s, fcy - fl/2, fcx + 3*s, fcy - fl/2 + 4*s], fill=EYE)  # 眼靠头(上)
 
     # ---- 红晕 ----
     if blush:
