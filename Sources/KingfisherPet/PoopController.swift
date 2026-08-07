@@ -22,7 +22,7 @@ final class PoopController {
         poops.append(p)
         if let scr = NSScreen.main {
             let (ly, id) = WindowTracker.landingSpot(belowX: point.x, fromY: point.y,
-                                                     groundY: scr.visibleFrame.minY + 6)
+                                                     groundY: scr.visibleFrame.minY)
             p.landingY = ly
             p.landedID = id
         }
@@ -33,7 +33,7 @@ final class PoopController {
         let dt = lastTime == 0 ? 1.0 / 30.0 : min(0.05, now - lastTime)
         lastTime = now
         guard let scr = NSScreen.main else { return }
-        let ground = scr.visibleFrame.minY + 6
+        let ground = scr.visibleFrame.minY
         let sh = scr.frame.height
         for p in poops { p.update(dt: dt, ground: ground, screenH: sh) }
         let gone = poops.filter { $0.dead }
