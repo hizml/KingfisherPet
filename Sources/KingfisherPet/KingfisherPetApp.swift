@@ -206,14 +206,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showAbout() {
         let alert = NSAlert()
-        alert.messageText = "翡 · 翠鸟桌面宠物"
-        alert.informativeText = "一只住在你 Mac 菜单栏的翠鸟。\n\n点击:啾一声卖萌\n拖拽:换位置\n它会自己走动、飞行、打盹,还会俯冲捕鱼、鸣唱、探头张望、晒太阳。\n显示时破壳而出,隐藏时死掉从天上掉下来。"
+        alert.messageText = "翡"
+        alert.informativeText = "一只住在你 Mac 上的小生灵。\n它会自己活动,也会回应你——\n至于它都会些什么,养着养着就知道了。\n\n点它、拖它,或者就让它待着。"
         alert.alertStyle = .informational
+        alert.addButton(withTitle: "GitHub 主页")
         alert.addButton(withTitle: "好")
         if let img = SpriteLibrary.shared.frame("idle_0")?.image {
             alert.icon = img
         }
-        alert.runModal()
+        if alert.runModal() == .alertFirstButtonReturn {
+            NSWorkspace.shared.open(URL(string: "https://github.com/hizml")!)
+        }
     }
 
     @objc private func quit() {
