@@ -92,13 +92,13 @@ private final class Poop {
         let white = NSColor(calibratedWhite: 0.97, alpha: 1)
         let off = NSColor(calibratedRed: 0.86, green: 0.88, blue: 0.82, alpha: 1)
         let dark = NSColor(calibratedRed: 0.42, green: 0.48, blue: 0.26, alpha: 1)
-        // 一摊稀屎:宽扁主体贴窗口底部 + 几滴飞溅 + 一小撮深色
-        blob.addSublayer(drop(24, 8, 15, 7, white))
-        blob.addSublayer(drop(16, 6, 15, 9, off))
-        blob.addSublayer(drop(5, 4, 3, 6, white))
-        blob.addSublayer(drop(4, 3, 27, 7, white))
-        blob.addSublayer(drop(3, 3, 22, 4, white))
-        blob.addSublayer(drop(5, 3, 17, 8, dark))
+        // 一摊稀屎:宽扁主体底边贴窗口底(local y=0) + 几滴飞溅 + 一小撮深色
+        blob.addSublayer(drop(24, 8, 15, 4, white))    // 主体 y 0..8
+        blob.addSublayer(drop(16, 6, 15, 6, off))      // 中间略厚
+        blob.addSublayer(drop(5, 4, 3, 3, white))
+        blob.addSublayer(drop(4, 3, 27, 4, white))
+        blob.addSublayer(drop(3, 3, 22, 2, white))
+        blob.addSublayer(drop(5, 3, 17, 5, dark))
     }
 
     func update(dt: TimeInterval, ground: CGFloat, screenH: CGFloat) {
