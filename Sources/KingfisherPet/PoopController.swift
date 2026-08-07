@@ -59,7 +59,7 @@ private final class Poop {
         x = start.x
         y = start.y
         landingY = start.y
-        window = NSWindow(contentRect: NSRect(x: start.x - 15, y: start.y - 20, width: 30, height: 20),
+        window = NSWindow(contentRect: NSRect(x: start.x - 15, y: start.y, width: 30, height: 20),
                           styleMask: .borderless, backing: .buffered, defer: false)
         window.isOpaque = false
         window.backgroundColor = .clear
@@ -141,7 +141,7 @@ private final class Poop {
 
     private func applyOrigin() {
         // y 是屎的底边 → 窗口底贴地
-        window.setFrameOrigin(CGPoint(x: x - 15, y: y - 20))
+        window.setFrameOrigin(CGPoint(x: x - 15, y: y))
     }
 
     /// 重新下落(窗口移走/消失):重新计算落点(Dock / 下一窗口)
