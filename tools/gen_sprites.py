@@ -837,19 +837,19 @@ def main():
 
 
 def gen_peep():
-    """生成翠鸟叫声 wav(不随主题变):模仿普通翠鸟(Alcedo atthis)真实鸣声特征。
+    """生成翠鸟叫声 wav(不随主题变):模仿普通翠鸟(Alcedo atthis)真实鸣声。
 
-    翠鸟叫声声学特征(鸟类学资料):
-    - 高频尖锐:约 5000–7000Hz(比一般鸣禽高)
-    - 单声短促:0.08–0.15s
-    - 频率轮廓:急升 → 顶峰 → 缓降(像口哨吹上去再滑下)
-    - 音色:近似纯正弦但带少量谐波 + 微气流噪声(不完全"电子")
-    - 常单声或连发 2-3 声,间隔 0.12–0.2s
+    声学特征(基于真实录音 FFT/时频分析,广州烈士陵园实拍 BV1ir4y1o7gP):
+    - 主频高:约 4400–6400Hz(单声大多 5500–6300Hz,连发档约 3300/4400/5300Hz)
+    - 频率轮廓:**急升(前 ~15ms)→ 稳定在顶峰微颤 → 快速落**(不是升-降弧线)
+    - 颤动:稳定段有 ±100-200Hz 的快速不规则抖动(像颤音)
+    - 单声时长:60–160ms;常连发 2-4 声,间隔 50-100ms
+    - 音色:基频为主 + 弱谐波 + 微气流噪声
 
-    4 种变体:0 单声 pee-eep / 1 双连发 / 2 长哨 zreee / 3 急促三连
+    4 种变体:0 高频单声 / 1 双连发 / 2 中频长叫 / 3 急促三连
     输出到 ../Resources/peep_*.wav。"""
     import random as _rnd
-    sr = 44100   # 提高采样率,高频叫声更清晰
+    sr = 44100
 
     def write_wav(path, samples):
         with wave.open(path, "w") as w:
@@ -858,49 +858,55 @@ def gen_peep():
             w.setframerate(sr)
             w.writeframes(struct.pack("<" + "h" * len(samples), *samples))
 
-    def synth_note(dur, f_start, f_peak, f_end, amp=0.4, noise=0.06, harmonics=(1.0, 0.15, 0.05)):
+    def synth_note(dur, f_peak, amp=0.4, vibrato=150, noise=0.05,
+                   harmonics=(1.0, 0.18, 0.06), seed=42):
         """合成单个翠鸟叫声脉冲。
-        频率轮廓:急升(f_start→f_peak)到约 35% 处,再缓降到 f_end。
-        amp:振幅;noise:气流噪声比例;harmonics:基频 + 谐波强度。"""
+        f_peak:急升后稳定的主频;vibrato:稳定段颤动幅度(Hz,峰峰值的一半)。
+        频率轮廓:前 12% 急升到 f_peak,中间稳定+颤动,末尾 12% 快速落。"""
         n = int(sr * dur)
         out = [0.0] * n
-        rnd = _rnd.Random(42)
-        # 每个谐波分量独立累积相位
+        rnd = _rnd.Random(seed)
+        # 预生成颤动序列(平滑随机,模拟鸟鸣的频率抖动)
+        vib_seq = []
+        v = 0.0
+        for i in range(n):
+            v += rnd.uniform(-1, 1) * vibrato * 0.15
+            v *= 0.85   # 阻尼回中
+            v = max(-vibrato, min(vibrato, v))
+            vib_seq.append(v)
         for hi, hw in enumerate(harmonics, start=1):
             phase = 0.0
             for i in range(n):
                 p = i / n
-                # 频率轮廓:前 35% 急升,后 65% 缓降
-                if p < 0.35:
-                    t = p / 0.35
-                    f = f_start + (f_peak - f_start) * (t * t)       # 二次曲线急升
+                # 频率轮廓:前 12% 急升,末 12% 急落,中间稳定+颤动
+                if p < 0.12:
+                    f = f_peak * 0.55 + f_peak * 0.45 * (p / 0.12)     # 从 55% 升到 100%
+                elif p > 0.88:
+                    f = f_peak * (1.0 - 0.4 * ((p - 0.88) / 0.12))     # 落到 60%
                 else:
-                    t = (p - 0.35) / 0.65
-                    f = f_peak + (f_end - f_peak) * t                 # 线性缓降
-                f *= hi                                               # 谐波倍频
+                    f = f_peak + vib_seq[i]
+                f *= hi
                 phase += 2 * math.pi * f / sr
-                # 包络:快速起 + 平顶 + 快速落(短促感)
-                if p < 0.08:
-                    env = p / 0.08
-                elif p > 0.85:
-                    env = max(0, (1 - p) / 0.15)
+                # 包络:快速起 + 平顶 + 快速落
+                if p < 0.06:
+                    env = p / 0.06
+                elif p > 0.90:
+                    env = max(0, (1 - p) / 0.10)
                 else:
                     env = 1.0
                 out[i] += hw * env * math.sin(phase)
-        # 叠加气流噪声(高频带通近似)
+        # 气流噪声
         if noise > 0:
             prev = 0.0
             for i in range(n):
                 p = i / n
-                env = 1.0 if 0.08 <= p <= 0.85 else (p / 0.08 if p < 0.08 else max(0, (1 - p) / 0.15))
-                # 白噪声经简单高通(差分)模拟气流
+                env = 1.0 if 0.06 <= p <= 0.90 else (p / 0.06 if p < 0.06 else max(0, (1 - p) / 0.10))
                 white = rnd.uniform(-1, 1)
-                hp = white - prev
+                out[i] += noise * env * (white - prev)
                 prev = white
-                out[i] += noise * env * hp
         return [int(max(-1, min(1, v * amp)) * 32767) for v in out]
 
-    def synth_silence(dur):
+    def silence(dur):
         return [0] * int(sr * dur)
 
     def concat(*chunks):
@@ -911,27 +917,26 @@ def gen_peep():
 
     base = os.path.join(RES)
 
-    # 0 单声 pee-eep:高频,升-降轮廓,最经典
+    # 0 高频单声(主频 6000Hz,真实叫声1 段)
     write_wav(os.path.join(base, "peep_0.wav"),
-              synth_note(0.12, f_start=4800, f_peak=6800, f_end=5400, amp=0.38, noise=0.05))
+              synth_note(0.14, f_peak=6000, amp=0.42, vibrato=160, noise=0.05, seed=7))
 
-    # 1 双连发:两声紧接(像飞行中的连续叫),第二声稍高
-    n1 = synth_note(0.10, f_start=5000, f_peak=6600, f_end=5200, amp=0.36, noise=0.05)
-    n2 = synth_note(0.11, f_start=5200, f_peak=7000, f_end=5600, amp=0.36, noise=0.05)
-    write_wav(os.path.join(base, "peep_1.wav"), concat(n1, synth_silence(0.12), n2))
+    # 1 双连发(两声 5300Hz,间隔 80ms,连发段特征)
+    a = synth_note(0.10, f_peak=5300, amp=0.40, vibrato=140, noise=0.05, seed=11)
+    b = synth_note(0.11, f_peak=5500, amp=0.40, vibrato=150, noise=0.05, seed=13)
+    write_wav(os.path.join(base, "peep_1.wav"), concat(a, silence(0.08), b))
 
-    # 2 长哨 zreee:更长、顶峰持续、尾音下扫(警告/兴奋)
+    # 2 中频长叫(主频 3400Hz,真实连发段常见档位,稍长)
     write_wav(os.path.join(base, "peep_2.wav"),
-              synth_note(0.22, f_start=4600, f_peak=7200, f_end=4800, amp=0.40, noise=0.07))
+              synth_note(0.20, f_peak=3400, amp=0.44, vibrato=100, noise=0.06, seed=23))
 
-    # 3 急促三连:三声快速短叫(受惊/激动)
-    a = synth_note(0.07, f_start=5200, f_peak=6800, f_end=5400, amp=0.34, noise=0.06)
-    b = synth_note(0.07, f_start=5400, f_peak=7000, f_end=5600, amp=0.34, noise=0.06)
-    c = synth_note(0.08, f_start=5600, f_peak=7200, f_end=5800, amp=0.34, noise=0.06)
-    write_wav(os.path.join(base, "peep_3.wav"), concat(a, synth_silence(0.08), b, synth_silence(0.08), c))
+    # 3 急促三连(4400Hz 三声快连,受惊/激动)
+    x = synth_note(0.07, f_peak=4400, amp=0.38, vibrato=120, noise=0.06, seed=31)
+    y = synth_note(0.07, f_peak=4600, amp=0.38, vibrato=120, noise=0.06, seed=37)
+    z = synth_note(0.08, f_peak=4800, amp=0.38, vibrato=130, noise=0.06, seed=41)
+    write_wav(os.path.join(base, "peep_3.wav"), concat(x, silence(0.06), y, silence(0.06), z))
 
-    print("  wrote peep_0..3.wav (翠鸟叫声, 44100Hz)")
-
+    print("  wrote peep_0..3.wav (翠鸟叫声, 基于真实录音频谱)")
 
 
 if __name__ == "__main__":
