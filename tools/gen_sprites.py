@@ -837,9 +837,19 @@ def main():
 
 
 def gen_peep():
-    """生成多种叫声 wav(不随主题变):0 短啾 / 1 长颤 / 2 低咕 / 3 兴奋。
+    """生成翠鸟叫声 wav(不随主题变):模仿普通翠鸟(Alcedo atthis)真实鸣声特征。
+
+    翠鸟叫声声学特征(鸟类学资料):
+    - 高频尖锐:约 5000–7000Hz(比一般鸣禽高)
+    - 单声短促:0.08–0.15s
+    - 频率轮廓:急升 → 顶峰 → 缓降(像口哨吹上去再滑下)
+    - 音色:近似纯正弦但带少量谐波 + 微气流噪声(不完全"电子")
+    - 常单声或连发 2-3 声,间隔 0.12–0.2s
+
+    4 种变体:0 单声 pee-eep / 1 双连发 / 2 长哨 zreee / 3 急促三连
     输出到 ../Resources/peep_*.wav。"""
-    sr = 22050
+    import random as _rnd
+    sr = 44100   # 提高采样率,高频叫声更清晰
 
     def write_wav(path, samples):
         with wave.open(path, "w") as w:
@@ -848,43 +858,80 @@ def gen_peep():
             w.setframerate(sr)
             w.writeframes(struct.pack("<" + "h" * len(samples), *samples))
 
-    def synth(dur, freq_fn, amp_fn, fm=None):
+    def synth_note(dur, f_start, f_peak, f_end, amp=0.4, noise=0.06, harmonics=(1.0, 0.15, 0.05)):
+        """合成单个翠鸟叫声脉冲。
+        频率轮廓:急升(f_start→f_peak)到约 35% 处,再缓降到 f_end。
+        amp:振幅;noise:气流噪声比例;harmonics:基频 + 谐波强度。"""
         n = int(sr * dur)
-        frames = []
-        phase = 0.0
-        fm_phase = 0.0
-        for i in range(n):
-            t = i / sr
-            f = freq_fn(i / n, t)
-            if fm:
-                fm_phase += 2 * math.pi * fm / sr
-                f += 30 * math.sin(fm_phase)
-            phase += 2 * math.pi * f / sr
-            amp = amp_fn(i / n)
-            frames.append(int(max(-1, min(1, amp * math.sin(phase))) * 32767))
-        return frames
+        out = [0.0] * n
+        rnd = _rnd.Random(42)
+        # 每个谐波分量独立累积相位
+        for hi, hw in enumerate(harmonics, start=1):
+            phase = 0.0
+            for i in range(n):
+                p = i / n
+                # 频率轮廓:前 35% 急升,后 65% 缓降
+                if p < 0.35:
+                    t = p / 0.35
+                    f = f_start + (f_peak - f_start) * (t * t)       # 二次曲线急升
+                else:
+                    t = (p - 0.35) / 0.65
+                    f = f_peak + (f_end - f_peak) * t                 # 线性缓降
+                f *= hi                                               # 谐波倍频
+                phase += 2 * math.pi * f / sr
+                # 包络:快速起 + 平顶 + 快速落(短促感)
+                if p < 0.08:
+                    env = p / 0.08
+                elif p > 0.85:
+                    env = max(0, (1 - p) / 0.15)
+                else:
+                    env = 1.0
+                out[i] += hw * env * math.sin(phase)
+        # 叠加气流噪声(高频带通近似)
+        if noise > 0:
+            prev = 0.0
+            for i in range(n):
+                p = i / n
+                env = 1.0 if 0.08 <= p <= 0.85 else (p / 0.08 if p < 0.08 else max(0, (1 - p) / 0.15))
+                # 白噪声经简单高通(差分)模拟气流
+                white = rnd.uniform(-1, 1)
+                hp = white - prev
+                prev = white
+                out[i] += noise * env * hp
+        return [int(max(-1, min(1, v * amp)) * 32767) for v in out]
+
+    def synth_silence(dur):
+        return [0] * int(sr * dur)
+
+    def concat(*chunks):
+        r = []
+        for c in chunks:
+            r.extend(c)
+        return r
 
     base = os.path.join(RES)
-    # 0 短啾(原版):频率上扫 + 正弦包络
+
+    # 0 单声 pee-eep:高频,升-降轮廓,最经典
     write_wav(os.path.join(base, "peep_0.wav"),
-              synth(0.16, lambda p, t: 1700 + (2600 - 1700) * p,
-                    lambda p: 0.35 * math.sin(math.pi * p), fm=18))
-    # 1 长颤:中频 + 颤音 + 渐弱
-    write_wav(os.path.join(base, "peep_1.wav"),
-              synth(0.42, lambda p, t: 1500 + 80 * math.sin(2 * math.pi * 14 * t),
-                    lambda p: 0.30 * (1 - p) * (1 if p < 0.9 else 0.3)))
-    # 2 低咕:低频短促咕咕
+              synth_note(0.12, f_start=4800, f_peak=6800, f_end=5400, amp=0.38, noise=0.05))
+
+    # 1 双连发:两声紧接(像飞行中的连续叫),第二声稍高
+    n1 = synth_note(0.10, f_start=5000, f_peak=6600, f_end=5200, amp=0.36, noise=0.05)
+    n2 = synth_note(0.11, f_start=5200, f_peak=7000, f_end=5600, amp=0.36, noise=0.05)
+    write_wav(os.path.join(base, "peep_1.wav"), concat(n1, synth_silence(0.12), n2))
+
+    # 2 长哨 zreee:更长、顶峰持续、尾音下扫(警告/兴奋)
     write_wav(os.path.join(base, "peep_2.wav"),
-              synth(0.22, lambda p, t: 520 + 60 * math.sin(2 * math.pi * 20 * t),
-                    lambda p: 0.40 * math.sin(math.pi * p)))
-    # 3 兴奋:急促双音上扫
-    def excited_freq(p, t):
-        base_f = 2000 if (p % 0.5) < 0.25 else 2400
-        return base_f + 100 * p
-    write_wav(os.path.join(base, "peep_3.wav"),
-              synth(0.28, excited_freq,
-                    lambda p: 0.34 * (1 if (p % 0.33) < 0.22 else 0.15)))
-    print("  wrote peep_0..3.wav")
+              synth_note(0.22, f_start=4600, f_peak=7200, f_end=4800, amp=0.40, noise=0.07))
+
+    # 3 急促三连:三声快速短叫(受惊/激动)
+    a = synth_note(0.07, f_start=5200, f_peak=6800, f_end=5400, amp=0.34, noise=0.06)
+    b = synth_note(0.07, f_start=5400, f_peak=7000, f_end=5600, amp=0.34, noise=0.06)
+    c = synth_note(0.08, f_start=5600, f_peak=7200, f_end=5800, amp=0.34, noise=0.06)
+    write_wav(os.path.join(base, "peep_3.wav"), concat(a, synth_silence(0.08), b, synth_silence(0.08), c))
+
+    print("  wrote peep_0..3.wav (翠鸟叫声, 44100Hz)")
+
 
 
 if __name__ == "__main__":
