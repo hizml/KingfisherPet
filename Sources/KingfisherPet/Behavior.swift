@@ -118,8 +118,8 @@ final class Behavior: PetViewDelegate {
         }
     }
 
-    /// 脚下没有近表面(Dock/窗口)= 在空中
-    private func isAirborne() -> Bool {
+    /// 脚下没有近表面(Dock/窗口)= 在空中(悬空)
+    func isAirborne() -> Bool {
         guard let w = window, let scr = screen else { return true }
         let ground = scr.visibleFrame.minY + 6
         let feetY = w.frame.minY + feetOffset
@@ -270,14 +270,15 @@ final class Behavior: PetViewDelegate {
         let tx = CGFloat.random(in: a.minX + 8 ... a.maxX - size.width - 8)
         let ty = Bool.random() ? (a.maxY - size.height) : (a.minY - feetOffset)
         view?.facingRight = tx > window.frame.origin.x
-        // 飞往高处歇脚:树枝提前在目的地出现
-        if ty > a.maxY - a.height * 0.4 {
-            branch?.showAt(CGPoint(x: tx + size.width / 2, y: ty + feetOffset))
+        // 落点若悬空(飞到高处),提前在落脚处显树枝
+        let dest = clamp(CGPoint(x: tx, y: ty))
+        if isPointAirborne(dest) {
+            branch?.showAt(CGPoint(x: dest.x + size.width / 2, y: dest.y + feetOffset))
         }
         if Int.random(in: 0..<100) < 35 {
             hold(Double.random(in: 0.3...0.7)) { [weak self] in self?.airPoop() }
         }
-        animateFlight(to: clamp(CGPoint(x: tx, y: ty)), duration: 1.3) { [weak self] in self?.finish() }
+        animateFlight(to: dest, duration: 1.3) { [weak self] in self?.finish() }
     }
 
     /// 空中拉屎:从鸟当前(飞行中)的屁股位置往下掉
@@ -589,7 +590,22 @@ final class Behavior: PetViewDelegate {
         let target = clamp(CGPoint(x: mx - size.width / 2,
                                    y: a.minY + a.height * 0.55))
         view?.facingRight = target.x > window.frame.origin.x
+        // 落点若悬空(没踩 Dock/窗口),提前在落脚处显树枝,鸟到了无缝接管
+        if isPointAirborne(target) {
+            branch?.showAt(CGPoint(x: target.x + size.width / 2,
+                                   y: target.y + feetOffset))
+        }
         animateFlight(to: target, duration: 1.0) { [weak self] in self?.finish() }
+    }
+
+    /// 判断某个窗口原点位置是否悬空(脚下没有近表面)。供 callOver 落点预判用。
+    private func isPointAirborne(_ origin: CGPoint) -> Bool {
+        guard let scr = screen else { return true }
+        let ground = scr.visibleFrame.minY + 6
+        let feetY = origin.y + feetOffset
+        let (ly, _) = WindowTracker.landingSpot(belowX: origin.x + size.width / 2,
+                                                fromY: feetY + 40, groundY: ground)
+        return abs(ly - feetY) > 30
     }
 
     func toggleVisibility() { setVisible(!onScreen) }
