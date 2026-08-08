@@ -650,4 +650,11 @@ final class Behavior: PetViewDelegate {
         window.setFrameOrigin(origin)
         shadow?.updateNow()
     }
+
+    /// 系统唤醒后重置:取消一切进行中的动作/待发定时器,回到干净 idle 重新开始。
+    /// (睡眠时 Timer/asyncAfter 挂起,唤醒后密集补发会触发一堆动作、堆出多个特效)
+    func resetToIdle() {
+        beginAction()        // 代际 bump → 作废所有进行中的 hold/动画/timer 回调
+        finish()             // busy=false + enter idle + scheduleThink
+    }
 }
