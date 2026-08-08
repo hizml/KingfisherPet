@@ -39,13 +39,25 @@ final class BranchController {
         branchLayer.contentsGravity = .resize
         branchLayer.bounds = CGRect(origin: .zero, size: overlaySize)
         branchLayer.position = CGPoint(x: overlaySize.width / 2, y: overlaySize.height / 2)
-        if let url = Bundle.main.url(forResource: "branch", withExtension: "png"),
+        loadBranchAsset()
+        v.layer?.addSublayer(branchLayer)
+        overlay.contentView = v
+    }
+
+    /// 从当前主题目录加载 branch.png
+    private func loadBranchAsset() {
+        let theme = SpriteLibrary.shared.currentTheme
+        if let url = Bundle.main.url(forResource: "branch", withExtension: "png",
+                                     subdirectory: "Sprites/\(theme)"),
            let img = NSImage(contentsOf: url),
            let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) {
             branchLayer.contents = cg
         }
-        v.layer?.addSublayer(branchLayer)
-        overlay.contentView = v
+    }
+
+    /// 主题切换:重载树枝贴图
+    func reloadTheme() {
+        loadBranchAsset()
     }
 
     func start() {

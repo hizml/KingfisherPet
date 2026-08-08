@@ -20,7 +20,7 @@ final class PetWindowController: NSWindowController, NSWindowDelegate {
         window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
         window.isMovable = false
         window.isMovableByWindowBackground = false
-        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
         window.animationBehavior = .none
         window.ignoresMouseEvents = false
         window.isReleasedWhenClosed = false

@@ -1,0 +1,40 @@
+/* 翡 KingfisherPet · English */
+
+// Menu
+"menu.callOver" = "Call Over";
+"menu.fish" = "Go Catch a Fish";
+"menu.sing" = "Sing";
+"menu.perch" = "Perch on a Window";
+"menu.peck" = "Peck";
+"menu.toggleVisibility" = "Show / Hide";
+"menu.soundOn" = "Chirp: On";
+"menu.soundOff" = "Chirp: Off";
+"menu.autoLogin" = "Launch at Login";
+"menu.repairScreen" = "Repair Screen";
+"menu.settings" = "Settings…";
+"menu.about" = "About Fei";
+"menu.quit" = "Quit Fei";
+
+// Settings
+"settings.title" = "Fei · Settings";
+"settings.theme" = "Theme";
+"settings.activity" = "Activity";
+"settings.speed" = "Animation Speed";
+"settings.sound" = "Chirp";
+"settings.activity.low" = "Low";
+"settings.activity.mid" = "Med";
+"settings.activity.high" = "High";
+
+// About
+"about.title" = "Fei";
+"about.body" = "A little creature living on your Mac.\nIt does its own thing, and answers to you—\nwhat it can do, you'll discover as you keep it around.\n\nClick it, drag it, or just let it be.";
+"about.github" = "GitHub Page";
+"about.ok" = "OK";
+
+// Accessibility
+"ax.petName" = "Fei · Kingfisher";
+"ax.petHelp" = "Click to make it shy; drag to move.";
+"ax.tooltip" = "Fei · Kingfisher desktop pet";
+
+// Status item
+"statusitem.tooltip" = "Fei · Kingfisher desktop pet";

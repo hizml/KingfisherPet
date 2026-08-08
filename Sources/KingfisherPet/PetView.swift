@@ -38,6 +38,7 @@ final class PetView: NSView {
     private var mouseDownWindowOrigin = CGPoint.zero
     private var mouseDownTime: CFTimeInterval = 0
     private var didDrag = false
+    private var dragScreen: NSScreen?    // 拖拽起点所在屏(多屏跟随)
 
     override var isFlipped: Bool { true }   // 左上角原点,与图像像素行一致
 
@@ -56,6 +57,16 @@ final class PetView: NSView {
         spriteLayer.contentsGravity = .resize
         spriteLayer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
         layer?.addSublayer(spriteLayer)
+        // 无障碍:把宠物本身暴露为一个可交互元素
+        setAccessibilityElement(true)
+        setAccessibilityRole(.image)
+        setAccessibilityLabel(NSLocalizedString("ax.petName", comment: ""))
+        setAccessibilityHelp(NSLocalizedString("ax.petHelp", comment: ""))
+        // 主题切换:清掉缓存帧名,下一 tick 重画新主题的同名帧
+        SpriteLibrary.shared.observeThemeChanged { [weak self] in
+            self?.lastName = ""
+            self?.applyFrame()
+        }
     }
 
     override func viewDidMoveToWindow() {
@@ -86,7 +97,8 @@ final class PetView: NSView {
     private func tick() {
         let now = CACurrentMediaTime()
         if lastTick == 0 { lastTick = now }
-        animTime += (now - lastTick)
+        // 动画速度:全局设置加速/减速帧推进(不影响刷新率)
+        animTime += (now - lastTick) * Settings.shared.speed
         lastTick = now
         applyFrame()
     }
@@ -155,14 +167,15 @@ final class PetView: NSView {
         let dy = now.y - mouseDownPoint.y
         if !didDrag, hypot(dx, dy) > 4 {
             didDrag = true
+            dragScreen = window?.screen ?? NSScreen.main   // 记住拖拽起点所在屏
             delegate?.petViewDidBeginDrag()
         }
         guard didDrag else { return }
         var o = mouseDownWindowOrigin
         o.x += dx
         o.y += dy
-        // 限制:脚不低于 Dock 顶(原点 y >= minY - 56)、不出屏
-        if let a = NSScreen.main?.visibleFrame, let win = window {
+        // 限制:脚不低于 Dock 顶、不出当前屏(跟随拖拽起点屏,支持多屏)
+        if let a = dragScreen?.visibleFrame, let win = window {
             o.x = min(max(o.x, a.minX), a.maxX - win.frame.width)
             o.y = min(max(o.y, a.minY - 27), a.maxY - win.frame.height)
         }

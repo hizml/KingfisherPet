@@ -9,6 +9,8 @@ final class PoopController {
     private var poops: [Poop] = []
     private var timer: Timer?
     private var lastTime: CFTimeInterval = 0
+    /// 鸟所在窗口,用来确定屎落在哪个屏(多屏时屎跟随鸟的屏,而非死主屏)
+    weak var bird: NSWindow?
 
     func start() {
         lastTime = CACurrentMediaTime()
@@ -17,10 +19,13 @@ final class PoopController {
         timer = t
     }
 
+    /// 解析屎应使用的屏:鸟所在屏,否则主屏
+    private var screen: NSScreen? { bird?.screen ?? NSScreen.main }
+
     func dropPoop(at point: CGPoint) {
         let p = Poop(start: point)
         poops.append(p)
-        if let scr = NSScreen.main {
+        if let scr = screen {
             let (ly, id) = WindowTracker.landingSpot(belowX: point.x, fromY: point.y,
                                                      groundY: scr.visibleFrame.minY)
             p.landingY = ly
@@ -32,7 +37,7 @@ final class PoopController {
         let now = CACurrentMediaTime()
         let dt = lastTime == 0 ? 1.0 / 30.0 : min(0.05, now - lastTime)
         lastTime = now
-        guard let scr = NSScreen.main else { return }
+        guard let scr = screen else { return }
         let ground = scr.visibleFrame.minY
         let sh = scr.frame.height
         for p in poops { p.update(dt: dt, ground: ground, screenH: sh) }
@@ -104,7 +109,8 @@ private final class Poop {
     func update(dt: TimeInterval, ground: CGFloat, screenH: CGFloat) {
         switch state {
         case .falling:
-            y -= 220 * CGFloat(dt)
+            // 下落速度受全局动画速度影响
+            y -= 220 * CGFloat(dt) * CGFloat(Settings.shared.speed)
             if y <= landingY {
                 y = landingY
                 state = .sitting

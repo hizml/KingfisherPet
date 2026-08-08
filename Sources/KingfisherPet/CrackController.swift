@@ -11,6 +11,8 @@ final class CrackController {
     private var origin = CGPoint.zero
     private let maxCracks = 8
     private let maxRadius: CGFloat = 180
+    /// 鸟所在窗口,用来确定裂纹覆盖哪个屏(多屏跟随鸟)
+    weak var bird: NSWindow?
 
     init() {
         overlay = NSWindow(contentRect: .zero, styleMask: .borderless,
@@ -38,9 +40,15 @@ final class CrackController {
     }
 
     private func sizeToScreen() {
-        guard let scr = NSScreen.main else { return }
+        // 跟随鸟所在屏;无鸟则主屏
+        guard let scr = bird?.screen ?? NSScreen.main else { return }
         origin = scr.frame.origin
         overlay.setFrame(scr.frame, display: true)
+    }
+
+    /// 屏幕布局变化(外接屏插拔等)时重定位覆盖层
+    func relocate() {
+        sizeToScreen()
     }
 
     /// 啄一下:附近(55px 内)有裂纹就扩大,否则新建一道;老裂纹始终保留,直到"修复屏幕"

@@ -1,0 +1,40 @@
+/* 翡 KingfisherPet · 简体中文(默认) */
+
+// 菜单
+"menu.callOver" = "召唤过来";
+"menu.fish" = "去抓条鱼";
+"menu.sing" = "唱一个";
+"menu.perch" = "停到窗口上";
+"menu.peck" = "啄一下";
+"menu.toggleVisibility" = "显示 / 隐藏";
+"menu.soundOn" = "啾鸣声:开";
+"menu.soundOff" = "啾鸣声:关";
+"menu.autoLogin" = "开机自启";
+"menu.repairScreen" = "修复屏幕";
+"menu.settings" = "设置…";
+"menu.about" = "关于 翡";
+"menu.quit" = "退出 翡";
+
+// 设置
+"settings.title" = "翡 · 设置";
+"settings.theme" = "主题";
+"settings.activity" = "活跃度";
+"settings.speed" = "动画速度";
+"settings.sound" = "啾鸣声";
+"settings.activity.low" = "低";
+"settings.activity.mid" = "中";
+"settings.activity.high" = "高";
+
+// 关于
+"about.title" = "翡";
+"about.body" = "一只住在你 Mac 上的小生灵。\n它会自己活动,也会回应你——\n至于它都会些什么,养着养着就知道了。\n\n点它、拖它,或者就让它待着。";
+"about.github" = "GitHub 主页";
+"about.ok" = "好";
+
+// 无障碍
+"ax.petName" = "翡 · 翠鸟";
+"ax.petHelp" = "点击它会害羞,拖动可移动。";
+"ax.tooltip" = "翡 · 翠鸟桌面宠物";
+
+// 状态栏按钮
+"statusitem.tooltip" = "翡 · 翠鸟桌面宠物";

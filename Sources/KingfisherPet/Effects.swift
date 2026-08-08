@@ -45,6 +45,9 @@ final class Effect {
 
 enum Effects {
 
+    /// 按全局动画速度缩放一段时长(快=更短)
+    private static func sp(_ s: TimeInterval) -> TimeInterval { s / Settings.shared.speed }
+
     /// 水花:在 point(屏幕坐标)处溅起白色水滴 + 涟漪
     static func splash(at point: CGPoint, on screen: NSScreen?) {
         let size = CGSize(width: 160, height: 160)
@@ -61,9 +64,9 @@ enum Effects {
             ring.borderColor = NSColor(calibratedWhite: 1, alpha: 0.9).cgColor
             ring.backgroundColor = .clear
             let rs = CABasicAnimation(keyPath: "transform.scale")
-            rs.fromValue = 0.3; rs.toValue = 3.2; rs.duration = 0.55
+            rs.fromValue = 0.3; rs.toValue = 3.2; rs.duration = sp(0.55)
             let ro = CABasicAnimation(keyPath: "opacity")
-            ro.fromValue = 0.9; ro.toValue = 0; ro.duration = 0.55
+            ro.fromValue = 0.9; ro.toValue = 0; ro.duration = sp(0.55)
             ring.opacity = 0
             ring.add(rs, forKey: "s"); ring.add(ro, forKey: "o")
             layer.addSublayer(ring)
@@ -87,19 +90,19 @@ enum Effects {
                 let pos = CAKeyframeAnimation(keyPath: "position")
                 pos.values = [c, peak, end]
                 pos.keyTimes = [0, 0.45, 1]
-                pos.duration = 0.6
+                pos.duration = sp(0.6)
                 pos.timingFunctions = [
                     CAMediaTimingFunction(name: .easeOut),
                     CAMediaTimingFunction(name: .easeIn)
                 ]
                 let op = CABasicAnimation(keyPath: "opacity")
-                op.fromValue = 1; op.toValue = 0; op.duration = 0.6
+                op.fromValue = 1; op.toValue = 0; op.duration = sp(0.6)
                 drop.opacity = 0
                 drop.add(pos, forKey: "p"); drop.add(op, forKey: "o")
                 layer.addSublayer(drop)
             }
         }
-        e.close(after: 0.7)
+        e.close(after: sp(0.7))
     }
 
     /// 音符:在 point(屏幕坐标,鸟头上方)处 ♪ 上浮淡出
@@ -121,24 +124,25 @@ enum Effects {
                 t.bounds = CGRect(x: 0, y: 0, width: 40, height: 36)
                 t.position = CGPoint(x: c.x + CGFloat(i - 1) * 14, y: c.y)
                 let now = CACurrentMediaTime()
+                let stagger = sp(0.25)
                 let pos = CABasicAnimation(keyPath: "position")
                 pos.fromValue = NSValue(point: t.position)
                 pos.toValue = NSValue(point: CGPoint(x: t.position.x, y: t.position.y + 40))
-                pos.duration = 1.2
-                pos.beginTime = now + Double(i) * 0.25
+                pos.duration = sp(1.2)
+                pos.beginTime = now + Double(i) * stagger
                 pos.fillMode = .forwards
                 let op = CAKeyframeAnimation(keyPath: "opacity")
                 op.values = [0, 1, 1, 0]
                 op.keyTimes = [0, 0.15, 0.7, 1]
-                op.duration = 1.2
-                op.beginTime = now + Double(i) * 0.25
+                op.duration = sp(1.2)
+                op.beginTime = now + Double(i) * stagger
                 op.fillMode = .forwards
                 t.opacity = 0
                 t.add(pos, forKey: "p"); t.add(op, forKey: "o")
                 layer.addSublayer(t)
             }
         }
-        e.close(after: 1.6)
+        e.close(after: sp(1.6))
     }
 
     /// 鸟屎:从 point(屁股位置,屏幕坐标)处掉出一小坨白色鸟屎(尿酸白 + 一小撮深色),摆动+淡出
@@ -172,17 +176,17 @@ enum Effects {
             let pos = CAKeyframeAnimation(keyPath: "position")
             pos.values = [top, mid, lower, bot]
             pos.keyTimes = [0, 0.4, 0.75, 1]
-            pos.duration = 1.0
+            pos.duration = sp(1.0)
             pos.timingFunction = CAMediaTimingFunction(name: .easeIn)
             let op = CAKeyframeAnimation(keyPath: "opacity")
             op.values = [1, 1, 0]
             op.keyTimes = [0, 0.8, 1]
-            op.duration = 1.0
+            op.duration = sp(1.0)
             blob.opacity = 0
             blob.add(pos, forKey: "p"); blob.add(op, forKey: "o")
             layer.addSublayer(blob)
         }
-        e.close(after: 1.2)
+        e.close(after: sp(1.2))
     }
 
     /// 带描边的字形(填充 + 描边),用于 zzz
@@ -224,16 +228,16 @@ enum Effects {
             pos.fromValue = NSValue(point: CGPoint(x: startX, y: startY))
             pos.toValue = NSValue(point: CGPoint(x: startX + CGFloat.random(in: -18...18),
                                                  y: size.height - 14))
-            pos.duration = 1.8
+            pos.duration = sp(1.8)
             let op = CAKeyframeAnimation(keyPath: "opacity")
             op.values = [0, 1, 1, 0]
             op.keyTimes = [0, 0.12, 0.7, 1]
-            op.duration = 1.8
+            op.duration = sp(1.8)
             z.opacity = 0
             z.add(pos, forKey: "p"); z.add(op, forKey: "o")
             layer.addSublayer(z)
         }
-        e.close(after: 1.9)
+        e.close(after: sp(1.9))
     }
 
     /// 日光浴的太阳:在 point 处一个旋转光芒 + 脉冲的太阳盘,持续 duration 秒
@@ -282,6 +286,6 @@ enum Effects {
             layer.addSublayer(rays)
             layer.addSublayer(disk)
         }
-        e.close(after: duration)
+        e.close(after: sp(duration))
     }
 }
