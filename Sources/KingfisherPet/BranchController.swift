@@ -103,10 +103,12 @@ final class BranchController {
         }
 
         guard let b = bird, let beh = behavior else { return }
-        // 树枝显隐取决于鸟的"停靠意图",而非脚下方碰巧有没有东西:
-        // 鸟歇着、不在窗口上 → 该有树枝;一旦出了,只要鸟还歇着就保持(窗口经过不撤)。
-        // 鸟飞走 / 拖动 / 落到窗口上 才撤树枝。
-        let wantsBranch = beh.isResting() && !beh.onWindow
+        // 树枝只在鸟悬空歇着时出现(没踩 Dock、没踩窗口):
+        //   - 踩窗口 → onWindow=true,不出
+        //   - 踩 Dock/地面 → isAirborne=false(脚下方有近表面),不出
+        //   - 悬空(高处)→ 两者都不满足,出树枝
+        // 一旦出了,只要鸟还歇着就保持;窗口经过不影响(因为 onWindow 不会因经过变 true)。
+        let wantsBranch = beh.isResting() && !beh.onWindow && beh.isAirborne()
         let shouldShow = wantsBranch && !beh.dragging && b.isVisible
 
         if shouldShow {

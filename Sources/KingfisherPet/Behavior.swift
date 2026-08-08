@@ -17,7 +17,8 @@ final class Behavior: PetViewDelegate {
     private var gen = 0               // 动作代际;新动作/拖动 bump,旧的 hold/动画自动作废
 
     private let size = CGSize(width: 160, height: 160)
-    private let feetOffset: CGFloat = 43   // 脚距窗口底部约 43px(sprite 脚趾底 y≈213 / 窗口高 256)
+    private let feetOffset: CGFloat = 26   // 脚位基准(原版 27,视觉校准)
+    private let headOffset: CGFloat = 72   // 头距窗口顶(sprite 实测,预留)
 
     /// 按全局动画速度缩放一段时长:速度越快,实际时长越短(1.5×→除以 1.5)。
     private func sp(_ secs: TimeInterval) -> TimeInterval { secs / Settings.shared.speed }
@@ -52,13 +53,13 @@ final class Behavior: PetViewDelegate {
     private var screen: NSScreen? { window?.screen ?? NSScreen.main }
     private var area: CGRect { screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero }
 
-    /// 把窗口原点限制在屏内:脚不低于 Dock 顶、头不超屏顶、横向不出界
+    /// 把窗口原点限制在屏内:脚不低于 Dock 顶、头不超菜单栏下、横向不出界。
     private func clamp(_ origin: CGPoint) -> CGPoint {
         let a = area
         let minX = a.minX
         let maxX = a.maxX - size.width
         let minY = a.minY - feetOffset     // 脚可到 Dock 顶
-        let maxY = a.maxY - size.height
+        let maxY = a.maxY - size.height    // 窗口顶不超菜单栏下(原版逻辑)
         return CGPoint(x: min(max(origin.x, minX), maxX),
                        y: min(max(origin.y, minY), maxY))
     }
