@@ -102,10 +102,9 @@ final class BranchController {
             return
         }
 
-        guard let b = bird, let beh = behavior, let scr = b.screen ?? NSScreen.main else { return }
-        let a = scr.visibleFrame
-        let high = b.frame.minY > a.maxY - a.height * 0.40
-        let shouldShow = beh.isResting() && high && b.isVisible
+        guard let b = bird, let beh = behavior else { return }
+        // 只要鸟在歇着、没踩 Dock/窗口(悬空),就得有树枝托着——不再限制屏上 40% 高度
+        let shouldShow = beh.isResting() && beh.isAirborne() && b.isVisible
                          && !beh.dragging && !beh.onWindow
 
         if shouldShow {
