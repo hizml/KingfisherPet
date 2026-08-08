@@ -839,14 +839,15 @@ def main():
 def gen_peep():
     """生成翠鸟叫声 wav(不随主题变):模仿普通翠鸟(Alcedo atthis)真实鸣声。
 
-    声学特征(基于真实录音 FFT/时频分析,广州烈士陵园实拍 BV1ir4y1o7gP):
-    - 主频高:约 4400–6400Hz(单声大多 5500–6300Hz,连发档约 3300/4400/5300Hz)
-    - 频率轮廓:**急升(前 ~15ms)→ 稳定在顶峰微颤 → 快速落**(不是升-降弧线)
-    - 颤动:稳定段有 ±100-200Hz 的快速不规则抖动(像颤音)
-    - 单声时长:60–160ms;常连发 2-4 声,间隔 50-100ms
-    - 音色:基频为主 + 弱谐波 + 微气流噪声
+    声学特征(权威声谱分析 + 真实录音 FFT 验证):
+    - 类型:尖锐"犬吠哨"声(downslurred 下扫)
+    - 频率范围:4900–6600 Hz(权威资料 fssbirding);真实录音单声 5900→6300 起步
+    - 频率轮廓:**下扫**——高频起,线性/指数降到低频(不是升-降,也不是稳定!)
+      真实测量:单声 6300→5900(轻扫 -400Hz);连发声 5000→3400(大扫 -1600Hz)
+    - 单声时长:80–160ms;连发时每声 70-120ms,间隔 50-100ms
+    - 音色:基频为主 + 弱谐波 + 微气流噪声;有轻微颤动
 
-    4 种变体:0 高频单声 / 1 双连发 / 2 中频长叫 / 3 急促三连
+    4 种变体:0 高频单声下扫 / 1 双连发下扫 / 2 长下扫 / 3 急促三连下扫
     输出到 ../Resources/peep_*.wav。"""
     import random as _rnd
     sr = 44100
@@ -858,40 +859,36 @@ def gen_peep():
             w.setframerate(sr)
             w.writeframes(struct.pack("<" + "h" * len(samples), *samples))
 
-    def synth_note(dur, f_peak, amp=0.4, vibrato=150, noise=0.05,
+    def synth_note(dur, f_start, f_end, amp=0.4, vibrato=120, noise=0.05,
                    harmonics=(1.0, 0.18, 0.06), seed=42):
-        """合成单个翠鸟叫声脉冲。
-        f_peak:急升后稳定的主频;vibrato:稳定段颤动幅度(Hz,峰峰值的一半)。
-        频率轮廓:前 12% 急升到 f_peak,中间稳定+颤动,末尾 12% 快速落。"""
+        """合成单个翠鸟下扫叫声。
+        f_start→f_end:从高频线性降到低频(downslurred)。
+        vibrato:叠加的颤动幅度(Hz);noise:气流噪声比例;harmonics:基频+谐波。"""
         n = int(sr * dur)
         out = [0.0] * n
         rnd = _rnd.Random(seed)
-        # 预生成颤动序列(平滑随机,模拟鸟鸣的频率抖动)
+        # 颤动序列(阻尼随机游走)
         vib_seq = []
         v = 0.0
         for i in range(n):
             v += rnd.uniform(-1, 1) * vibrato * 0.15
-            v *= 0.85   # 阻尼回中
+            v *= 0.85
             v = max(-vibrato, min(vibrato, v))
             vib_seq.append(v)
         for hi, hw in enumerate(harmonics, start=1):
             phase = 0.0
             for i in range(n):
                 p = i / n
-                # 频率轮廓:前 12% 急升,末 12% 急落,中间稳定+颤动
-                if p < 0.12:
-                    f = f_peak * 0.55 + f_peak * 0.45 * (p / 0.12)     # 从 55% 升到 100%
-                elif p > 0.88:
-                    f = f_peak * (1.0 - 0.4 * ((p - 0.88) / 0.12))     # 落到 60%
-                else:
-                    f = f_peak + vib_seq[i]
-                f *= hi
+                # 下扫轮廓:线性从 f_start 降到 f_end(翠鸟特征)
+                f = f_start + (f_end - f_start) * p
+                f += vib_seq[i]        # 叠颤动
+                f *= hi                # 谐波倍频
                 phase += 2 * math.pi * f / sr
                 # 包络:快速起 + 平顶 + 快速落
                 if p < 0.06:
                     env = p / 0.06
-                elif p > 0.90:
-                    env = max(0, (1 - p) / 0.10)
+                elif p > 0.88:
+                    env = max(0, (1 - p) / 0.12)
                 else:
                     env = 1.0
                 out[i] += hw * env * math.sin(phase)
@@ -900,7 +897,7 @@ def gen_peep():
             prev = 0.0
             for i in range(n):
                 p = i / n
-                env = 1.0 if 0.06 <= p <= 0.90 else (p / 0.06 if p < 0.06 else max(0, (1 - p) / 0.10))
+                env = 1.0 if 0.06 <= p <= 0.88 else (p / 0.06 if p < 0.06 else max(0, (1 - p) / 0.12))
                 white = rnd.uniform(-1, 1)
                 out[i] += noise * env * (white - prev)
                 prev = white
@@ -917,26 +914,27 @@ def gen_peep():
 
     base = os.path.join(RES)
 
-    # 0 高频单声(主频 6000Hz,真实叫声1 段)
+    # 0 高频单声下扫:6300→5900Hz(真实叫声2,经典 pee-eep)
     write_wav(os.path.join(base, "peep_0.wav"),
-              synth_note(0.14, f_peak=6000, amp=0.42, vibrato=160, noise=0.05, seed=7))
+              synth_note(0.14, f_start=6300, f_end=5900, amp=0.42, vibrato=150, noise=0.05, seed=7))
 
-    # 1 双连发(两声 5300Hz,间隔 80ms,连发段特征)
-    a = synth_note(0.10, f_peak=5300, amp=0.40, vibrato=140, noise=0.05, seed=11)
-    b = synth_note(0.11, f_peak=5500, amp=0.40, vibrato=150, noise=0.05, seed=13)
+    # 1 双连发下扫:两声,第二声起点更高(真实连发段)
+    a = synth_note(0.10, f_start=5000, f_end=3400, amp=0.40, vibrato=140, noise=0.05, seed=11)
+    b = synth_note(0.11, f_start=5300, f_end=3500, amp=0.40, vibrato=150, noise=0.05, seed=13)
     write_wav(os.path.join(base, "peep_1.wav"), concat(a, silence(0.08), b))
 
-    # 2 中频长叫(主频 3400Hz,真实连发段常见档位,稍长)
+    # 2 长下扫:5000→3000Hz(大幅下滑,警告/兴奋)
     write_wav(os.path.join(base, "peep_2.wav"),
-              synth_note(0.20, f_peak=3400, amp=0.44, vibrato=100, noise=0.06, seed=23))
+              synth_note(0.18, f_start=5000, f_end=3000, amp=0.44, vibrato=100, noise=0.06, seed=23))
 
-    # 3 急促三连(4400Hz 三声快连,受惊/激动)
-    x = synth_note(0.07, f_peak=4400, amp=0.38, vibrato=120, noise=0.06, seed=31)
-    y = synth_note(0.07, f_peak=4600, amp=0.38, vibrato=120, noise=0.06, seed=37)
-    z = synth_note(0.08, f_peak=4800, amp=0.38, vibrato=130, noise=0.06, seed=41)
+    # 3 急促三连下扫(受惊/激动,每声短)
+    x = synth_note(0.07, f_start=4900, f_end=3000, amp=0.38, vibrato=120, noise=0.06, seed=31)
+    y = synth_note(0.07, f_start=5100, f_end=3200, amp=0.38, vibrato=120, noise=0.06, seed=37)
+    z = synth_note(0.08, f_start=5300, f_end=3400, amp=0.38, vibrato=130, noise=0.06, seed=41)
     write_wav(os.path.join(base, "peep_3.wav"), concat(x, silence(0.06), y, silence(0.06), z))
 
-    print("  wrote peep_0..3.wav (翠鸟叫声, 基于真实录音频谱)")
+    print("  wrote peep_0..3.wav (翠鸟下扫叫声, 基于真实声谱)")
+
 
 
 if __name__ == "__main__":
