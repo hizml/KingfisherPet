@@ -94,9 +94,9 @@ private final class Poop {
         }
         blob.bounds = CGRect(x: 0, y: 0, width: 30, height: 20)
         blob.position = CGPoint(x: 15, y: 10)
-        let white = NSColor(calibratedWhite: 0.97, alpha: 1)
-        let off = NSColor(calibratedRed: 0.86, green: 0.88, blue: 0.82, alpha: 1)
-        let dark = NSColor(calibratedRed: 0.42, green: 0.48, blue: 0.26, alpha: 1)
+        let white = ThemeColors.shared.color("poop_white", fallback: NSColor(calibratedWhite: 0.97, alpha: 1))
+        let off = ThemeColors.shared.color("poop_off",   fallback: NSColor(calibratedRed: 0.86, green: 0.88, blue: 0.82, alpha: 1))
+        let dark = ThemeColors.shared.color("poop_dark",  fallback: NSColor(calibratedRed: 0.42, green: 0.48, blue: 0.26, alpha: 1))
         // 一摊稀屎:宽扁主体底边贴窗口底(local y=0) + 几滴飞溅 + 一小撮深色
         blob.addSublayer(drop(24, 8, 15, 4, white))    // 主体 y 0..8
         blob.addSublayer(drop(16, 6, 15, 6, off))      // 中间略厚

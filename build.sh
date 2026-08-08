@@ -31,6 +31,7 @@ for theme_dir in "$SPRITES_SRC"/*/; do
   mkdir -p "$APP/Contents/Resources/Sprites/$theme_name"
   cp "$theme_dir"*.png "$APP/Contents/Resources/Sprites/$theme_name/" 2>/dev/null || true
   cp "$theme_dir"sprites.json "$APP/Contents/Resources/Sprites/$theme_name/" 2>/dev/null || true
+  cp "$theme_dir"colors.json "$APP/Contents/Resources/Sprites/$theme_name/" 2>/dev/null || true
   # 检查图不进包
   rm -f "$APP/Contents/Resources/Sprites/$theme_name/contact.png"
 done

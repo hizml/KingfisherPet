@@ -836,6 +836,114 @@ def main():
     print("全部主题渲染完成。")
 
 
+def gen_colors():
+    """每个主题导出 colors.json:特效(屎/zzz/音符/太阳/水花/裂纹)用色。
+    色值从主题调色板推导,Swift 侧 ThemeColors 加载后特效自动跟主题。
+    格式:[r,g,b,a] 0-255。"""
+    # 特效需要的色键 → 从调色板哪个色推导
+    def theme_colors(theme):
+        pal = palette_for(theme)
+        def rgb(key):
+            return [pal[key][0], pal[key][1], pal[key][2], pal[key][3]]
+        # 特效色定义(每个主题不同)
+        if theme == "neon":
+            return {
+                # 屎:霓虹下用青/品红发光
+                "poop_white": rgb("WHITE"),
+                "poop_off":   [0, 200, 255, 255],
+                "poop_dark":  [255, 60, 160, 255],
+                # zzz:青色发光
+                "zzz_fill":   [220, 245, 255, 240],
+                "zzz_stroke": [0, 229, 255, 230],
+                # 音符:橙
+                "note":       [255, 140, 40, 255],
+                # 太阳:橙黄发光
+                "sun_ray":    [255, 160, 40, 235],
+                "sun_disk":   [255, 200, 80, 255],
+                # 水花:青
+                "splash":     [0, 229, 255, 230],
+                # 裂纹:青/橙发光
+                "crack_dark": [0, 200, 255, 180],
+                "crack_light":[255, 140, 40, 200],
+            }
+        elif theme == "ink":
+            return {
+                "poop_white": [240, 238, 232, 255],
+                "poop_off":   [200, 195, 185, 255],
+                "poop_dark":  [60, 55, 45, 255],
+                "zzz_fill":   [240, 238, 232, 240],
+                "zzz_stroke": [40, 40, 40, 220],
+                "note":       [180, 60, 30, 235],
+                "sun_ray":    [200, 70, 30, 200],
+                "sun_disk":   [220, 90, 40, 235],
+                "splash":     [200, 200, 195, 200],
+                "crack_dark": [10, 10, 10, 180],
+                "crack_light":[180, 175, 165, 150],
+            }
+        elif theme == "pixel":
+            return {
+                "poop_white": [253, 246, 230, 255],
+                "poop_off":   [200, 196, 180, 255],
+                "poop_dark":  [90, 110, 60, 255],
+                "zzz_fill":   [200, 240, 250, 240],
+                "zzz_stroke": [40, 100, 110, 230],
+                "note":       [40, 140, 150, 255],
+                "sun_ray":    [240, 200, 60, 235],
+                "sun_disk":   [250, 220, 100, 255],
+                "splash":     [240, 250, 255, 230],
+                "crack_dark": [20, 20, 20, 180],
+                "crack_light":[250, 250, 240, 200],
+            }
+        elif theme == "watercolor":
+            return {
+                "poop_white": [252, 248, 238, 235],
+                "poop_off":   [220, 215, 200, 225],
+                "poop_dark":  [120, 130, 90, 225],
+                "zzz_fill":   [180, 220, 225, 220],
+                "zzz_stroke": [90, 140, 150, 200],
+                "note":       [150, 180, 190, 225],
+                "sun_ray":    [240, 200, 130, 215],
+                "sun_disk":   [245, 215, 150, 230],
+                "splash":     [200, 225, 230, 210],
+                "crack_dark": [80, 70, 80, 160],
+                "crack_light":[240, 235, 225, 140],
+            }
+        elif theme == "clay":
+            return {
+                "poop_white": [253, 246, 230, 255],
+                "poop_off":   [225, 220, 205, 255],
+                "poop_dark":  [110, 120, 70, 255],
+                "zzz_fill":   [220, 240, 245, 240],
+                "zzz_stroke": [120, 160, 170, 220],
+                "note":       [80, 170, 180, 255],
+                "sun_ray":    [245, 190, 70, 235],
+                "sun_disk":   [250, 210, 110, 255],
+                "splash":     [245, 250, 255, 230],
+                "crack_dark": [30, 30, 30, 180],
+                "crack_light":[255, 250, 240, 200],
+            }
+        else:  # flat
+            return {
+                "poop_white": [253, 246, 230, 255],
+                "poop_off":   [220, 224, 209, 255],
+                "poop_dark":  [107, 122, 66, 255],
+                "zzz_fill":   [245, 250, 247, 242],
+                "zzz_stroke": [100, 130, 138, 230],
+                "note":       [80, 175, 185, 255],
+                "sun_ray":    [255, 204, 64, 235],
+                "sun_disk":   [255, 219, 97, 255],
+                "splash":     [255, 255, 255, 230],
+                "crack_dark": [13, 13, 13, 153],
+                "crack_light":[255, 255, 255, 178],
+            }
+
+    for theme in THEME_NAMES:
+        out = os.path.join(OUT_BASE, theme, "colors.json")
+        with open(out, "w") as f:
+            json.dump(theme_colors(theme), f, indent=2)
+        print(f"  wrote {theme}/colors.json")
+
+
 def gen_peep():
     """生成翠鸟叫声 wav(不随主题变):模仿普通翠鸟(Alcedo atthis)真实鸣声。
 
@@ -939,4 +1047,5 @@ def gen_peep():
 
 if __name__ == "__main__":
     main()
+    gen_colors()
     gen_peep()
