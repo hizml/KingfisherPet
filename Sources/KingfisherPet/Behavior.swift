@@ -43,13 +43,14 @@ final class Behavior: PetViewDelegate {
     }
 
     /// 开始一个新动作:取消所有进行中的 hold/动画/定时器(代际 bump)
+    /// 注意:不清 onWindow/leavePerch —— 原地静态动作(watch/sing/sun/sleep/peck/poop)
+    /// 在窗口上做时该保持在窗口上,不出树枝。真正移动的动作(fly/walk/dart)自己调 leavePerch。
     private func beginAction() {
         gen &+= 1
         busy = true
         thinkTimer?.invalidate()
         poopTimer?.invalidate()
         stopZzz()
-        leavePerch()
     }
 
     // MARK: - 几何
@@ -109,6 +110,7 @@ final class Behavior: PetViewDelegate {
 
     func petViewDidBeginDrag() {
         beginAction()          // 取消一切进行中的动作
+        leavePerch()           // 被拿起来了,脱离栖枝
         dragging = true
         enter("idle")
     }
@@ -232,9 +234,10 @@ final class Behavior: PetViewDelegate {
     // MARK: - 走(沿下方表面:Dock 顶 / 窗口上沿;在窗口上走到边就飞走)
     private func startWalk() {
         guard let window = window, screen != nil else { finish(); return }
-        let onWin = onWindow                 // 先记下(beginAction 会清)
+        let onWin = onWindow                 // 先记下
         let wid = perchedID
         beginAction()
+        leavePerch()                         // 走 = 自己移动,脱离栖枝跟随
         enter("walk")
         let a = area
         let dir: CGFloat = Bool.random() ? 1 : -1
