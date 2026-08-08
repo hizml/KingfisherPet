@@ -471,7 +471,8 @@ final class Behavior: PetViewDelegate {
     }
     private func startPerchCheck() {
         stopPerchCheck()
-        let t = Timer(timeInterval: 0.4, repeats: true) { [weak self] _ in self?.checkPerch() }
+        // 高频跟随窗口移动(20fps),避免窗口拖动时鸟脱离、悬空长出树枝
+        let t = Timer(timeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in self?.checkPerch() }
         RunLoop.main.add(t, forMode: .common)
         perchChecker = t
     }
@@ -484,12 +485,26 @@ final class Behavior: PetViewDelegate {
               let f = WindowTracker.frameOfWindow(id: wid) else {
             leavePerch(); startFly(); return                 // 窗口没了 → 飞走
         }
-        let topY = scr.frame.height - f.minY
-        let moved = abs(topY - (w.frame.minY + feetOffset)) > 24 || abs(f.midX - w.frame.midX) > 120
+        let topY = scr.frame.height - f.minY                 // 窗口上沿(NS-y)
+        let feetY = w.frame.minY + feetOffset
+        let dx = f.midX - w.frame.midX
+        let dy = topY - feetY
         // 遮挡:鸟脚处最前面的窗口不是本窗口(被更大窗口盖住)→ 飞走
-        let feetPt = CGPoint(x: w.frame.midX, y: w.frame.minY + feetOffset)
+        let feetPt = CGPoint(x: w.frame.midX, y: feetY)
         let occluded = WindowTracker.frontWindowAt(nsPoint: feetPt) != wid
-        if moved || occluded {
+        if occluded {
+            leavePerch(); startFly(); return
+        }
+        // 小位移:鸟跟着窗口一起挪(像站在移动物体上),不脱离、不悬空
+        if abs(dx) < 8 && abs(dy) < 8 {
+            return      // 几乎没动,不用管
+        }
+        if abs(dx) < 140 && abs(dy) < 140 {
+            // 跟随窗口移动:把鸟挪到窗口新上沿对应位置
+            w.setFrameOrigin(clamp(CGPoint(x: w.frame.origin.x + dx, y: w.frame.origin.y + dy)))
+            shadow?.updateNow()
+        } else {
+            // 窗口被快速甩开(拖太快)→ 飞走
             leavePerch(); startFly()
         }
     }
