@@ -24,18 +24,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var branchCtl: BranchController!
     private var crackCtl: CrackController!
     private var poopCtl: PoopController!
+    private var settingsWindowController: SettingsWindowController?
 
-    private static let kSound = "kingfisher.soundOn"
     private static let kAutoLogin = "kingfisher.autoLogin"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // 加载资源
-        _ = SpriteLibrary.shared
-        // 恢复设置
-        let d = UserDefaults.standard
-        SpriteLibrary.shared.soundOn = (d.object(forKey: Self.kSound) as? Bool) ?? true
-        if d.bool(forKey: Self.kAutoLogin) {
-            // 重新注册(更新版后系统可能要求重新允许)
+        // 加载资源(默认 flat);如保存的主题不是 flat,切过去
+        let s = Settings.shared
+        if s.theme != SpriteLibrary.shared.currentTheme {
+            SpriteLibrary.shared.reload(theme: s.theme)
+        }
+        SpriteLibrary.shared.soundOn = s.soundOn
+
+        // 设置变化 → 应用到各子系统
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(settingsChanged(_:)),
+            name: Settings.didChangeNotification, object: nil)
+
+        // 开机自启
+        if UserDefaults.standard.bool(forKey: Self.kAutoLogin) {
             try? SMAppService.mainApp.register()
         }
 
@@ -57,11 +64,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             petController.behavior.branch = branchCtl
             crackCtl = CrackController()
             crackCtl.start()
+            crackCtl.bird = win
             petController.behavior.crack = crackCtl
             poopCtl = PoopController()
             poopCtl.start()
+            poopCtl.bird = win
             petController.behavior.poopCtl = poopCtl
+            // 主题切换:阴影/树枝贴图跟随换主题
+            SpriteLibrary.shared.observeThemeChanged { [weak self] in
+                self?.shadowCtl.reloadTheme()
+                self?.branchCtl.reloadTheme()
+            }
         }
+
+        // 多屏:屏幕布局变化(插拔外接屏、分辨率变更)时,裂纹重定位 + 鸟钳制回当前屏
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(screenParamsChanged),
+            name: NSApplication.didChangeScreenParametersNotification, object: nil)
 
         if ProcessInfo.processInfo.environment["KF_SNAPSHOT"] != nil {
             writeDebugSnapshot()
@@ -114,30 +133,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             sized.isTemplate = false
             button?.image = sized
         }
-        button?.toolTip = "翡 · 翠鸟桌面宠物"
+        button?.toolTip = NSLocalizedString("statusitem.tooltip", comment: "")
+        button?.setAccessibilityLabel(NSLocalizedString("ax.tooltip", comment: ""))
 
         let menu = NSMenu()
-        menu.addItem(item("召唤过来", action: #selector(callOver)))
-        menu.addItem(item("去抓条鱼", action: #selector(doFish)))
-        menu.addItem(item("唱一个", action: #selector(doSing)))
-        menu.addItem(item("停到窗口上", action: #selector(doPerch)))
-        menu.addItem(item("啄一下", action: #selector(doPeck)))
-        menu.addItem(item("显示 / 隐藏", action: #selector(toggleVisibility)))
+        menu.addItem(item(NSLocalizedString("menu.callOver", comment: ""), action: #selector(callOver)))
+        menu.addItem(item(NSLocalizedString("menu.fish", comment: ""), action: #selector(doFish)))
+        menu.addItem(item(NSLocalizedString("menu.sing", comment: ""), action: #selector(doSing)))
+        menu.addItem(item(NSLocalizedString("menu.perch", comment: ""), action: #selector(doPerch)))
+        menu.addItem(item(NSLocalizedString("menu.peck", comment: ""), action: #selector(doPeck)))
+        menu.addItem(item(NSLocalizedString("menu.toggleVisibility", comment: ""), action: #selector(toggleVisibility)))
         menu.addItem(.separator())
-        soundMenuItem = item("啾鸣声:开", action: #selector(toggleSound))
+        soundMenuItem = item(NSLocalizedString("menu.soundOn", comment: ""), action: #selector(toggleSound))
         menu.addItem(soundMenuItem)
-        autoLoginMenuItem = item("开机自启", action: #selector(toggleAutoLogin))
+        autoLoginMenuItem = item(NSLocalizedString("menu.autoLogin", comment: ""), action: #selector(toggleAutoLogin))
         menu.addItem(autoLoginMenuItem)
-        menu.addItem(item("修复屏幕", action: #selector(repairScreen)))
+        menu.addItem(item(NSLocalizedString("menu.repairScreen", comment: ""), action: #selector(repairScreen)))
+        menu.addItem(item(NSLocalizedString("menu.settings", comment: ""), action: #selector(showSettings)))
         menu.addItem(.separator())
-        menu.addItem(item("关于 翡", action: #selector(showAbout)))
-        menu.addItem(item("退出 翡", action: #selector(quit)))
+        menu.addItem(item(NSLocalizedString("menu.about", comment: ""), action: #selector(showAbout)))
+        menu.addItem(item(NSLocalizedString("menu.quit", comment: ""), action: #selector(quit)))
         statusItem.menu = menu
         refreshMenuState()
     }
 
     private func refreshMenuState() {
-        soundMenuItem.title = SpriteLibrary.shared.soundOn ? "啾鸣声:开" : "啾鸣声:关"
+        soundMenuItem.title = NSLocalizedString(
+            Settings.shared.soundOn ? "menu.soundOn" : "menu.soundOff", comment: "")
         let on = UserDefaults.standard.bool(forKey: Self.kAutoLogin)
         autoLoginMenuItem.state = on ? .on : .off
     }
@@ -178,9 +200,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func toggleSound() {
-        SpriteLibrary.shared.soundOn.toggle()
-        UserDefaults.standard.set(SpriteLibrary.shared.soundOn, forKey: Self.kSound)
-        soundMenuItem.title = SpriteLibrary.shared.soundOn ? "啾鸣声:开" : "啾鸣声:关"
+        Settings.shared.soundOn.toggle()
+    }
+
+    @objc private func showSettings() {
+        if settingsWindowController == nil {
+            settingsWindowController = SettingsWindowController()
+        }
+        settingsWindowController?.show()
+    }
+
+    /// 屏幕布局变化(插拔屏/分辨率):重定位裂纹覆盖层,把鸟钳回当前可见区。
+    @objc private func screenParamsChanged() {
+        crackCtl?.relocate()
+        petController?.behavior.clampToCurrentScreen()
+    }
+
+    /// 设置变化:应用到各子系统 + 同步菜单
+    @objc private func settingsChanged(_ n: Notification) {
+        let key = (n.userInfo?["key"] as? String) ?? ""
+        switch key {
+        case "kingfisher.settings.soundOn":
+            SpriteLibrary.shared.soundOn = Settings.shared.soundOn
+            soundMenuItem.title = NSLocalizedString(
+                Settings.shared.soundOn ? "menu.soundOn" : "menu.soundOff", comment: "")
+        case "kingfisher.settings.theme":
+            SpriteLibrary.shared.reload(theme: Settings.shared.theme)
+        default: break
+        }
     }
 
     @objc private func toggleAutoLogin() {
@@ -206,11 +253,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showAbout() {
         let alert = NSAlert()
-        alert.messageText = "翡"
-        alert.informativeText = "一只住在你 Mac 上的小生灵。\n它会自己活动,也会回应你——\n至于它都会些什么,养着养着就知道了。\n\n点它、拖它,或者就让它待着。"
+        alert.messageText = NSLocalizedString("about.title", comment: "")
+        alert.informativeText = NSLocalizedString("about.body", comment: "")
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "GitHub 主页")
-        alert.addButton(withTitle: "好")
+        alert.addButton(withTitle: NSLocalizedString("about.github", comment: ""))
+        alert.addButton(withTitle: NSLocalizedString("about.ok", comment: ""))
         if let img = SpriteLibrary.shared.frame("idle_0")?.image {
             alert.icon = img
         }

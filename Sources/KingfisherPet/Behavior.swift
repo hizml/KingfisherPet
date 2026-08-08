@@ -19,6 +19,9 @@ final class Behavior: PetViewDelegate {
     private let size = CGSize(width: 160, height: 160)
     private let feetOffset: CGFloat = 27   // 脚距窗口底部约 27px(按 sprite 脚趾坐标)
 
+    /// 按全局动画速度缩放一段时长:速度越快,实际时长越短(1.5×→除以 1.5)。
+    private func sp(_ secs: TimeInterval) -> TimeInterval { secs / Settings.shared.speed }
+
     weak var shadow: ShadowController?
     weak var crack: CrackController?
     weak var poopCtl: PoopController?
@@ -137,10 +140,11 @@ final class Behavior: PetViewDelegate {
     func isResting() -> Bool { Self.restingStates.contains(current) }
     private func finish() { busy = false; enter("idle"); scheduleThink() }
 
-    /// 延时回调;捕获当前代际,bump 后自动作废(避免被取消的动作继续推进)
+    /// 延时回调;捕获当前代际,bump 后自动作废(避免被取消的动作继续推进)。
+    /// 受全局动画速度影响(快=更短)。
     private func hold(_ t: TimeInterval, _ done: @escaping () -> Void) {
         let g = gen
-        DispatchQueue.main.asyncAfter(deadline: .now() + t) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + sp(t)) { [weak self] in
             guard let self = self, self.gen == g else { return }
             done()
         }
@@ -149,7 +153,11 @@ final class Behavior: PetViewDelegate {
     // MARK: - 定时思考
     private func scheduleThink() {
         thinkTimer?.invalidate()
-        let delay = Double.random(in: 3.5...7.0)
+        // 活跃度越高,思考间隔越短(更频繁地决定下一个动作)
+        let a = Settings.shared.activity           // 0…1
+        let lo = 3.5 - 2.0 * a                      // 0→3.5s, 1→1.5s
+        let hi = 7.0 - 3.5 * a                      // 0→7.0s, 1→3.5s
+        let delay = Double.random(in: lo...hi)
         thinkTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             self?.think()
         }
@@ -157,22 +165,36 @@ final class Behavior: PetViewDelegate {
 
     private func think() {
         guard !busy else { scheduleThink(); return }
-        let onWin = onWindow
         let isLow = (window?.frame.minY ?? 0) < (area.minY + 60)   // Dock 附近
-        switch Int.random(in: 0..<100) {
-        case 0..<22:   enter("idle"); scheduleThink()
-        case 22..<42:  if onWin || isLow { startWalk() }        // 只在 窗口/Dock 上走
-                       else { enter("idle"); scheduleThink() }  // 树枝上不走路
-        case 42..<49:  startFly()
-        case 49..<57:  startFish()
-        case 57..<64:  startSing()
-        case 64..<71:  startDart()
-        case 71..<78:  startWatch()
-        case 78..<83:  startSun()
-        case 83..<88:  startPeck()
-        case 88..<92:  startPerchWindow()
-        case 92..<97:  startPoop()
-        default:       startSleep()
+        // 活跃度越高,纯待机(idle)概率越低;省下的权重分给其他动作
+        let a = Settings.shared.activity               // 0…1
+        let idleBand = Int((1.0 - a) * 22)             // 0→22, 1→0
+        let walk = idleBand + max(1, Int((1.0 - a) * 20))   // 待机+走动一起,高活跃更倾向走
+        let bounds: [(Int, () -> Void)] = [
+            (walk, { [weak self] in
+                guard let self = self else { return }
+                if self.onWindow || isLow { self.startWalk() }
+                else { self.enter("idle"); self.scheduleThink() }
+            }),
+            (walk + 7,  { [weak self] in self?.startFly() }),
+            (walk + 15, { [weak self] in self?.startFish() }),
+            (walk + 22, { [weak self] in self?.startSing() }),
+            (walk + 29, { [weak self] in self?.startDart() }),
+            (walk + 36, { [weak self] in self?.startWatch() }),
+            (walk + 43, { [weak self] in self?.startSun() }),
+            (walk + 50, { [weak self] in self?.startPeck() }),
+            (walk + 56, { [weak self] in self?.startPerchWindow() }),
+            (walk + 62, { [weak self] in self?.startPoop() }),
+        ]
+        let r = Int.random(in: 0..<100)
+        if r < idleBand {
+            enter("idle"); scheduleThink()
+        } else {
+            // 找到第一个上界 > r 的桶(未达上限的动作)
+            for (upper, action) in bounds where r < upper {
+                action(); return
+            }
+            startSleep()   // 兜底:超 walk+62 的进入打盹
         }
     }
 
@@ -207,12 +229,13 @@ final class Behavior: PetViewDelegate {
                           onWin: Bool, wid: CGWindowID?, flyOff: Bool) {
         guard let w = window else { finish(); return }
         let y = w.frame.origin.y              // 表面是平的:行走时高度不变(避免瞬移)
+        let dur = sp(duration)                // 全局动画速度
         let g = gen
         let t0 = CACurrentMediaTime()
         let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] tm in
             guard let self = self, let w = self.window else { tm.invalidate(); return }
             guard self.gen == g else { tm.invalidate(); return }       // 被取消
-            let t = min(1, (CACurrentMediaTime() - t0) / duration)
+            let t = min(1, (CACurrentMediaTime() - t0) / dur)
             let x = startX + (targetX - startX) * t
             w.setFrameOrigin(self.clamp(CGPoint(x: x, y: y)))
             self.shadow?.updateNow()
@@ -319,6 +342,7 @@ final class Behavior: PetViewDelegate {
                                done: @escaping () -> Void) {
         guard let window = window else { done(); return }
         leavePerch()
+        let dur = sp(duration)                // 全局动画速度
         let start = window.frame.origin
         let c1 = CGPoint(x: start.x + (end.x - start.x) * 0.35,
                          y: start.y + (end.y - start.y) * 0.15)
@@ -329,7 +353,7 @@ final class Behavior: PetViewDelegate {
         let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] tm in
             guard let self = self, let w = self.window else { tm.invalidate(); done(); return }
             guard self.gen == g else { tm.invalidate(); return }       // 被取消,不再回调
-            let t = min(1, (CACurrentMediaTime() - t0) / duration)
+            let t = min(1, (CACurrentMediaTime() - t0) / dur)
             let mt = 1 - t
             var x = mt*mt*mt*start.x + 3*mt*mt*t*c1.x + 3*mt*t*t*c2.x + t*t*t*end.x
             var y = mt*mt*mt*start.y + 3*mt*mt*t*c1.y + 3*mt*t*t*c2.y + t*t*t*end.y
@@ -423,7 +447,7 @@ final class Behavior: PetViewDelegate {
 
     // MARK: - 停到最前面窗口的上沿(随机;窗口移走就飞走)
     func startPerchWindow() {
-        guard let window = window, let scr = screen,
+        guard let window = window, screen != nil,
               let perch = WindowTracker.frontPerch(birdWidth: size.width) else { finish(); return }
         beginAction()
         enter("fly")
@@ -580,13 +604,14 @@ final class Behavior: PetViewDelegate {
     private func animateWindow(to origin: CGPoint, duration: TimeInterval, done: @escaping () -> Void) {
         guard let window = window else { done(); return }
         leavePerch()
+        let dur = sp(duration)                // 全局动画速度
         let start = window.frame.origin
         let g = gen
         let t0 = CACurrentMediaTime()
         let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] tm in
             guard let self = self, let w = self.window else { tm.invalidate(); done(); return }
             guard self.gen == g else { tm.invalidate(); return }       // 被取消
-            let t = min(1, (CACurrentMediaTime() - t0) / duration)
+            let t = min(1, (CACurrentMediaTime() - t0) / dur)
             w.setFrameOrigin(CGPoint(x: start.x + (origin.x - start.x) * t,
                                      y: start.y + (origin.y - start.y) * t))
             self.shadow?.updateNow()
@@ -600,5 +625,13 @@ final class Behavior: PetViewDelegate {
         let a = area
         let origin = clamp(CGPoint(x: a.maxX - size.width - 30, y: a.minY - feetOffset))
         window.setFrame(CGRect(origin: origin, size: size), display: false)
+    }
+
+    /// 屏幕布局变化时把鸟钳制回当前屏可见区(外接屏拔掉/分辨率变,避免飞出屏外)。
+    func clampToCurrentScreen() {
+        guard let window = window else { return }
+        let origin = clamp(window.frame.origin)
+        window.setFrameOrigin(origin)
+        shadow?.updateNow()
     }
 }

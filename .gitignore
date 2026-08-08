@@ -15,11 +15,11 @@ build/
 
 # 系统
 .DS_Store
+.zcode/
 
 # 调试快照
 /tmp/kf_*.png
 /tmp/kf_*.log
 
-# 生成器自检图
-Resources/Sprites/contact.png
-Resources/Sprites/eggs_check.png
+# 生成器自检图(各主题子目录下的 contact.png)
+**/Sprites/*/contact.png

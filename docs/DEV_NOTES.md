@@ -17,7 +17,13 @@
 
 `build.sh` 干的事:
 1. `swift build -c release` → `.build/release/KingfisherPet`
-2. 组装 `.app`:`Contents/MacOS`(可执行)、`Contents/Resources`(png + sprites.json + peep.wav 铺平)、`Contents/Info.plist`(`LSUIElement=true`,不占 Dock)、`Contents/Resources/AppIcon.icns`(由 idle_0 经 iconutil 生成)
+2. 组装 `.app`:
+   - `Contents/MacOS`(可执行)
+   - `Contents/Resources/Sprites/<theme>/`(每个主题一个子目录,各含 png + sprites.json)
+   - `Contents/Resources/peep_*.wav`(4 种叫声)
+   - `Contents/Resources/{zh-Hans,en}.lproj/Localizable.strings`(本地化)
+   - `Contents/Info.plist`(`LSUIElement=true` 不占 Dock;`CFBundleLocalizations` 声明 zh-Hans/en)
+   - `Contents/Resources/AppIcon.icns`(由 flat/idle_0 经 iconutil 生成)
 3. `codesign -s - --force --deep`(ad-hoc)
 4. `open`
 
@@ -30,27 +36,45 @@ python3 -m venv .venv && .venv/bin/pip install -i https://pypi.tuna.tsinghua.edu
 .venv/bin/python tools/gen_sprites.py
 ```
 
-- 输出 `Resources/Sprites/*.png`(各状态帧,256×256 透明,4× 超采样抗锯齿)
-- 输出 `Resources/Sprites/sprites.json`(序列与帧率)
-- 输出 `Resources/peep.wav`(代码合成的啾鸣,频率上扫 + 包络)
+- 输出 `Resources/Sprites/<theme>/*.png`(各状态帧,256×256 透明,4× 超采样抗锯齿)——**每个主题一个子目录**
+- 输出 `Resources/Sprites/<theme>/sprites.json`(序列与帧率,所有主题序列一致,只是帧内容不同)
+- 输出 `Resources/Sprites/<theme>/{shadow,branch}.png`(阴影/树枝贴图,像素风做硬边、霓虹做发光)
+- 输出 `Resources/peep_0..3.wav`(4 种叫声:短啾/长颤/低咕/兴奋,代码合成,不随主题)
+- 每个主题输出一张 `contact.png` 检查图(不进包)
 
-改美术 = 改 `tools/gen_sprites.py` 的 `draw_kingfisher()` 和各状态帧参数后重跑,再 `./build.sh`。Swift 侧靠 `sprites.json` 驱动,帧名对上即可。
+**主题架构**(`gen_sprites.py`):
+- `BASE_PALETTE` / `THEME_PALETTES`:调色板(flat 用基础色,其余主题覆盖部分色)
+- `draw_kingfisher()` / `draw_egg()`:几何绘制对所有主题一致,只通过 `pal`(调色板)取色
+- 后处理器 `post_*()`:作用在 flat 成品帧上做风格转换
+  - `clay`(粘土)、`pixel`(像素)、`neon`(霓虹)、`ink`(水墨)、`watercolor`(水彩)
+- 主题清单见 `THEME_NAMES`(id + 中文名);加新主题 = 在 `THEME_PALETTES`/`POSTPROCESSORS` 各加一条
+
+改美术 = 改 `tools/gen_sprites.py` 的 `draw_kingfisher()`、调色板或后处理器后重跑,再 `./build.sh`。
+Swift 侧靠 `sprites.json` 驱动,帧名对上即可。
 
 ## 架构
 
 ```
-KingfisherPetApp.swift   入口(@main) + AppDelegate + 菜单栏 NSStatusItem
-PetWindowController      透明置顶 borderless 窗口(level .floating, canJoinAllSpaces)
-PetView                  CALayer 逐帧动画;按像素 alpha 重写 hitTest 做点击穿透;鼠标拖拽
-Behavior                 状态机: idle / walk / fly / sleep / happy,定时自主决策 + 移动窗口
-SpriteLibrary            启动加载所有 png + sprites.json;预计算每帧 alpha 缓冲;AVAudioPlayer 放 peep
+KingfisherPetApp.swift   入口(@main) + AppDelegate + 菜单栏 NSStatusItem + 设置窗口托管
+PetWindowController      透明置顶 borderless 窗口(level statusBar+1, canJoinAllSpaces)
+PetView                  CALayer 逐帧动画;按像素 alpha 重写 hitTest 做点击穿透;鼠标拖拽(半空松手飞走)
+Behavior                 状态机: idle/walk/fly/sleep/happy...,定时自主决策 + 移动窗口(代际取消)
+SpriteLibrary            加载当前主题的 png + sprites.json(按子目录);切换主题 reload;多种叫声随机
+Settings                 全局设置单例:活跃度/动画速度/声音/主题(UserDefaults + 通知)
+SettingsWindowController 独立设置窗口:滑块/复选框/主题下拉,实时生效
+WindowTracker            CGWindowList 找普通窗口上沿(停靠/落屎/遮挡检测),无状态
+PoopController / CrackController / ShadowController / BranchController
+                         各自一个常驻透明 click-through 覆盖层,跟随鸟所在屏
 ```
 
 关键实现点:
-- **透明置顶**:`NSWindow` borderless + `isOpaque=false` + `backgroundColor=.clear` + `level=.floating`,无 Dock(`LSUIElement` + `setActivationPolicy(.accessory)`)。
+- **透明置顶**:`NSWindow` borderless + `isOpaque=false` + `backgroundColor=.clear` + `level=statusBar+1`,无 Dock(`LSUIElement` + `setActivationPolicy(.accessory)`)。`collectionBehavior` 含 `canJoinAllSpaces`/`stationary`/`fullScreenAuxiliary`/`ignoresCycle`。
 - **点击穿透**:每帧预计算 `[UInt8]` alpha(顶行在前);`PetView.hitTest(_:)` 把父坐标转本视图坐标采样,透明像素返回 `nil`,事件落到后面的 App。
-- **逐帧**:60fps Timer 推进 `animTime`,`applyFrame()` 按 `sprites.json` 的序列+fps 选当前帧,赋给 `CALayer.contents`(按帧名去重避免重设)。
+- **逐帧**:60fps Timer 推进 `animTime`,`applyFrame()` 按 `sprites.json` 的序列+fps 选当前帧,赋给 `CALayer.contents`(按帧名去重避免重设)。`animTime` 累加受全局 `Settings.speed` 倍率影响。
 - **转向**:`facingRight` → `spriteLayer.setAffineTransform(scaleX:-1)`,水平翻转。
+- **主题系统**:资源按主题分目录(`Contents/Resources/Sprites/<theme>/`);`SpriteLibrary.reload(theme:)` 清空帧缓存重载,通过 `observeThemeChanged` 通知 PetView(清 lastName 重画)、Shadow/Branch(reloadTheme 重取贴图)。切换瞬时,无重新生成。
+- **设置**:`Settings` 单例持久化到 UserDefaults(`kingfisher.settings.*`),变化发 `didChangeNotification`;AppDelegate 监听并应用到 SpriteLibrary(声音/主题)。活跃度影响 `scheduleThink` 间隔 + `think()` idle 权重;速度影响 `animTime`/`Behavior` 各 duration(`sp()`)/Poop 下落/Effects CA 时长。
+- **多屏**:`WindowTracker`/`Poop`/`Crack` 用 `bird?.screen ?? NSScreen.main` 跟随鸟所在屏;`didChangeScreenParametersNotification` 监听插拔屏 → 裂纹 `relocate()` + 鸟 `clampToCurrentScreen()`。拖拽起点屏单独记(`dragScreen`),拖拽 clamp 跟随它。
 
 状态机 `Behavior` 的状态(都对应 `sprites.json` 里的序列):idle / walk / fly / hover / dive / fly_fish / eat / sing / dart / watch / sun / sleep / happy / egg / dead。多阶段动作(如 `startFish`)用 `animateWindow(...){ done }` 的完成回调 + `hold(t){}` 串成阶段链。
 

@@ -22,17 +22,32 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/${EXEC}"
 
-# 资源:png / sprites.json / peep.wav 全部铺平放到 Resources
-cp Resources/Sprites/*.png   "$APP/Contents/Resources/" 2>/dev/null || true
-cp Resources/Sprites/sprites.json "$APP/Contents/Resources/" 2>/dev/null || true
-cp Resources/peep.wav        "$APP/Contents/Resources/" 2>/dev/null || true
-# 去掉生成器自检用的检查图,不进包
-rm -f "$APP/Contents/Resources/contact.png" "$APP/Contents/Resources/eggs_check.png"
+# 资源:按主题子目录放到 Resources/Sprites/<theme>/(SpriteLibrary 按子目录加载)
+#   每个主题各含 *.png + sprites.json + contact.png(检查图,不进包)
+SPRITES_SRC="Resources/Sprites"
+mkdir -p "$APP/Contents/Resources/Sprites"
+for theme_dir in "$SPRITES_SRC"/*/; do
+  theme_name="$(basename "$theme_dir")"
+  mkdir -p "$APP/Contents/Resources/Sprites/$theme_name"
+  cp "$theme_dir"*.png "$APP/Contents/Resources/Sprites/$theme_name/" 2>/dev/null || true
+  cp "$theme_dir"sprites.json "$APP/Contents/Resources/Sprites/$theme_name/" 2>/dev/null || true
+  # 检查图不进包
+  rm -f "$APP/Contents/Resources/Sprites/$theme_name/contact.png"
+done
+# 叫声(多种,不随主题)
+cp Resources/peep_*.wav "$APP/Contents/Resources/" 2>/dev/null || true
+# 本地化(zh-Hans 默认,en)
+for loc in zh-Hans en; do
+  if [[ -d "Resources/${loc}.lproj" ]]; then
+    mkdir -p "$APP/Contents/Resources/${loc}.lproj"
+    cp "Resources/${loc}.lproj/"*.strings "$APP/Contents/Resources/${loc}.lproj/" 2>/dev/null || true
+  fi
+done
 
 echo "==> 3/6 生成图标"
 ICONSET="$(mktemp -d)/AppIcon.iconset"
 mkdir -p "$ICONSET"
-SRC="Resources/Sprites/idle_0.png"
+SRC="Resources/Sprites/flat/idle_0.png"
 if [[ -f "$SRC" ]]; then
   for spec in "16" "32 16@2x" "32" "64 32@2x" "128" "256 128@2x" "256" "512 256@2x" "512" "1024 512@2x" "1024"; do
     set -- $spec
@@ -72,6 +87,12 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>
+  <key>CFBundleDevelopmentRegion</key><string>zh-Hans</string>
+  <key>CFBundleLocalizations</key>
+  <array>
+    <string>zh-Hans</string>
+    <string>en</string>
+  </array>
   ${ICON_LINE}
 </dict>
 </plist>
