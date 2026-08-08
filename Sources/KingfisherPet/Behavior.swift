@@ -31,6 +31,9 @@ final class Behavior: PetViewDelegate {
     var onWindow = false
     var dragging = false
     private var perchedID: CGWindowID?
+    private var perchedWinFrame: CGRect = .zero   // 上次记录的栖枝窗口帧(算增量跟随用)
+    private var perchWinMoving = false            // 栖枝窗口正在被拖动(优先级高于预设动作)
+    private var lastPerchMoveAt: CFTimeInterval = 0  // 上次检测到窗口移动的时刻
 
     init(view: PetView, window: NSWindow) {
         self.view = view
@@ -112,8 +115,34 @@ final class Behavior: PetViewDelegate {
 
     func petViewDidEndDrag() {
         dragging = false
+        guard let w = window, let scr = screen else { finish(); return }
+        let feetY = w.frame.minY + feetOffset
+        // 吸附:找离鸟脚最近的表面(窗口上沿 / Dock 顶),上下方都找。
+        // 脚在表面 ±20px 内 → 吸到精确位置(脚踩表面),否则飞走/落下。
+        let ground = scr.visibleFrame.minY
+        let (surfY, surfID) = WindowTracker.nearestSurface(atX: w.frame.midX,
+                                                            feetY: feetY, groundY: ground)
+        if abs(surfY - feetY) <= 70 {
+            // 吸附:窗口原点 y = 表面 y - feetOffset,让脚精确踩在表面上
+            let origin = clamp(CGPoint(x: w.frame.origin.x, y: surfY - feetOffset))
+            w.setFrameOrigin(origin)
+            shadow?.updateNow()
+            if let id = surfID {
+                onWindow = true
+                perchedID = id
+                if let f = WindowTracker.frameOfWindow(id: id) { perchedWinFrame = f }
+                startPerchCheck()
+            } else {
+                onWindow = false       // 踩 Dock/地面
+            }
+            enter("idle")
+            busy = false
+            scheduleThink()
+            return
+        }
+        // 超出吸附范围:空中飞远 / 已踩表面就落下
         if isAirborne() {
-            startFly(minDist: 300)   // 空中松手 → 飞远落下
+            startFly(minDist: 300)
         } else {
             finish()
         }
@@ -165,7 +194,8 @@ final class Behavior: PetViewDelegate {
     }
 
     private func think() {
-        guard !busy else { scheduleThink(); return }
+        // 窗口正在被拖动 = 用户实时交互,优先级最高:推迟预设动作
+        guard !busy, !perchWinMoving else { scheduleThink(); return }
         let isLow = (window?.frame.minY ?? 0) < (area.minY + 60)   // Dock 附近
         // 活跃度越高,纯待机(idle)概率越低;省下的权重分给其他动作
         let a = Settings.shared.activity               // 0…1
@@ -254,7 +284,9 @@ final class Behavior: PetViewDelegate {
             if flyOff || WindowTracker.frameOfWindow(id: id) == nil {
                 if Bool.random() { startPerchWindow() } else { startFly(minDist: 300) }
             } else {
-                onWindow = true; perchedID = id; startPerchCheck()
+                onWindow = true; perchedID = id
+                if let f = WindowTracker.frameOfWindow(id: id) { perchedWinFrame = f }
+                startPerchCheck()
                 finish()
             }
         } else {
@@ -468,6 +500,7 @@ final class Behavior: PetViewDelegate {
             guard let self = self else { return }
             self.onWindow = true
             self.perchedID = perch.id
+            if let f = WindowTracker.frameOfWindow(id: perch.id) { self.perchedWinFrame = f }
             self.startPerchCheck()
             self.finish()
         }
@@ -476,6 +509,8 @@ final class Behavior: PetViewDelegate {
     private func leavePerch() {
         onWindow = false
         perchedID = nil
+        perchedWinFrame = .zero
+        perchWinMoving = false
         stopPerchCheck()
     }
     private func startPerchCheck() {
@@ -494,28 +529,32 @@ final class Behavior: PetViewDelegate {
               let f = WindowTracker.frameOfWindow(id: wid) else {
             leavePerch(); startFly(minDist: 300); return      // 窗口没了 → 飞远
         }
-        let topY = scr.frame.height - f.minY                 // 窗口上沿(NS-y)
         let feetY = w.frame.minY + feetOffset
-        let dx = f.midX - w.frame.midX
-        let dy = topY - feetY
         // 遮挡:鸟脚处最前面的窗口不是本窗口(被更大窗口盖住)→ 飞走
         let feetPt = CGPoint(x: w.frame.midX, y: feetY)
         let occluded = WindowTracker.frontWindowAt(nsPoint: feetPt) != wid
         if occluded {
-            leavePerch(); startFly(minDist: 300); return      // 被盖住 → 飞远
+            leavePerch(); startFly(minDist: 300); return
         }
-        // 小位移:鸟跟着窗口一起挪(像站在移动物体上),不脱离、不悬空
-        if abs(dx) < 8 && abs(dy) < 8 {
-            return      // 几乎没动,不用管
+        // 水平脱离:鸟脚不在窗口横向范围内了 → 飞走(走到窗口边了)
+        if w.frame.midX < f.minX - 10 || w.frame.midX > f.maxX + 10 {
+            leavePerch(); startFly(minDist: 300); return
         }
-        if abs(dx) < 140 && abs(dy) < 140 {
-            // 跟随窗口移动:把鸟挪到窗口新上沿对应位置
-            w.setFrameOrigin(clamp(CGPoint(x: w.frame.origin.x + dx, y: w.frame.origin.y + dy)))
+        // 跟随窗口移动:用窗口位移增量(dxw/dyw),鸟保持相对窗口的位置(不往中间凑)
+        let dxw = f.minX - perchedWinFrame.minX
+        let dyw = (scr.frame.height - f.minY) - (scr.frame.height - perchedWinFrame.minY)
+        if abs(dxw) > 0.5 || abs(dyw) > 0.5 {
+            // 窗口正在被拖动:用户实时交互,优先级高于预设动作 → think 推迟
+            perchWinMoving = true
+            lastPerchMoveAt = CACurrentMediaTime()
+            w.setFrameOrigin(clamp(CGPoint(x: w.frame.origin.x + dxw,
+                                           y: w.frame.origin.y + dyw)))
             shadow?.updateNow()
-        } else {
-            // 窗口被快速甩开(拖太快)→ 飞远
-            leavePerch(); startFly(minDist: 300)
+        } else if perchWinMoving, CACurrentMediaTime() - lastPerchMoveAt > 0.6 {
+            // 窗口停了 0.6s → 恢复正常思考
+            perchWinMoving = false
         }
+        perchedWinFrame = f
     }
 
     // MARK: - 打盹
