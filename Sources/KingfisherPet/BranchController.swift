@@ -103,9 +103,11 @@ final class BranchController {
         }
 
         guard let b = bird, let beh = behavior else { return }
-        // 只要鸟在歇着、没踩 Dock/窗口(悬空),就得有树枝托着——不再限制屏上 40% 高度
-        let shouldShow = beh.isResting() && beh.isAirborne() && b.isVisible
-                         && !beh.dragging && !beh.onWindow
+        // 树枝显隐取决于鸟的"停靠意图",而非脚下方碰巧有没有东西:
+        // 鸟歇着、不在窗口上 → 该有树枝;一旦出了,只要鸟还歇着就保持(窗口经过不撤)。
+        // 鸟飞走 / 拖动 / 落到窗口上 才撤树枝。
+        let wantsBranch = beh.isResting() && !beh.onWindow
+        let shouldShow = wantsBranch && !beh.dragging && b.isVisible
 
         if shouldShow {
             if eligibleAt == 0 { eligibleAt = now }
