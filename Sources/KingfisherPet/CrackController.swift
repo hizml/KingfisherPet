@@ -95,9 +95,9 @@ final class Crack {
             l.lineJoin = .round
             container.addSublayer(l)
         }
-        dark.strokeColor = NSColor(calibratedWhite: 0.05, alpha: 0.6).cgColor
+        dark.strokeColor = ThemeColors.shared.cgColor("crack_dark", fallback: NSColor(calibratedWhite: 0.05, alpha: 0.6))
         dark.lineWidth = 2.2
-        light.strokeColor = NSColor(calibratedWhite: 1, alpha: 0.7).cgColor
+        light.strokeColor = ThemeColors.shared.cgColor("crack_light", fallback: NSColor(calibratedWhite: 1, alpha: 0.7))
         light.lineWidth = 0.8
 
         // 中心冲击点
@@ -105,7 +105,7 @@ final class Crack {
         dot.bounds = CGRect(x: 0, y: 0, width: 7, height: 7)
         dot.position = center
         dot.cornerRadius = 3.5
-        dot.backgroundColor = NSColor(calibratedWhite: 0.08, alpha: 0.65).cgColor
+        dot.backgroundColor = ThemeColors.shared.cgColor("crack_dark", fallback: NSColor(calibratedWhite: 0.08, alpha: 0.65))
         container.addSublayer(dot)
 
         for _ in 0..<5 { appendRay(length: radius) }

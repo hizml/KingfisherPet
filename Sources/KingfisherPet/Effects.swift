@@ -72,7 +72,7 @@ enum Effects {
             ring.position = c
             ring.cornerRadius = 15
             ring.borderWidth = 3
-            ring.borderColor = NSColor(calibratedWhite: 1, alpha: 0.9).cgColor
+            ring.borderColor = ThemeColors.shared.cgColor("splash", fallback: NSColor(calibratedWhite: 1, alpha: 0.9))
             ring.backgroundColor = .clear
             let rs = CABasicAnimation(keyPath: "transform.scale")
             rs.fromValue = 0.3; rs.toValue = 3.2; rs.duration = sp(0.55)
@@ -94,7 +94,7 @@ enum Effects {
                 drop.bounds = CGRect(x: 0, y: 0, width: ds, height: ds)
                 drop.cornerRadius = ds / 2
                 drop.position = c
-                drop.backgroundColor = NSColor.white.cgColor
+                drop.backgroundColor = ThemeColors.shared.cgColor("splash", fallback: .white)
 
                 let peak = CGPoint(x: c.x + dx, y: c.y - dist * 0.95)
                 let end  = CGPoint(x: c.x + dx * 1.25, y: c.y + 22)
@@ -128,8 +128,8 @@ enum Effects {
                 t.string = glyphs[i]
                 t.font = NSFont.systemFont(ofSize: 28)
                 t.fontSize = 28
-                t.foregroundColor = NSColor(calibratedHue: 0.5, saturation: 0.5,
-                                            brightness: 0.95, alpha: 1).cgColor
+                t.foregroundColor = ThemeColors.shared.cgColor("note",
+                    fallback: NSColor(calibratedHue: 0.5, saturation: 0.5, brightness: 0.95, alpha: 1))
                 t.alignmentMode = .center
                 t.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
                 t.bounds = CGRect(x: 0, y: 0, width: 40, height: 36)
@@ -177,9 +177,9 @@ enum Effects {
                 l.backgroundColor = c.cgColor
                 return l
             }
-            blob.addSublayer(drop(w: 16, h: 12, off: 0, c: NSColor(calibratedWhite: 0.97, alpha: 1)))
-            blob.addSublayer(drop(w: 11, h: 8,  off: 3, c: NSColor(calibratedRed: 0.86, green: 0.88, blue: 0.82, alpha: 1)))
-            blob.addSublayer(drop(w: 5,  h: 4,  off: 5, c: NSColor(calibratedRed: 0.42, green: 0.48, blue: 0.26, alpha: 1)))
+            blob.addSublayer(drop(w: 16, h: 12, off: 0, c: ThemeColors.shared.color("poop_white", fallback: NSColor(calibratedWhite: 0.97, alpha: 1))))
+            blob.addSublayer(drop(w: 11, h: 8,  off: 3, c: ThemeColors.shared.color("poop_off",   fallback: NSColor(calibratedRed: 0.86, green: 0.88, blue: 0.82, alpha: 1))))
+            blob.addSublayer(drop(w: 5,  h: 4,  off: 5, c: ThemeColors.shared.color("poop_dark",  fallback: NSColor(calibratedRed: 0.42, green: 0.48, blue: 0.26, alpha: 1))))
 
             // 下落 + 左右摆
             let mid = CGPoint(x: top.x - 5, y: (top.y + bot.y) / 2)
@@ -204,9 +204,10 @@ enum Effects {
     private static func outlinedGlyph(_ ch: String, size: CGFloat) -> NSImage {
         let str = NSAttributedString(string: ch, attributes: [
             .font: NSFont.systemFont(ofSize: size, weight: .bold),
-            .foregroundColor: NSColor(calibratedWhite: 0.96, alpha: 0.95),
-            .strokeColor: NSColor(calibratedHue: 0.52, saturation: 0.45,
-                                  brightness: 0.55, alpha: 0.95),
+            .foregroundColor: ThemeColors.shared.color("zzz_fill",
+                fallback: NSColor(calibratedWhite: 0.96, alpha: 0.95)),
+            .strokeColor: ThemeColors.shared.color("zzz_stroke",
+                fallback: NSColor(calibratedHue: 0.52, saturation: 0.45, brightness: 0.55, alpha: 0.95)),
             .strokeWidth: -3.0          // 负值 = 填充 + 描边
         ])
         let bbox = str.size()
@@ -271,7 +272,8 @@ enum Effects {
                 path.addLine(to: CGPoint(x: c.x + cos(a + hw) * inner, y: c.y + sin(a + hw) * inner))
             }
             rays.path = path
-            rays.fillColor = NSColor(calibratedRed: 1, green: 0.8, blue: 0.25, alpha: 0.92).cgColor
+            rays.fillColor = ThemeColors.shared.cgColor("sun_ray",
+                fallback: NSColor(calibratedRed: 1, green: 0.8, blue: 0.25, alpha: 0.92))
             let rot = CABasicAnimation(keyPath: "transform.rotation.z")
             rot.fromValue = 0.0
             rot.toValue = 2.0 * Double.pi
@@ -284,7 +286,8 @@ enum Effects {
             disk.bounds = CGRect(x: 0, y: 0, width: 40, height: 40)
             disk.position = c
             disk.cornerRadius = 20
-            disk.backgroundColor = NSColor(calibratedRed: 1, green: 0.86, blue: 0.38, alpha: 1).cgColor
+            disk.backgroundColor = ThemeColors.shared.cgColor("sun_disk",
+                fallback: NSColor(calibratedRed: 1, green: 0.86, blue: 0.38, alpha: 1))
             let pulse = CABasicAnimation(keyPath: "transform.scale")
             pulse.fromValue = 0.95
             pulse.toValue = 1.1
