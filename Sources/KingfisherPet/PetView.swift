@@ -177,7 +177,7 @@ final class PetView: NSView {
         // 限制:脚不低于 Dock 顶、不出当前屏(跟随拖拽起点屏,支持多屏)
         if let a = dragScreen?.visibleFrame, let win = window {
             o.x = min(max(o.x, a.minX), a.maxX - win.frame.width)
-            o.y = min(max(o.y, a.minY - 27), a.maxY - win.frame.height)
+            o.y = min(max(o.y, a.minY - 43), a.maxY - win.frame.height)   // 脚踩 Dock 顶(feetOffset)
         }
         window?.setFrameOrigin(o)
         onMoved?()

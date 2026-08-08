@@ -17,7 +17,7 @@ final class Behavior: PetViewDelegate {
     private var gen = 0               // 动作代际;新动作/拖动 bump,旧的 hold/动画自动作废
 
     private let size = CGSize(width: 160, height: 160)
-    private let feetOffset: CGFloat = 27   // 脚距窗口底部约 27px(按 sprite 脚趾坐标)
+    private let feetOffset: CGFloat = 43   // 脚距窗口底部约 43px(sprite 脚趾底 y≈213 / 窗口高 256)
 
     /// 按全局动画速度缩放一段时长:速度越快,实际时长越短(1.5×→除以 1.5)。
     private func sp(_ secs: TimeInterval) -> TimeInterval { secs / Settings.shared.speed }
@@ -112,7 +112,7 @@ final class Behavior: PetViewDelegate {
     func petViewDidEndDrag() {
         dragging = false
         if isAirborne() {
-            startFly()          // 空中松手 → 自己飞走落下
+            startFly(minDist: 300)   // 空中松手 → 飞远落下
         } else {
             finish()
         }
@@ -251,7 +251,7 @@ final class Behavior: PetViewDelegate {
     private func afterWalk(onWin: Bool, wid: CGWindowID?, flyOff: Bool) {
         if onWin, let id = wid {
             if flyOff || WindowTracker.frameOfWindow(id: id) == nil {
-                if Bool.random() { startPerchWindow() } else { startFly() }
+                if Bool.random() { startPerchWindow() } else { startFly(minDist: 300) }
             } else {
                 onWindow = true; perchedID = id; startPerchCheck()
                 finish()
@@ -262,16 +262,24 @@ final class Behavior: PetViewDelegate {
     }
 
     // MARK: - 飞(随机挪窝,偶尔空中拉屎)
-    private func startFly() {
+    /// minDist:目标点离当前位置的最小距离(被赶走时给大值,飞远点,别停在原地附近)
+    private func startFly(minDist: CGFloat = 0) {
         guard let window = window, screen != nil else { finish(); return }
         beginAction()
         enter("fly")
         let a = area
-        let tx = CGFloat.random(in: a.minX + 8 ... a.maxX - size.width - 8)
-        let ty = Bool.random() ? (a.maxY - size.height) : (a.minY - feetOffset)
-        view?.facingRight = tx > window.frame.origin.x
-        // 落点若悬空(飞到高处),提前在落脚处显树枝
+        let ox = window.frame.origin.x
+        let oy = window.frame.origin.y
+        // 选目标点:若要求最小距离,最多重试 8 次直到够远
+        var tx = ox, ty = oy
+        for _ in 0..<8 {
+            tx = CGFloat.random(in: a.minX + 8 ... a.maxX - size.width - 8)
+            ty = Bool.random() ? (a.maxY - size.height) : (a.minY - feetOffset)
+            if hypot(tx - ox, ty - oy) >= minDist { break }
+        }
         let dest = clamp(CGPoint(x: tx, y: ty))
+        view?.facingRight = dest.x > ox
+        // 落点若悬空(飞到高处),提前在落脚处显树枝——鸟要落树枝,树枝先到
         if isPointAirborne(dest) {
             branch?.showAt(CGPoint(x: dest.x + size.width / 2, y: dest.y + feetOffset))
         }
@@ -483,7 +491,7 @@ final class Behavior: PetViewDelegate {
     private func checkPerch() {
         guard let wid = perchedID, let scr = screen, let w = window,
               let f = WindowTracker.frameOfWindow(id: wid) else {
-            leavePerch(); startFly(); return                 // 窗口没了 → 飞走
+            leavePerch(); startFly(minDist: 300); return      // 窗口没了 → 飞远
         }
         let topY = scr.frame.height - f.minY                 // 窗口上沿(NS-y)
         let feetY = w.frame.minY + feetOffset
@@ -493,7 +501,7 @@ final class Behavior: PetViewDelegate {
         let feetPt = CGPoint(x: w.frame.midX, y: feetY)
         let occluded = WindowTracker.frontWindowAt(nsPoint: feetPt) != wid
         if occluded {
-            leavePerch(); startFly(); return
+            leavePerch(); startFly(minDist: 300); return      // 被盖住 → 飞远
         }
         // 小位移:鸟跟着窗口一起挪(像站在移动物体上),不脱离、不悬空
         if abs(dx) < 8 && abs(dy) < 8 {
@@ -504,8 +512,8 @@ final class Behavior: PetViewDelegate {
             w.setFrameOrigin(clamp(CGPoint(x: w.frame.origin.x + dx, y: w.frame.origin.y + dy)))
             shadow?.updateNow()
         } else {
-            // 窗口被快速甩开(拖太快)→ 飞走
-            leavePerch(); startFly()
+            // 窗口被快速甩开(拖太快)→ 飞远
+            leavePerch(); startFly(minDist: 300)
         }
     }
 
