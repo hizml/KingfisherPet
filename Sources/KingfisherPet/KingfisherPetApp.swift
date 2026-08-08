@@ -82,6 +82,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self, selector: #selector(screenParamsChanged),
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
 
+        // 系统唤醒:睡眠时积压的特效(太阳等)会密集补发堆屏,唤醒时清场重来
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(systemDidWake),
+            name: NSWorkspace.didWakeNotification, object: nil)
+
         if ProcessInfo.processInfo.environment["KF_SNAPSHOT"] != nil {
             writeDebugSnapshot()
         }
@@ -214,6 +219,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func screenParamsChanged() {
         crackCtl?.relocate()
         petController?.behavior.clampToCurrentScreen()
+    }
+
+    /// 系统唤醒:撤掉睡眠时积压的特效(太阳/水花/zzz/音符等会密集补发堆屏),鸟回到干净 idle。
+    @objc private func systemDidWake() {
+        Effects.clearAll()
+        petController?.behavior.resetToIdle()
     }
 
     /// 设置变化:应用到各子系统 + 同步菜单

@@ -41,12 +41,23 @@ final class Effect {
             Effect.active.removeAll { $0 === self }
         }
     }
+
+    /// 立即撤掉所有活着的特效窗口(系统唤醒后清场,避免睡眠时积压的太阳等特效堆屏)
+    static func dismissAll() {
+        for e in Effect.active {
+            e.window.orderOut(nil)
+        }
+        Effect.active.removeAll()
+    }
 }
 
 enum Effects {
 
     /// 按全局动画速度缩放一段时长(快=更短)
     private static func sp(_ s: TimeInterval) -> TimeInterval { s / Settings.shared.speed }
+
+    /// 清场:撤掉所有短命特效(太阳/水花/zzz/音符等)。唤醒后调用。
+    static func clearAll() { Effect.dismissAll() }
 
     /// 水花:在 point(屏幕坐标)处溅起白色水滴 + 涟漪
     static func splash(at point: CGPoint, on screen: NSScreen?) {
