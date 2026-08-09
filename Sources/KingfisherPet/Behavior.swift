@@ -723,4 +723,15 @@ final class Behavior: PetViewDelegate {
         beginAction()        // 代际 bump → 作废所有进行中的 hold/动画/timer 回调
         finish()             // busy=false + enter idle + scheduleThink
     }
+
+    /// 系统睡眠前彻底暂停:停掉所有定时器(think/zzz/poop/perch)+ 代际 bump,
+    /// 不再排任何新回调。睡眠期间没有任何待处理 timer/asyncAfter,唤醒时不会补发堆积。
+    func suspend() {
+        gen &+= 1                  // 作废所有 hold/动画回调(唤醒后即使补发也被 gen 守卫拦掉)
+        busy = true                // 标记忙,防止 think 在唤醒瞬间触发
+        thinkTimer?.invalidate(); thinkTimer = nil
+        poopTimer?.invalidate(); poopTimer = nil
+        stopZzz()
+        stopPerchCheck()
+    }
 }

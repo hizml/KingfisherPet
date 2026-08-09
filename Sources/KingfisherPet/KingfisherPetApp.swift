@@ -82,7 +82,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self, selector: #selector(screenParamsChanged),
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
 
-        // 系统唤醒:睡眠时积压的特效(太阳等)会密集补发堆屏,唤醒时清场重来
+        // 系统睡眠/唤醒:睡眠前停掉一切定时器和特效(防止 asyncAfter 回调积压,唤醒时补发堆积卡死);
+        // 唤醒时干净重启。
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(systemWillSleep),
+            name: NSWorkspace.willSleepNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(
             self, selector: #selector(systemDidWake),
             name: NSWorkspace.didWakeNotification, object: nil)
@@ -221,9 +225,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         petController?.behavior.clampToCurrentScreen()
     }
 
-    /// 系统唤醒:撤掉睡眠时积压的特效(太阳/水花/zzz/音符等会密集补发堆屏),鸟回到干净 idle。
+    /// 系统睡眠前:停掉一切定时器和特效(防止 asyncAfter 回调在唤醒时密集补发堆积卡死)。
+    @objc private func systemWillSleep() {
+        petController?.behavior.suspend()      // 停 think/zzz/poop/perch + 代际 bump 作废 hold 回调
+        Effects.clearAll()                     // 清所有特效窗口(太阳/水花/zzz/音符)
+        crackCtl?.setVisible(false)            // 裂纹覆盖层也隐藏
+    }
+
+    /// 系统唤醒:清场(保险)+ 鸟回到干净 idle 重新开始。
     @objc private func systemDidWake() {
         Effects.clearAll()
+        crackCtl?.setVisible(true)
         petController?.behavior.resetToIdle()
     }
 
