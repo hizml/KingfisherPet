@@ -37,16 +37,27 @@ final class Effect {
     func close(after delay: TimeInterval) {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self = self else { return }
-            self.window.orderOut(nil)
-            Effect.active.removeAll { $0 === self }
+            self.dismiss()
         }
     }
 
-    /// 立即撤掉所有活着的特效窗口(系统唤醒后清场,避免睡眠时积压的太阳等特效堆屏)
-    static func dismissAll() {
-        for e in Effect.active {
-            e.window.orderOut(nil)
+    /// 彻底撤掉:停动画 + 清 layer + 关窗口 + 移出 active
+    func dismiss() {
+        // 停掉所有 CA 动画(防止无限重复动画在后台渲染占用 GPU)
+        if let v = window.contentView {
+            v.layer?.removeAllAnimations()
+            if let subs = v.layer?.sublayers {
+                for s in subs { s.removeAllAnimations(); s.sublayers?.forEach { $0.removeAllAnimations() } }
+            }
         }
+        window.contentView = nil      // 释放 layer 树
+        window.orderOut(nil)
+        Effect.active.removeAll { $0 === self }
+    }
+
+    /// 立即撤掉所有活着的特效窗口(系统唤醒后清场,彻底释放,避免卡死)
+    static func dismissAll() {
+        for e in Effect.active { e.dismiss() }
         Effect.active.removeAll()
     }
 }
@@ -55,6 +66,9 @@ enum Effects {
 
     /// 按全局动画速度缩放一段时长(快=更短)
     private static func sp(_ s: TimeInterval) -> TimeInterval { s / Settings.shared.speed }
+
+    /// 当前太阳特效实例(同时只允许 1 个,防止堆积卡死)
+    private static var sunEffectInstance: Effect?
 
     /// 清场:撤掉所有短命特效(太阳/水花/zzz/音符等)。唤醒后调用。
     static func clearAll() { Effect.dismissAll() }
@@ -254,6 +268,9 @@ enum Effects {
 
     /// 日光浴的太阳:在 point 处一个旋转光芒 + 脉冲的太阳盘,持续 duration 秒
     static func sun(at point: CGPoint, on screen: NSScreen?, duration: TimeInterval) {
+        // 硬上限:同时只允许 1 个太阳(防止睡眠唤醒等场景堆积几十个卡死)
+        Effect.active.removeAll { $0 === sunEffectInstance }
+        sunEffectInstance?.dismiss()
         let size = CGSize(width: 120, height: 120)
         let e = Effect(centeredAt: point, size: size, on: screen, level: .statusBar) { v in
             guard let layer = v.layer else { return }
@@ -300,6 +317,7 @@ enum Effects {
             layer.addSublayer(rays)
             layer.addSublayer(disk)
         }
+        sunEffectInstance = e
         e.close(after: sp(duration))
     }
 }
