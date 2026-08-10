@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>html,body{margin:0;background:transparent;overflow:hidden;width:100vw;height:100vh}img{position:fixed;transition:top 1s ease-in,opacity 0.5s;pointer-events:none;width:30px;height:20px}</style>
+</head><body>
+<script type="module">
+import { listen } from "@tauri-apps/api/event";
+const theme = localStorage.getItem("kf_theme") || "flat";
+listen("poop-drop", (e) => {
+  const { x, y } = e.payload;
+  const img = document.createElement("img");
+  img.src = `${import.meta.env.BASE_URL}Sprites/${theme}/poop.png`;
+  img.style.left = (x - 15) + "px";
+  img.style.top = y + "px";
+  document.body.appendChild(img);
+  requestAnimationFrame(() => { img.style.top = (y + 400) + "px"; });   // 下落(屏幕物理)
+  setTimeout(() => { img.style.opacity = "0"; }, 1100);                  // 淡出
+  setTimeout(() => img.remove(), 1700);
+});
+</script>
+</body></html>
