@@ -7,6 +7,7 @@ import type { SpriteLibrary } from "./sprite";
 import * as effects from "./effects";
 import * as poop from "./poop";
 import * as crack from "./crack";
+import { settings } from "./settings";
 
 const win = getCurrentWindow();
 const SIZE = 160;
@@ -22,7 +23,7 @@ let gen = 0;
 let busy = false;
 let thinkTimer: ReturnType<typeof setTimeout> | null = null;
 
-const sp = (s: number) => s;   // Phase 4:除以 Settings.speed
+const sp = (s: number) => s / settings.speed;   // 受全局动画速度影响
 
 async function area(): Promise<{ minX: number; minY: number; maxX: number; maxY: number }> {
   try {
@@ -67,7 +68,10 @@ function hold(t: number, done: () => void) {
 
 function scheduleThink() {
   if (thinkTimer) clearTimeout(thinkTimer);
-  thinkTimer = setTimeout(think, 800);   // 诊断:0.8s 快速触发(正常 2.5–5s)
+  // 活跃度越高,思考间隔越短(对应 macOS Settings.activity)
+  const a = settings.activity;
+  const lo = 3.5 - 2 * a, hi = 7 - 3.5 * a;
+  thinkTimer = setTimeout(think, (lo + Math.random() * (hi - lo)) * 1000);
 }
 
 async function think() {

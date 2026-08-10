@@ -10,7 +10,8 @@ import { setupPoop } from "./poop";
 import { setupCrack } from "./crack";
 import { setupBranch } from "./branch";
 import { setupTheme, setTheme } from "./theme";
-import { setupAudio, playPeep } from "./audio";
+import { setupAudio, playPeep, setSoundOn } from "./audio";
+import { settings } from "./settings";
 import * as behavior from "./behavior";
 
 const lib = new SpriteLibrary();
@@ -32,7 +33,7 @@ window.addEventListener("unhandledrejection", (e: PromiseRejectionEvent) =>
 
 async function main() {
   try {
-    await lib.load("flat");
+    await lib.load(localStorage.getItem("kf_theme") || "flat");
     const first = lib.frame("idle_0");
     if (first) img.src = first.img.src;
 
@@ -51,6 +52,7 @@ async function main() {
     setupBranch(lib);
     setupTheme(lib);
     setupAudio();
+    setSoundOn(settings.soundOn);
     setupDrag();
     listen<string>("menu", (e) => {
       const id = e.payload;

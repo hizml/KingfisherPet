@@ -3,8 +3,9 @@ import type { SpriteLibrary } from "./sprite";
 let lib: SpriteLibrary;
 export function setupTheme(s: SpriteLibrary) { lib = s; }
 export async function setTheme(theme: string) {
+  localStorage.setItem("kf_theme", theme);
   await lib.load(theme);
-  location.reload();   // 重 load 帧缓存 + 重建 effects/shadow/crack(最简单可靠)
+  location.reload();
 }
 export const THEMES: Array<[string, string]> = [
   ["flat", "扁平"], ["clay", "粘土"], ["pixel", "像素"],
