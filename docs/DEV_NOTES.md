@@ -110,5 +110,4 @@ PoopController / CrackController / ShadowController / BranchController
 
 ## 仓库
 
-- 私有:github.com/hizml/KingfisherPet
-- `gh` 已认证 `hizml`
+- 开源:github.com/hizml/KingfisherPet
