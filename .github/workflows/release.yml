@@ -1,6 +1,6 @@
 name: release
 
-# push tag(v* )或手动触发 → Windows runner 出 .msi/.exe 发 release
+# push tag(v* )或手动 → mac(universal)+ Windows 出包发 release
 on:
   push:
     tags:
@@ -8,8 +8,18 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: "--target universal-apple-darwin"
+            rustTargets: "aarch64-apple-darwin,x86_64-apple-darwin"
+          - platform: windows-latest
+            args: ""
+            rustTargets: ""
+    runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
 
@@ -18,6 +28,8 @@ jobs:
           node-version: 20
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rustTargets }}
 
       - name: 缓存 cargo
         uses: actions/cache@v4
@@ -40,6 +52,7 @@ jobs:
           projectPath: windows
           tagName: ${{ github.ref_name }}
           releaseName: "翡 KingfisherPet ${{ github.ref_name }}"
-          releaseBody: "Windows 版桌面宠物(Tauri)"
+          releaseBody: "桌面宠物(Tauri):macOS(universal)+ Windows"
           releaseDraft: true
           prerelease: false
+          args: ${{ matrix.args }}
