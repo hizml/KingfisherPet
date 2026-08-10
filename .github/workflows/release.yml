@@ -1,0 +1,45 @@
+name: release
+
+# push tag(v* )或手动触发 → Windows runner 出 .msi/.exe 发 release
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: 缓存 cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            windows/src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
+
+      - name: 安装前端依赖
+        run: npm install
+        working-directory: windows
+
+      - name: 构建 + 发 release(tauri-action)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: windows
+          tagName: ${{ github.ref_name }}
+          releaseName: "翡 KingfisherPet ${{ github.ref_name }}"
+          releaseBody: "Windows 版桌面宠物(Tauri)"
+          releaseDraft: true
+          prerelease: false
