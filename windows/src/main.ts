@@ -47,7 +47,7 @@ async function main() {
     setupHitTest(lib, () => currentFrame, 160);
     setupEffects(lib, effectLayer);
     setupShadow(lib);
-    setupPoop(lib, effectLayer);
+    setupPoop();
     setupCrack();
     setupBranch(lib);
     setupTheme(lib);

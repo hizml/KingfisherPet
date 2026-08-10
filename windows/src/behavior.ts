@@ -134,7 +134,11 @@ function startPeck() {
   hold(0.5, () => finish());
 }
 function startWatch() { beginAction(); enter("watch"); hold(1.4 + Math.random() * 0.8, () => finish()); }
-function startPoop() { beginAction(); enter("poop"); hold(0.4, () => { poop.dropPoop(); hold(0.4, () => finish()); }); }
+function startPoop() {
+  beginAction(); enter("poop");
+  getOrigin().then(o => poop.dropPoop(o.x + 80, o.y + 60)).catch(() => {});   // 鸟屁股屏幕坐标
+  hold(0.8, () => finish());
+}
 
 // 低空掠过(水平快速飞过)
 async function startDart() {
