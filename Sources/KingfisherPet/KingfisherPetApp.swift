@@ -91,6 +91,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self, selector: #selector(systemDidWake),
             name: NSWorkspace.didWakeNotification, object: nil)
 
+        // 锁屏/解锁:用户离开 → 鸟睡觉;回来 → 赖床醒来(进程不挂起,走分布式通知)
+        let dnc = DistributedNotificationCenter.default()
+        dnc.addObserver(self, selector: #selector(screenLocked),
+                        name: Notification.Name("com.apple.screenIsLocked"), object: nil)
+        dnc.addObserver(self, selector: #selector(screenUnlocked),
+                        name: Notification.Name("com.apple.screenIsUnlocked"), object: nil)
+
         if ProcessInfo.processInfo.environment["KF_SNAPSHOT"] != nil {
             writeDebugSnapshot()
         }
@@ -225,18 +232,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         petController?.behavior.clampToCurrentScreen()
     }
 
-    /// 系统睡眠前:停掉一切定时器和特效(防止 asyncAfter 回调在唤醒时密集补发堆积卡死)。
+    /// 系统睡眠前:鸟入睡(底层 suspend 停定时器,防唤醒补发堆积卡死)+ 清场特效 + 隐藏裂纹。
     @objc private func systemWillSleep() {
-        petController?.behavior.suspend()      // 停 think/zzz/poop/perch + 代际 bump 作废 hold 回调
+        petController?.behavior.sleepForUserAbsence(systemSleep: true)
         Effects.clearAll()                     // 清所有特效窗口(太阳/水花/zzz/音符)
         crackCtl?.setVisible(false)            // 裂纹覆盖层也隐藏
     }
 
-    /// 系统唤醒:清场(保险)+ 鸟回到干净 idle 重新开始。
+    /// 系统唤醒:清场(保险)+ 显示裂纹 + 鸟赖床 2–4 秒后醒来。
     @objc private func systemDidWake() {
         Effects.clearAll()
         crackCtl?.setVisible(true)
-        petController?.behavior.resetToIdle()
+        petController?.behavior.wakeFromUserAbsence()
+    }
+
+    /// 锁屏:鸟入睡(进程不挂起,自然 sleep + zzz + 禁声)。不清场,特效自然到期。
+    @objc private func screenLocked() {
+        petController?.behavior.sleepForUserAbsence(systemSleep: false)
+    }
+
+    /// 解锁:鸟赖床 2–4 秒后醒来。
+    @objc private func screenUnlocked() {
+        petController?.behavior.wakeFromUserAbsence()
     }
 
     /// 设置变化:应用到各子系统 + 同步菜单

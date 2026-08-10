@@ -38,6 +38,8 @@ final class SpriteLibrary {
     private(set) var currentTheme = "flat"
 
     var soundOn = true
+    /// 睡眠(锁屏/系统睡眠)期间临时禁声;不影响用户设置 soundOn。由 Behavior 在入睡/醒来时切换。
+    var mutedForSleep = false
 
     /// 主题变化时回调(PetView/控制器重取帧、重置贴图)。可多个监听者。
     private var themeObservers: [() -> Void] = []
@@ -166,7 +168,7 @@ final class SpriteLibrary {
     }
 
     func playPeep() {
-        guard soundOn, !peepPlayers.isEmpty else { return }
+        guard soundOn, !mutedForSleep, !peepPlayers.isEmpty else { return }
         let p = peepPlayers.randomElement()!
         p.currentTime = 0
         p.play()

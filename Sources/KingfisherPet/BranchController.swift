@@ -103,15 +103,14 @@ final class BranchController {
         }
 
         guard let b = bird, let beh = behavior else { return }
-        // 树枝显隐只看鸟的"停靠状态",不实时探测脚下方有没有窗口:
+        // 树枝显隐只看鸟的"停靠状态",不实时探测脚下方有没有窗口——否则窗口经过鸟脚下时
+        // 树枝会跟着闪烁。onWindow 只有主动吸附/停窗才设 true,窗口拖到脚下/移走都不改它:
         //   - 鸟主动停窗口上(onWindow=true)→ 不出
         //   - 鸟在 Dock/地面附近(脚 y 接近 Dock 顶)→ 不出
-        //   - 鸟悬空歇着(其余位置)→ 出
-        // 关键:窗口拖到鸟脚下/移走,都不改变 onWindow(只有主动吸附/停窗才设 true),
-        // 所以树枝不会被窗口经过干扰——靠近不消失、远离不出现。
+        //   - 鸟悬空歇着(其余)→ 出
         let scr = b.screen ?? NSScreen.main
-        let groundY = (scr?.visibleFrame.minY ?? 0) + 30   // Dock 顶 + 余量
-        let feetY = b.frame.minY + 27                       // 脚的大致 y
+        let groundY = (scr?.visibleFrame.minY ?? 0) + 30
+        let feetY = b.frame.minY + 27
         let onGround = feetY < groundY
         let wantsBranch = beh.isResting() && !beh.onWindow && !onGround
         let shouldShow = wantsBranch && !beh.dragging && b.isVisible
