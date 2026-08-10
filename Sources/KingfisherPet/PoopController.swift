@@ -14,7 +14,7 @@ final class PoopController {
 
     func start() {
         lastTime = CACurrentMediaTime()
-        let t = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in self?.update() }
+        let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.update() }
         RunLoop.main.add(t, forMode: .common)
         timer = t
     }
@@ -24,7 +24,7 @@ final class PoopController {
     func resume() {
         guard timer == nil else { return }
         lastTime = CACurrentMediaTime()
-        let t = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in self?.update() }
+        let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.update() }
         RunLoop.main.add(t, forMode: .common)
         timer = t
         kfLog("Poop resume")
@@ -32,6 +32,16 @@ final class PoopController {
 
     /// 解析屎应使用的屏:鸟所在屏,否则主屏
     private var screen: NSScreen? { bird?.screen ?? NSScreen.main }
+
+    /// 加载当前主题的屎堆贴图(供 Poop.buildBlob 用)。
+    fileprivate static func effectImage(_ name: String) -> CGImage? {
+        let theme = SpriteLibrary.shared.currentTheme
+        guard let url = Bundle.main.url(forResource: name, withExtension: "png",
+                                        subdirectory: "Sprites/\(theme)"),
+              let img = NSImage(contentsOf: url),
+              let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        return cg
+    }
 
     func dropPoop(at point: CGPoint) {
         // 上限:防 sitting 屎堆积放大 30fps 全窗口枚举。超出时移除最老的(已 sit 一阵,移除不突兀)。
@@ -101,26 +111,11 @@ private final class Poop {
     }
 
     private func buildBlob() {
-        func drop(_ w: CGFloat, _ h: CGFloat, _ cx: CGFloat, _ cy: CGFloat, _ c: NSColor) -> CALayer {
-            let l = CALayer()
-            l.bounds = CGRect(x: 0, y: 0, width: w, height: h)
-            l.position = CGPoint(x: cx, y: cy)
-            l.cornerRadius = min(w, h) / 2
-            l.backgroundColor = c.cgColor
-            return l
-        }
         blob.bounds = CGRect(x: 0, y: 0, width: 30, height: 20)
         blob.position = CGPoint(x: 15, y: 10)
-        let white = ThemeColors.shared.color("poop_white", fallback: NSColor(calibratedWhite: 0.97, alpha: 1))
-        let off = ThemeColors.shared.color("poop_off",   fallback: NSColor(calibratedRed: 0.86, green: 0.88, blue: 0.82, alpha: 1))
-        let dark = ThemeColors.shared.color("poop_dark",  fallback: NSColor(calibratedRed: 0.42, green: 0.48, blue: 0.26, alpha: 1))
-        // 一摊稀屎:宽扁主体底边贴窗口底(local y=0) + 几滴飞溅 + 一小撮深色
-        blob.addSublayer(drop(24, 8, 15, 4, white))    // 主体 y 0..8
-        blob.addSublayer(drop(16, 6, 15, 6, off))      // 中间略厚
-        blob.addSublayer(drop(5, 4, 3, 3, white))
-        blob.addSublayer(drop(4, 3, 27, 4, white))
-        blob.addSublayer(drop(3, 3, 22, 2, white))
-        blob.addSublayer(drop(5, 3, 17, 5, dark))
+        // 主题贴图(像素/霓虹/水墨…),替代手画三色圆点。fading/splat 动画无损。
+        blob.contents = PoopController.effectImage("poop")
+        blob.contentsGravity = .resize
     }
 
     func update(dt: TimeInterval, ground: CGFloat, screenH: CGFloat) {
@@ -147,11 +142,9 @@ private final class Poop {
                     let occluded = (occludeFrame % 10 == 0)
                         && WindowTracker.frontWindowAt(nsPoint: CGPoint(x: x, y: y)) != id
                     if off || occluded {
-                        resumeFall(ground: ground)
-                    } else {
-                        y = topNS
-                        applyOrigin()
+                        resumeFall(ground: ground)   // 窗口移开/下沉/被盖 → 重新掉
                     }
+                    // 不再 y=topNS 跟窗口上沿:屎落地固定,窗口一动就掉(还原"抖一下就掉")
                 } else {
                     resumeFall(ground: ground)            // 窗口不见了
                 }
