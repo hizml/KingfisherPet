@@ -88,6 +88,17 @@ KF_DEMO=1 .build/release/KingfisherPet       # 2.5s 后自动拉一坨屎,便于
 - **悬空判断 `isPointAirborne` 用 `nearestSurface`**(脚附近最近的窗口上沿/Dock,上下都找)。不要用 `frontWindowAt`(2D 矩形包含会把"悬空在窗口前方"误判成"在窗口上",半空也不出树枝);也不要用 `landingSpot`(只找脚正下方,鸟踩窗台上沿时漏判悬空、冒树枝)。
 - **停窗/吸附落点用 `clampPerch`,不要用通用 `clamp`**:通用 `clamp` 的 `maxY = visibleFrame.maxY - 鸟高` 会把停高窗口的鸟压进窗口内部;`clampPerch` 上界放宽到物理屏顶(鸟可盖菜单栏),脚精确踩窗台。落点会头超屏的过高窗口用 `wouldOvershootTop` 判定后直接飞走,别硬停。
 
+## 性能与卡死红线(改 timer / 特效 / 窗口前必读)
+
+桌面宠物常驻多个 60/30/20fps timer + 多个透明窗口,CPU 累积会拖垮整机。这几条是排查「睡眠/锁屏唤醒后整机卡死」得出的硬规矩:
+
+- **锁屏(`screenIsLocked`)和系统睡眠(`willSleep`)都要 suspend 所有常驻 timer**——`PetView`(60fps)、`PoopController`(30fps)、`BranchController`(60fps)、`Behavior`(think/zzz/poop/perch)。**锁屏不是系统睡眠**(macOS 关屏默认走 `screenIsLocked`,进程不挂起),但锁屏时屏幕黑、timer 全跑 = 纯浪费 + 发烫,长时间会卡死。`screenLocked`/`screenUnlocked` 必须配对调用 `petView.suspendAnimation()`/`poopCtl.suspend()`/`branchCtl.suspend()` 和对应 resume,与 `systemWillSleep`/`systemDidWake` 对称。
+- **`WindowTracker.frontWindowAt` / `CGWindowListCopyWindowInfo` 是全窗口枚举,贵——不能在每帧(60/30/20fps)回调里直接调**。栖窗遮挡(`checkPerch`)和屎遮挡(`Poop.sitting`)都用计数器(`perchOccludeFrame`/`occludeFrame`)降到每 10 帧一次;每帧只做单查 `frameOfWindow(id)`(按 id,便宜)。新增"每帧跑的逻辑"前,先想这一步有没有系统枚举。
+- **凡会累积的对象必须有上限**:`poops`(屎,上限 8,超出移除最老)、`Effect.active`(短命特效,靠 close/dismiss 回收)、`CrackController.cracks`(上限 8)、`sunEffectInstance`(同时 1 个)。新建窗口/特效/屎前检查上限。
+- **鸟隐藏(`fallAway`)必须停 timer**:`orderOut` 后调 `view?.suspendAnimation()` + `branch?.suspend()`,否则 PetView/Branch 60fps 空转;`hatchIn` 重新显示时 resume。
+- **单例静态引用(`sunEffectInstance`)在 `clearAll`/`dismiss` 后必须置 nil**,否则已 orderOut 的空窗口对象常驻内存。
+- **常驻 timer 的回调必须轻**:任何加入 `RunLoop.main.add(.common)` 的高频 timer,其回调里禁止同步长操作/系统枚举/锁;重活降频或挪到一次性触发。
+
 ## 坐标系
 
 全程 NS 坐标(原点左下)。唯一例外:`PetView.isFlipped = true`,使 alpha 缓冲顶行 == 图像顶行,与 `hitTest` 点击穿透采样一致。`WindowTracker` 用 `screen.frame.height - y` 在 NS-y 与 CG-y(左上原点)间换算。鸟窗 160×160;`feetOffset=26` 是脚到窗口底的基准。
