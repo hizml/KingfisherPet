@@ -1,18 +1,30 @@
-// 啄屏裂纹:Canvas 随机放射裂(简化 local;全屏裂纹需独立窗,后续)。对应 macOS CrackController。
-export function setupCrack() { /* 无状态 */ }
-export function crackAt(x: number, y: number) {
-  const c = document.createElement("canvas");
-  c.width = 160; c.height = 160;
-  Object.assign(c.style, { position: "absolute", left: "0", top: "0", pointerEvents: "none" });
-  const ctx = c.getContext("2d")!;
-  ctx.strokeStyle = "rgba(20,20,20,0.55)";
-  ctx.lineWidth = 2; ctx.lineCap = "round";
-  for (let i = 0; i < 7; i++) {
-    const a = i / 7 * Math.PI * 2 + Math.random() * 0.3;
-    ctx.beginPath(); ctx.moveTo(x, y);
-    ctx.lineTo(x + Math.cos(a) * (30 + Math.random() * 15), y + Math.sin(a) * (30 + Math.random() * 15));
-    ctx.stroke();
+// 裂纹:独立全屏透明窗(WebviewWindow "crack"),裂纹画屏幕坐标,不跟鸟窗走。
+// 主窗 emit("crack-at", {x,y}) → crack 窗 canvas 画放射裂。对应 macOS CrackController(独立覆盖层)。
+
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { emit } from "@tauri-apps/api/event";
+
+let win: WebviewWindow | null = null;
+async function ensure() {
+  if (!win) {
+    win = new WebviewWindow("crack", {
+      url: "crack.html",
+      transparent: true, decorations: false, alwaysOnTop: true,
+      resizable: false, skipTaskbar: true, focus: false,
+      width: 3000, height: 2000, x: 0, y: 0,
+    });
+    await win.once("tauri://created").catch(() => {});
   }
-  document.body.appendChild(c);
 }
-export function clearCracks() { document.querySelectorAll("canvas").forEach(c => c.remove()); }
+
+export function setupCrack() { ensure().catch(() => {}); }
+
+export async function crackAt(x: number, y: number) {
+  await ensure();
+  await emit("crack-at", { x, y });
+}
+
+export async function clearCracks() {
+  await ensure();
+  await emit("crack-clear", null);
+}
