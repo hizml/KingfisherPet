@@ -7,6 +7,7 @@ import type { SpriteLibrary } from "./sprite";
 import * as effects from "./effects";
 import * as poop from "./poop";
 import * as crack from "./crack";
+import * as branch from "./branch";
 import { settings } from "./settings";
 
 const win = getCurrentWindow();
@@ -87,6 +88,7 @@ async function think() {
   else if (r < 0.95) startWatch();
   else if (r < 0.98) startFish();
   else if (r < 0.995) startPoop();
+  else if (r < 0.998) startDart();
   else startPeck();
 }
 
@@ -116,7 +118,8 @@ async function startFly() {
     const tx = a.minX + Math.random() * (a.maxX - a.minX - SIZE);
     const ty = Math.random() < 0.5 ? (a.maxY - SIZE) : a.minY;
     setFacing(tx > o.x);
-    animateFlight({ x: tx, y: ty }, 1.3, () => finish());
+    if (ty < a.maxY / 2) branch.showBranch();   // 落上半屏(悬空)显树枝
+    animateFlight({ x: tx, y: ty }, 1.3, () => { branch.hideBranch(); finish(); });
   } catch (e) { console.error("fly", e); finish(); }
 }
 
@@ -132,6 +135,19 @@ function startPeck() {
 }
 function startWatch() { beginAction(); enter("watch"); hold(1.4 + Math.random() * 0.8, () => finish()); }
 function startPoop() { beginAction(); enter("poop"); hold(0.4, () => { poop.dropPoop(); hold(0.4, () => finish()); }); }
+
+// 低空掠过(水平快速飞过)
+async function startDart() {
+  beginAction(); enter("fly");
+  try {
+    const a = await area();
+    const o = await getOrigin();
+    const toLeft = Math.random() < 0.5;
+    const tx = toLeft ? a.minX + 20 : a.maxX - SIZE - 20;
+    setFacing(!toLeft);
+    animateMove({ x: tx, y: o.y }, 0.55, () => finish());
+  } catch (e) { finish(); }
+}
 
 // 俯冲捕鱼:飞屏顶 → 俯冲屏底 → 水花 → 飞回吃(招牌动作)
 async function startFish() {
