@@ -7,6 +7,11 @@ use tauri::{
     Emitter, Listener, Manager,
 };
 
+#[tauri::command]
+fn front_perch_cmd(bird_w: f64) -> Option<(f64, f64)> {
+    crate::windows::front_perch(bird_w)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -14,6 +19,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        .invoke_handler(tauri::generate_handler![front_perch_cmd])
         .setup(|app| {
             // 前端 log 事件 → 终端(调试 webview 错)
             app.listen("log", |event| { println!("[webview] {}", event.payload()); });

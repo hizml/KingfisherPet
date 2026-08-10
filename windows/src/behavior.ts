@@ -8,6 +8,7 @@ import * as effects from "./effects";
 import * as poop from "./poop";
 import * as crack from "./crack";
 import * as branch from "./branch";
+import { invoke } from "@tauri-apps/api/core";
 import { settings } from "./settings";
 
 const win = getCurrentWindow();
@@ -86,9 +87,10 @@ async function think() {
   else if (r < 0.85) startEat();
   else if (r < 0.92) startSun();
   else if (r < 0.95) startWatch();
-  else if (r < 0.98) startFish();
-  else if (r < 0.995) startPoop();
-  else if (r < 0.998) startDart();
+  else if (r < 0.975) startPerchWindow();
+  else if (r < 0.99) startFish();
+  else if (r < 0.997) startPoop();
+  else if (r < 0.999) startDart();
   else startPeck();
 }
 
@@ -141,6 +143,18 @@ function startPoop() {
   beginAction(); enter("poop");
   getOrigin().then(o => poop.dropPoop(o.x + 80, o.y + 60)).catch(() => {});   // 鸟屁股屏幕坐标
   hold(0.8, () => finish());
+}
+
+// 栖窗:飞到最前窗口的上沿歇脚(Win32 front_perch;mac stub 返回 null → finish)
+async function startPerchWindow() {
+  beginAction(); enter("fly");
+  try {
+    const perch = await invoke<[number, number] | null>("front_perch_cmd", { birdW: SIZE });
+    if (!perch) { finish(); return; }
+    const o = await getOrigin();
+    setFacing(perch[0] > o.x);
+    animateFlight({ x: perch[0], y: perch[1] }, 1.1, () => finish());
+  } catch (e) { finish(); }
 }
 
 // 低空掠过(水平快速飞过)
