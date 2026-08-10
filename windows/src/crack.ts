@@ -14,6 +14,7 @@ async function ensure() {
       width: 3000, height: 2000, x: 0, y: 0,
     });
     await win.once("tauri://created").catch(() => {});
+    await win.setIgnoreCursorEvents(true).catch(() => {});   // 点击穿透,别挡屏幕内容区
   }
 }
 
