@@ -58,8 +58,9 @@ THEME_PALETTES = {
     "neon": {
         "TEAL":     (0, 229, 255, 255),
         "TEAL_D":   (0, 170, 200, 255),
-        "ORANGE":   (255, 140, 40, 255),
-        "ORANGE_D": (220, 95, 20, 255),
+        # synthwave 双色:青身 + 品红腹/冠(经典霓虹青+品红,不再单青)
+        "ORANGE":   (255, 50, 160, 255),
+        "ORANGE_D": (210, 30, 130, 255),
         "WHITE":    (210, 245, 255, 255),
         "BEAK":     (40, 40, 60, 255),
         "BEAK_D":   (20, 20, 36, 255),
@@ -68,25 +69,33 @@ THEME_PALETTES = {
         "LEG":      (255, 90, 120, 255),
         "HEART":    (255, 60, 160, 255),
         "ZCOLOR":   (0, 229, 255, 255),
+        "BELLY":    (255, 90, 180, 255),    # 品红腹
     },
     "ink": {
-        "TEAL":     (28, 28, 28, 255),
-        "TEAL_D":   (10, 10, 10, 255),
-        "ORANGE":   (200, 70, 30, 255),   # 一抹橙保留
-        "ORANGE_D": (150, 50, 20, 255),
+        "TEAL":     (170, 162, 154, 255),   # 中亮→post_ink 渐变成淡墨,不再纯黑
+        "TEAL_D":   (115, 108, 100, 255),   # 略暗→中墨(翼/背深部)
+        # 纯墨系:去掉朱砂橙红,改墨褐/淡墨(水墨讲究墨分五色,黑白灰为主)
+        "ORANGE":   (92, 82, 75, 255),
+        "ORANGE_D": (60, 53, 48, 255),
         "WHITE":    (240, 240, 235, 255),
         "BEAK":     (0, 0, 0, 255),
         "BEAK_D":   (0, 0, 0, 255),
         "BEAK_HI":  (80, 80, 80, 255),
         "EYE":      (0, 0, 0, 255),
         "LEG":      (0, 0, 0, 255),
-        "HEART":    (180, 40, 30, 255),
+        "HEART":    (130, 55, 48, 255),   # 心眼:淡墨红(不刺眼)
         "ZCOLOR":   (60, 60, 60, 255),
         "FISH_BODY":(60, 60, 60, 255),
         "FISH_DARK":(20, 20, 20, 255),
         "EGG_SHELL":(235, 230, 220, 255),
         "EGG_SPCK": (40, 40, 40, 255),
-        "BELLY":    (220, 90, 40, 255),
+        "BELLY":    (185, 180, 175, 255), # 淡墨腹
+        # 树枝/叶子墨化(覆盖 BASE 的棕绿)
+        "BRANCH":   (70, 62, 56, 255),
+        "BRANCH_L": (95, 85, 78, 255),
+        "BRANCH_D": (48, 42, 38, 255),
+        "LEAF":     (78, 88, 80, 255),
+        "LEAF_D":   (54, 64, 56, 255),
     },
     "watercolor": {
         "TEAL":     (60, 150, 165, 235),
@@ -470,39 +479,26 @@ def post_pixel(img):
 
 
 def post_neon(img):
-    """霓虹:深底 + 青橙发光描边 + 外发光。透明区保持透明。"""
+    """霓虹/synthwave:保留原色(青身+品红腹)+ 青/品红双色外发光 + 亮描边。
+    不再压成深蓝单青——synthwave 经典是青+品红双色霓虹管。透明区保持透明。"""
     img = img.convert("RGBA")
     alpha = img.split()[3]
 
-    # 1) 取边缘(主体轮廓)
-    edge = alpha.filter(ImageFilter.FIND_EDGES)
-    # 描边染色:亮青
-    edge_blur = edge.filter(ImageFilter.GaussianBlur(2))
-    glow_cyan = _compose(Image.new("RGBA", img.size, (0, 229, 255, 255)), edge_blur)
+    # 双色外发光:青(小半径亮)+ 品红(大半径柔)
+    glow_cyan = _compose(Image.new("RGBA", img.size, (0, 220, 255, 170)),
+                         alpha.filter(ImageFilter.GaussianBlur(7)))
+    glow_mag = _compose(Image.new("RGBA", img.size, (255, 50, 160, 120)),
+                        alpha.filter(ImageFilter.GaussianBlur(16)))
 
-    # 2) 主体降暗、偏向深底(保留少量原色)
-    darkened = Image.new("RGBA", img.size, (10, 14, 28, 0))
-    # 只在主体内填深色,把原图饱和度压低、亮度降低
-    gray = ImageOps.grayscale(img.convert("RGB"))
-    dark_rgb = ImageOps.colorize(gray, black=(8, 12, 24), white=(30, 60, 80))
-    body = dark_rgb.convert("RGBA")
-    body.putalpha(alpha)
-    # 叠一抹青橙(用原图 alpha 区分:橙腹区偏橙、其余偏青)—— 简化:整体偏青
-    tint = Image.new("RGBA", img.size, (0, 180, 220, 60))
-    tint.putalpha(ImageChops_mul(alpha, tint.split()[3]))
-    body = Image.alpha_composite(body, tint)
-
-    # 3) 外发光:主体 alpha 模糊后叠亮色
-    glow = alpha.filter(ImageFilter.GaussianBlur(8))
-    glow_layer = _compose(Image.new("RGBA", img.size, (0, 200, 255, 180)), glow)
-    glow2 = alpha.filter(ImageFilter.GaussianBlur(16))
-    glow_layer2 = _compose(Image.new("RGBA", img.size, (255, 120, 40, 90)), glow2)
+    # 亮描边(霓虹管壁高光)
+    edge = alpha.filter(ImageFilter.FIND_EDGES).filter(ImageFilter.GaussianBlur(1.2))
+    edge_glow = _compose(Image.new("RGBA", img.size, (200, 245, 255, 220)), edge)
 
     out = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    out = Image.alpha_composite(out, glow_layer2)
-    out = Image.alpha_composite(out, glow_layer)
-    out = Image.alpha_composite(out, body)
-    out = Image.alpha_composite(out, glow_cyan)
+    out = Image.alpha_composite(out, glow_mag)    # 品红外发光
+    out = Image.alpha_composite(out, glow_cyan)   # 青外发光
+    out = Image.alpha_composite(out, img)         # 原色鸟(青身 + 品红腹)
+    out = Image.alpha_composite(out, edge_glow)   # 亮描边
     return out
 
 
@@ -539,9 +535,9 @@ def post_ink(img):
                 if lum > 200:
                     op[x, y] = (235, 232, 225, a)
                 else:
-                    jitter = rnd.random() * 25
-                    v = 0 if lum < 160 else int(40 - jitter)
-                    v = max(0, min(60, v))
+                    jitter = rnd.random() * 20 - 10
+                    # 墨分五色:按亮度渐变成墨阶(亮→淡墨,暗→浓墨),不再二值纯黑
+                    v = max(0, min(150, int(lum * 0.55) + int(jitter)))
                     op[x, y] = (v, v, v, a)
     # 边缘墨晕:轻微模糊后 alpha 衰减叠加
     ink_bleed = out.filter(ImageFilter.GaussianBlur(0.8))
@@ -710,6 +706,127 @@ def render_branch(theme, post, pal):
     small.save(os.path.join(out_dir, "branch.png"))
 
 
+# ==================== 特效素材(太阳/水花/音符/zzz/屎)====================
+# 几何对所有主题一致,靠 pal 取色;风格由 POSTPROCESSORS[theme] 烘焙。
+# Effects.swift / PoopController 运行时加载这些 png 做 layer.contents,CA 刚体动画无损。
+
+def _effect_palette(theme, pal):
+    """从主题调色板推导特效绘制色。"""
+    white = pal["WHITE"]
+    ep = {
+        "sun_ray":    pal["ORANGE"],
+        "sun_disk":   pal.get("ORANGE_D", pal["ORANGE"]),
+        "note":       pal["TEAL"],
+        "zzz_fill":   pal.get("ZCOLOR", pal["TEAL"]),
+        "zzz_stroke": pal.get("TEAL_D", pal["TEAL"]),
+        "splash":     white,
+        "poop_w":     white,
+        "poop_o":     (max(0, white[0]-35), max(0, white[1]-35), max(0, white[2]-35), white[3]),
+        "poop_d":     pal.get("EGG_SPCK", (140, 110, 60, 255)),
+    }
+    if theme == "ink":
+        # 水墨:太阳改墨色(不用朱砂红——水墨讲究墨分五色,红太阳突兀)
+        ep["sun_ray"] = pal["TEAL"]
+        ep["sun_disk"] = pal.get("TEAL_D", pal["TEAL"])
+    elif theme == "neon":
+        # 霓虹:音符用品红(经典霓虹色),避免和 zzz/水花全撞青
+        ep["note"] = pal.get("HEART", ep["note"])
+    return ep
+
+
+def draw_sun_rays(W, H, ep):
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    s = W / 256.0
+    cx, cy = W / 2, H / 2
+    inner, outer, hw = 46 * s, 102 * s, 0.13
+    for i in range(12):
+        a = i / 12 * 2 * math.pi
+        tri = [(cx + math.cos(a - hw) * inner, cy + math.sin(a - hw) * inner),
+               (cx + math.cos(a) * outer,      cy + math.sin(a) * outer),
+               (cx + math.cos(a + hw) * inner, cy + math.sin(a + hw) * inner)]
+        d.polygon(tri, fill=ep["sun_ray"])
+    return img
+
+
+def draw_sun_disk(W, H, ep):
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    s = W / 256.0
+    cx, cy = W / 2, H / 2
+    r = 120 * s   # 圆盘几乎占满贴图,缩到 layer 40×40 后还原 ~38px(原 cornerRadius 圆盘大小)
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=ep["sun_disk"])
+    return img
+
+
+def draw_note(W, H, ep):
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    f = font(int(W * 0.62))
+    d.text((W / 2, H * 0.44), "♪", font=f, fill=ep["note"], anchor="mm")
+    return img
+
+
+def draw_zzz(W, H, ep):
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    f = font(int(W * 0.5))
+    sw = max(2, int(W * 0.03))
+    d.text((W / 2, H * 0.44), "z", font=f, fill=ep["zzz_stroke"], anchor="mm",
+           stroke_width=sw, stroke_fill=ep["zzz_stroke"])
+    d.text((W / 2, H * 0.44), "z", font=f, fill=ep["zzz_fill"], anchor="mm")
+    return img
+
+
+def draw_splash_ring(W, H, ep):
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    s = W / 256.0
+    cx, cy = W / 2, H / 2
+    r = 104 * s
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=ep["splash"],
+              width=max(3, int(22 * s)))
+    return img
+
+
+def draw_splash_drop(W, H, ep):
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    s = W / 256.0
+    cx, cy = W / 2, H / 2
+    r = 52 * s
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=ep["splash"])
+    return img
+
+
+def draw_poop(W, H, ep):
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    s = W / 256.0
+    cx, cy = W / 2, H * 0.62
+    d.ellipse([cx - 100 * s, cy - 24 * s, cx + 100 * s, cy + 24 * s], fill=ep["poop_w"])
+    d.ellipse([cx - 64 * s,  cy - 34 * s, cx + 64 * s,  cy + 14 * s], fill=ep["poop_o"])
+    d.ellipse([cx - 22 * s,  cy - 18 * s, cx + 22 * s,  cy + 6 * s],  fill=ep["poop_d"])
+    return img
+
+
+def render_effects(theme, pal, post):
+    """渲染特效素材(太阳/水花/音符/zzz/屎):几何 -> 缩 -> post 风格化 -> 存主题目录。"""
+    ep = _effect_palette(theme, pal)
+    makers = [("sun_rays", draw_sun_rays), ("sun_disk", draw_sun_disk),
+              ("note", draw_note), ("zzz", draw_zzz),
+              ("splash_ring", draw_splash_ring), ("splash_drop", draw_splash_drop),
+              ("poop", draw_poop)]
+    out_dir = os.path.join(OUT_BASE, theme)
+    os.makedirs(out_dir, exist_ok=True)
+    for name, fn in makers:
+        big = fn(SIZE * SS, SIZE * SS, ep)
+        small = big.resize((SIZE, SIZE), Image.LANCZOS)
+        # 霓虹特效该亮,不走 post_neon 压暗(那会让光芒/音符变闷);其余主题正常后处理
+        small = (post_flat if theme == "neon" else post)(small)
+        small.save(os.path.join(out_dir, name + ".png"))
+
+
 def montage_for(theme, names, out="contact.png"):
     """把若干帧拼成一张检查图(按主题)。"""
     cols = 4
@@ -782,6 +899,7 @@ def render_all_frames(theme, pal, post):
     # 阴影 + 树枝
     render_shadow(theme, post)
     render_branch(theme, post, pal)
+    render_effects(theme, pal, post)
 
     # 拉屎
     render("poop_0", theme, pal, post, wing="folded", butt_up=True, tail_wag=-5, sweat=True, body_dy=4)

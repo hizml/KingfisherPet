@@ -112,6 +112,29 @@ final class Crack {
         appendArc(radius: radius * 0.55)
         for _ in 0..<3 { appendChip(r: radius * 0.45) }
         rebuild()
+        stylize()   // 按主题风格化线条(霓虹发光/像素加粗/水墨毛笔/粘土投影)
+    }
+
+    /// 按当前主题风格化裂纹线条。颜色已跟 ThemeColors crack_dark/light;这里调粗细/发光/投影。
+    private func stylize() {
+        switch SpriteLibrary.shared.currentTheme {
+        case "neon":
+            for l in [dark, light] {
+                l.shadowColor = ThemeColors.shared.cgColor("crack_dark", fallback: NSColor.cyan)
+                l.shadowOpacity = 0.9; l.shadowRadius = 4; l.shadowOffset = .zero
+            }
+        case "pixel":
+            dark.lineWidth = 3.5; light.lineWidth = 1.5
+        case "ink":
+            dark.lineWidth = CGFloat.random(in: 2.5...4.5); light.lineWidth = 1.0   // 毛笔粗细
+        case "clay":
+            for l in [dark, light] {
+                l.shadowColor = NSColor.black.cgColor
+                l.shadowOpacity = 0.35; l.shadowRadius = 2; l.shadowOffset = CGSize(width: 1.5, height: -1.5)
+            }
+        default:   // flat / watercolor 原样
+            break
+        }
     }
 
     /// 扩大:加长、加放射裂 + 同心环 + 碎屑,直到上限(不加弹跳动画,避免"刷新"感)
