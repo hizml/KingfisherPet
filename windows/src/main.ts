@@ -5,7 +5,7 @@ import { listen, emit } from "@tauri-apps/api/event";
 import { SpriteLibrary } from "./sprite";
 import { setupHitTest } from "./hittest";
 import { setupEffects } from "./effects";
-import { setupShadow } from "./shadow";
+import { setupShadow, updateShadow } from "./shadow";
 import { setupPoop } from "./poop";
 import { setupCrack } from "./crack";
 import { setupBranch } from "./branch";
@@ -42,7 +42,7 @@ async function main() {
       setState: (s) => { if (s !== state) { state = s; animTime = 0; last = 0; } },
       setFacing: (r) => { facingRight = r; img.style.transform = r ? "scaleX(-1)" : "none"; },
       playPeep: playPeep,
-      onMoved: () => { /* Phase 3 阴影跟随 */ },
+      onMoved: (x, y) => updateShadow(x, y),
     });
     setupHitTest(lib, () => currentFrame, 160);
     setupEffects(lib, effectLayer);

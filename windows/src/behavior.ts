@@ -18,7 +18,7 @@ let lib: SpriteLibrary;
 let setState: (s: string) => void;
 let setFacing: (right: boolean) => void;
 let playPeep: () => void;
-let onMoved: () => void;
+let onMoved: (x: number, y: number) => void;
 
 let gen = 0;
 let busy = false;
@@ -42,7 +42,7 @@ async function getOrigin(): Promise<{ x: number; y: number }> {
 async function setOrigin(x: number, y: number) {
   try {
     await win.setPosition(new PhysicalPosition(Math.round(x), Math.round(y)));   // PhysicalPosition 要 i32
-    onMoved();
+    onMoved(x, y);
   } catch (e) { emit("log", "setOrigin err x=" + x + " y=" + y + ": " + e); }
 }
 
