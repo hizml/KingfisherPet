@@ -10,6 +10,10 @@ use tauri::{
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .setup(|app| {
             // 前端 log 事件 → 终端(调试 webview 错)
             app.listen("log", |event| { println!("[webview] {}", event.payload()); });
