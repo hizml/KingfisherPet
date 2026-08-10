@@ -18,6 +18,7 @@ final class Behavior: PetViewDelegate {
     /// 为 true 时禁声;被任何新动作打断(点击/菜单/唤醒后活动)即惊醒清除(见 beginAction)。
     private var userSleeping = false
     private var gen = 0               // 动作代际;新动作/拖动 bump,旧的 hold/动画自动作废
+    private var perchOccludeFrame = 0 // 栖窗遮挡检测降频计数(frontWindowAt 全窗口枚举,贵)
 
     private let size = CGSize(width: 160, height: 160)
     private let feetOffset: CGFloat = 26   // 脚位基准(原版 27,视觉校准)
@@ -560,11 +561,14 @@ final class Behavior: PetViewDelegate {
             leavePerch(); startFly(minDist: 300); return      // 窗口没了 → 飞远
         }
         let feetY = w.frame.minY + feetOffset
-        // 遮挡:鸟脚处最前面的窗口不是本窗口(被更大窗口盖住)→ 飞走
-        let feetPt = CGPoint(x: w.frame.midX, y: feetY)
-        let occluded = WindowTracker.frontWindowAt(nsPoint: feetPt) != wid
-        if occluded {
-            leavePerch(); startFly(minDist: 300); return
+        // 遮挡检测降频:frontWindowAt 是全窗口枚举(贵),每 10 帧(≈2fps)查一次;
+        // 其余帧只看水平脱离/过高(用 frameOfWindow 单查,便宜)。
+        perchOccludeFrame += 1
+        if perchOccludeFrame % 10 == 0 {
+            let feetPt = CGPoint(x: w.frame.midX, y: feetY)
+            if WindowTracker.frontWindowAt(nsPoint: feetPt) != wid {
+                leavePerch(); startFly(minDist: 300); return
+            }
         }
         // 水平脱离:鸟脚不在窗口横向范围内了 → 飞走(走到窗口边了)
         if w.frame.midX < f.minX - 10 || w.frame.midX > f.maxX + 10 {
@@ -649,6 +653,8 @@ final class Behavior: PetViewDelegate {
         view?.applyNow()
         shadow?.setVisible(true)
         window?.makeKeyAndOrderFront(nil)
+        view?.resumeAnimation()    // 重新显示:恢复逐帧 timer(fallAway 隐藏时 suspend 过)
+        branch?.resume()
         hold(1.4) { [weak self] in
             guard let self = self else { return }
             self.finish()
@@ -673,6 +679,9 @@ final class Behavior: PetViewDelegate {
                 self.view?.state = "egg"
                 self.view?.applyNow()
                 self.busy = false
+                // 鸟隐藏:停逐帧/树枝 timer,避免 60fps 空转(hatchIn 重新显示时 resume)
+                self.view?.suspendAnimation()
+                self.branch?.suspend()
             }
         }
     }
@@ -768,7 +777,8 @@ final class Behavior: PetViewDelegate {
             suspend()                  // 无条件:挂起前必须停 think/poop/zzz/perch + 代际 bump
         } else if !alreadySleeping {
             beginAction()              // 首次锁屏:代际 bump 取消进行中的飞/走
-            startZzz()                 // 锁屏进程在跑,zzz 自然飘(beginAction 已 stopZzz,这里重开)
+            stopPerchCheck()           // 鸟静止,停栖窗 20fps 全窗口枚举检查
+            // 不 startZzz:锁屏屏幕黑,飘 zzz 纯浪费 CPU/合成;解锁后 wakeFromUserAbsence 会重开
         }
         userSleeping = true            // 标志在 beginAction/suspend 之后设,避免入睡误触发惊醒
         SpriteLibrary.shared.mutedForSleep = true

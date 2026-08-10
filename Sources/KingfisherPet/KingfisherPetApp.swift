@@ -1,6 +1,20 @@
 import AppKit
 import ServiceManagement
 import Foundation
+import QuartzCore
+
+/// 诊断日志:append 到 /tmp/kf_debug.log(睡眠唤醒卡死排查用)。CACurrentMediaTime 打时间戳。
+func kfLog(_ msg: String) {
+    let line = String(format: "%.2f %@\n", CACurrentMediaTime(), msg)
+    let url = URL(fileURLWithPath: "/tmp/kf_debug.log")
+    if let h = try? FileHandle(forWritingTo: url) {
+        h.seekToEndOfFile()
+        if let d = line.data(using: .utf8) { h.write(d) }
+        try? h.close()
+    } else {
+        try? line.write(to: url, atomically: true, encoding: .utf8)
+    }
+}
 
 @main
 enum KingfisherPetApp {
@@ -232,27 +246,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         petController?.behavior.clampToCurrentScreen()
     }
 
-    /// 系统睡眠前:鸟入睡(底层 suspend 停定时器,防唤醒补发堆积卡死)+ 清场特效 + 隐藏裂纹。
+    /// 系统睡眠前:鸟入睡 + 停所有常驻 timer(逐帧/屎/树枝,防唤醒补发堆积卡死)+ 清场 + 隐藏裂纹。
     @objc private func systemWillSleep() {
+        kfLog("willSleep effects=\(Effect.active.count)")
         petController?.behavior.sleepForUserAbsence(systemSleep: true)
+        petController?.petView.suspendAnimation()
+        poopCtl?.suspend()
+        branchCtl?.suspend()
         Effects.clearAll()                     // 清所有特效窗口(太阳/水花/zzz/音符)
         crackCtl?.setVisible(false)            // 裂纹覆盖层也隐藏
+        kfLog("willSleep done effects=\(Effect.active.count)")
     }
 
-    /// 系统唤醒:清场(保险)+ 显示裂纹 + 鸟赖床 2–4 秒后醒来。
+    /// 系统唤醒:清场(保险)+ 显示裂纹 + 恢复常驻 timer + 鸟赖床 2–4 秒后醒来。
     @objc private func systemDidWake() {
+        kfLog("didWake effects=\(Effect.active.count)")
         Effects.clearAll()
         crackCtl?.setVisible(true)
+        petController?.petView.resumeAnimation()
+        poopCtl?.resume()
+        branchCtl?.resume()
         petController?.behavior.wakeFromUserAbsence()
+        kfLog("didWake done effects=\(Effect.active.count)")
     }
 
     /// 锁屏:鸟入睡(进程不挂起,自然 sleep + zzz + 禁声)。不清场,特效自然到期。
     @objc private func screenLocked() {
+        kfLog("screenLocked effects=\(Effect.active.count)")
         petController?.behavior.sleepForUserAbsence(systemSleep: false)
+        petController?.petView.suspendAnimation()   // 锁屏屏幕黑:停所有常驻 timer,防长时间高 CPU 发烫卡死
+        poopCtl?.suspend()
+        branchCtl?.suspend()
     }
 
     /// 解锁:鸟赖床 2–4 秒后醒来。
     @objc private func screenUnlocked() {
+        kfLog("screenUnlocked effects=\(Effect.active.count)")
+        petController?.petView.resumeAnimation()
+        poopCtl?.resume()
+        branchCtl?.resume()
         petController?.behavior.wakeFromUserAbsence()
     }
 

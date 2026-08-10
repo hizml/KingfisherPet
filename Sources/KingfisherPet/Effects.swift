@@ -31,6 +31,7 @@ final class Effect {
         self.window = w
 
         Effect.active.append(self)
+        kfLog("Effect+ total=\(Effect.active.count)")
         w.orderFrontRegardless()
     }
 
@@ -53,6 +54,7 @@ final class Effect {
         window.contentView = nil      // 释放 layer 树
         window.orderOut(nil)
         Effect.active.removeAll { $0 === self }
+        kfLog("Effect- total=\(Effect.active.count)")
     }
 
     /// 立即撤掉所有活着的特效窗口(系统唤醒后清场,彻底释放,避免卡死)
@@ -71,7 +73,7 @@ enum Effects {
     private static var sunEffectInstance: Effect?
 
     /// 清场:撤掉所有短命特效(太阳/水花/zzz/音符等)。唤醒后调用。
-    static func clearAll() { Effect.dismissAll() }
+    static func clearAll() { Effect.dismissAll(); sunEffectInstance = nil }
 
     /// 水花:在 point(屏幕坐标)处溅起白色水滴 + 涟漪
     static func splash(at point: CGPoint, on screen: NSScreen?) {

@@ -80,6 +80,16 @@ final class PetView: NSView {
         }
     }
 
+    /// 系统睡眠前停逐帧 timer(防唤醒补发堆积卡死);唤醒后 resumeAnimation 恢复。
+    func suspendAnimation() { timer?.invalidate(); timer = nil; kfLog("PetView suspend") }
+    func resumeAnimation() {
+        guard timer == nil, window != nil else { return }
+        let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.tick() }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
+        kfLog("PetView resume")
+    }
+
     override func layout() {
         super.layout()
         spriteLayer.bounds = CGRect(origin: .zero, size: bounds.size)
