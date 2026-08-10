@@ -28,9 +28,9 @@ const sp = (s: number) => s / settings.speed;   // 受全局动画速度影响
 async function area(): Promise<{ minX: number; minY: number; maxX: number; maxY: number }> {
   try {
     const m = await win.currentMonitor();
-    if (m) return { minX: 0, minY: 0, maxX: m.size.width, maxY: m.size.height };
-  } catch (e) { console.error("area", e); }
-  return { minX: 0, minY: 0, maxX: 1280, maxY: 800 };
+    if (m) return { minX: 0, minY: 0, maxX: m.size.width, maxY: m.size.height - 70 };   // -70 预留 Dock/任务栏
+  } catch (e) { emit("log", "area " + e); }
+  return { minX: 0, minY: 0, maxX: 1280, maxY: 730 };
 }
 
 async function getOrigin(): Promise<{ x: number; y: number }> {
@@ -84,8 +84,9 @@ async function think() {
   else if (r < 0.78) startSleep();
   else if (r < 0.85) startEat();
   else if (r < 0.92) startSun();
-  else if (r < 0.96) startWatch();
-  else if (r < 0.99) startPoop();
+  else if (r < 0.95) startWatch();
+  else if (r < 0.98) startFish();
+  else if (r < 0.995) startPoop();
   else startPeck();
 }
 
@@ -124,9 +125,40 @@ function startSing() { beginAction(); enter("sing"); playPeep(); effects.notes(8
 function startSleep() { beginAction(); enter("sleep"); effects.zzz(80, 50); hold(5 + Math.random() * 4, () => finish()); }
 function startEat() { beginAction(); enter("eat"); playPeep(); hold(1.1, () => finish()); }
 function startSun() { beginAction(); enter("sun"); effects.sun(80, 30, 3 + Math.random() * 2); hold(3 + Math.random() * 2, () => finish()); }
-function startPeck() { beginAction(); playPeep(); enter("peck"); crack.crackAt(80, 80); hold(0.5, () => finish()); }
+function startPeck() {
+  beginAction(); playPeep(); enter("peck");
+  getOrigin().then(o => crack.crackAt(o.x + 80, o.y + 80)).catch(() => {});   // 鸟嘴屏幕坐标(物理)
+  hold(0.5, () => finish());
+}
 function startWatch() { beginAction(); enter("watch"); hold(1.4 + Math.random() * 0.8, () => finish()); }
 function startPoop() { beginAction(); enter("poop"); hold(0.4, () => { poop.dropPoop(); hold(0.4, () => finish()); }); }
+
+// 俯冲捕鱼:飞屏顶 → 俯冲屏底 → 水花 → 飞回吃(招牌动作)
+async function startFish() {
+  beginAction();
+  enter("fly");
+  try {
+    const a = await area();
+    const o = await getOrigin();
+    const targetX = Math.max(a.minX, Math.min(o.x, a.maxX - SIZE));
+    setFacing(targetX > o.x);
+    animateFlight({ x: targetX, y: a.minY }, 1.0, () => {       // 飞到屏顶
+      enter("dive");
+      animateMove({ x: targetX, y: a.maxY - SIZE }, 0.5, () => {  // 俯冲到屏底
+        enter("fly_fish");
+        effects.splash(80, 140);                                   // 水花(鸟嘴 local)
+        hold(0.5, () => {
+          const perchX = a.minX + 30 + Math.random() * (a.maxX - a.minX - SIZE - 60);
+          animateFlight({ x: perchX, y: a.maxY - SIZE }, 1.0, () => {  // 飞回
+            enter("eat");
+            playPeep();
+            hold(1.1, () => finish());
+          });
+        });
+      });
+    });
+  } catch (e) { emit("log", "fish " + e); finish(); }
+}
 
 // MARK: 移动(线性;代纪取消)
 function animateMove(to: { x: number; y: number }, duration: number, done: () => void) {

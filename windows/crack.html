@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>html,body{margin:0;background:transparent;overflow:hidden;width:100vw;height:100vh}canvas{position:fixed;left:0;top:0;width:100vw;height:100vh}</style>
+</head><body>
+<canvas id="c"></canvas>
+<script type="module">
+import { listen } from "@tauri-apps/api/event";
+const cv = document.getElementById("c");
+const ctx = cv.getContext("2d");
+function resize() { cv.width = window.innerWidth; cv.height = window.innerHeight; }
+resize(); window.addEventListener("resize", resize);
+listen("crack-at", (e) => {
+  const { x, y } = e.payload;
+  ctx.strokeStyle = "rgba(20,20,20,0.55)";
+  ctx.lineWidth = 2; ctx.lineCap = "round";
+  for (let i = 0; i < 7; i++) {
+    const a = i / 7 * Math.PI * 2 + Math.random() * 0.3;
+    ctx.beginPath(); ctx.moveTo(x, y);
+    ctx.lineTo(x + Math.cos(a) * (30 + Math.random() * 15), y + Math.sin(a) * (30 + Math.random() * 15));
+    ctx.stroke();
+  }
+});
+listen("crack-clear", () => ctx.clearRect(0, 0, cv.width, cv.height));
+</script>
+</body></html>
