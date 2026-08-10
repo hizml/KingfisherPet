@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "翡 KingfisherPet",
+  "productName": "KingfisherPet",
   "version": "1.0.0",
   "identifier": "com.hizml.kingfisher-pet",
   "build": {
