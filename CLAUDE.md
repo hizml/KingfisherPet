@@ -78,8 +78,15 @@ KF_DEMO=1 .build/release/KingfisherPet       # 2.5s 后自动拉一坨屎,便于
 - **粒子层 `opacity` 必须 = 0**:CA 动画播完后图层会回弹到模型属性的初始位置,不置 0 就闪一下(鬼影)。`Effect` 里每个粒子层都显式设 `opacity = 0`。
 - **`CALayer.contents` 去重用帧名字符串**,不要写 `contents as? CGImage`(Swift 报"对 CF 类型条件向下转换永远成功")。`PetView.applyFrame` 靠 `lastName` 去重避免每帧重设。
 - **阴影无自身定时器**:`ShadowController.tick()` 只由 `Behavior` 在鸟移动/拖拽时调 `shadow?.updateNow()` 触发(零延迟)。给阴影加独立 timer 会引入合成差。
-- **睡眠/唤醒纪律**:`AppDelegate` 监听 `willSleepNotification` → `Behavior.suspend()`(停所有 timer + 代际 bump 作废 hold)+ `Effects.clearAll()` + 隐藏裂纹;`didWakeNotification` → `Effects.clearAll()` + `Behavior.resetToIdle()`。**睡眠期间不能有任何待处理 timer/asyncAfter**,否则唤醒时密集补发堆出几十个特效卡死(这是反复修过的顽疾,见最近几个 commit)。
+- **睡眠/唤醒/锁屏纪律**:`AppDelegate` 监听 `willSleepNotification`/`didWakeNotification`(`NSWorkspace`)+ `com.apple.screenIsLocked`/`screenIsUnlocked`(`DistributedNotificationCenter`)。入睡统一走 `Behavior.sleepForUserAbsence(systemSleep:)`:锁屏(`false`)用 `beginAction`+`startZzz` 自然睡(进程不挂起);系统睡眠(`true`)走 `suspend` 停所有 timer + 代际 bump(进程将挂起,防唤醒补发堆积卡死)。唤醒/解锁走 `wakeFromUserAbsence()`(赖床 2–4s 再 `finish`)。睡觉期间 `SpriteLibrary.mutedForSleep=true` 禁声。**睡眠期间不能有任何待处理 timer/asyncAfter**,否则唤醒密集补发堆出几十个特效卡死(反复修过的顽疾)。
 - **多屏跟随**:鸟在哪个屏(`bird?.screen ?? NSScreen.main`),屎/裂纹/阴影跟哪个屏;`didChangeScreenParametersNotification` → 裂纹 `relocate()` + 鸟 `clampToCurrentScreen()`。拖拽起点屏单独记(`PetView.dragScreen`),拖拽 clamp 跟它,别用主屏。
+
+## 易重犯的坑(历史修过 ≥2 次,改 Behavior/BranchController 前必读)
+
+- **树枝显隐只用 `onWindow` 标志,绝不实时探测窗口**:`BranchController.tick` 的 `wantsBranch` 用 `beh.isResting() && !beh.onWindow && !onGround`,**不能**改成 `beh.isAirborne()`/`frontWindowAt`/`landingSpot` 实时查。实时探测会让"窗口拖过鸟脚下"时结果变化 → 树枝闪烁/消失;`onWindow` 只在主动停窗(`startPerchWindow`)/拖拽吸附时设 true,窗口移动不改它。**这条历史上修过 3 次(`ee2d2c0`/`290a611`/本次),别再改成实时探测。**
+- **树枝必须起飞前预显,不能靠 tick 滞后检测**:所有"飞到某处落下"的路径(`startFly`/`callOver`/`diveFish`/`dart`)都要调 `perchBranchIfNeeded(at:)`(`→ branch.showAt` 在落点提前显树枝,鸟到了无缝接管)。`tick` 的 `eligibleAt + 0.3s` 只是兜底,不能当主要方式,否则"鸟落下后才冒树枝"。
+- **悬空判断 `isPointAirborne` 用 `nearestSurface`**(脚附近最近的窗口上沿/Dock,上下都找)。不要用 `frontWindowAt`(2D 矩形包含会把"悬空在窗口前方"误判成"在窗口上",半空也不出树枝);也不要用 `landingSpot`(只找脚正下方,鸟踩窗台上沿时漏判悬空、冒树枝)。
+- **停窗/吸附落点用 `clampPerch`,不要用通用 `clamp`**:通用 `clamp` 的 `maxY = visibleFrame.maxY - 鸟高` 会把停高窗口的鸟压进窗口内部;`clampPerch` 上界放宽到物理屏顶(鸟可盖菜单栏),脚精确踩窗台。落点会头超屏的过高窗口用 `wouldOvershootTop` 判定后直接飞走,别硬停。
 
 ## 坐标系
 
