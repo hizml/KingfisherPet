@@ -11,7 +11,7 @@ import { setupCrack } from "./crack";
 import { setupBranch } from "./branch";
 import { setupTheme, setTheme } from "./theme";
 import { setupAudio, playPeep, setSoundOn } from "./audio";
-import { settings } from "./settings";
+import { settings, setSound, setActivity } from "./settings";
 import * as behavior from "./behavior";
 
 const lib = new SpriteLibrary();
@@ -61,6 +61,11 @@ async function main() {
       else if (id === "eat") behavior.doEat();
     });
     listen<string>("theme", (e) => setTheme(e.payload));   // 托盘主题菜单 → 切换 + reload
+    listen<string>("setting", (e) => {
+      const v = e.payload;
+      if (v === "sound") { setSound(!settings.soundOn); setSoundOn(settings.soundOn); }
+      else if (v.startsWith("activity:")) { setActivity(Number(v.split(":")[1])); }
+    });
     await behavior.start();
     requestAnimationFrame(tick);
   } catch (e: any) {

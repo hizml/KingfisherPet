@@ -34,9 +34,15 @@ pub fn run() {
             let t_neon = MenuItem::with_id(app, "theme_neon", "主题:霓虹", true, None::<&str>)?;
             let t_ink = MenuItem::with_id(app, "theme_ink", "主题:水墨", true, None::<&str>)?;
             let t_water = MenuItem::with_id(app, "theme_watercolor", "主题:水彩", true, None::<&str>)?;
+            let sound = MenuItem::with_id(app, "sound", "声音开关", true, None::<&str>)?;
+            let act_low = MenuItem::with_id(app, "act_low", "活跃度:低", true, None::<&str>)?;
+            let act_mid = MenuItem::with_id(app, "act_mid", "活跃度:中", true, None::<&str>)?;
+            let act_high = MenuItem::with_id(app, "act_high", "活跃度:高", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[
                 &call_over, &sing, &eat, &show,
+                &sound,
+                &act_low, &act_mid, &act_high,
                 &t_flat, &t_clay, &t_pixel, &t_neon, &t_ink, &t_water,
                 &quit,
             ])?;
@@ -51,6 +57,11 @@ pub fn run() {
                             let _ = w.show();
                             let _ = w.set_focus();
                         }
+                    }
+                    "sound" => { let _ = app.emit("setting", "sound"); }
+                    "act_low" | "act_mid" | "act_high" => {
+                        let v = match id { "act_low" => 0.2, "act_high" => 0.9, _ => 0.5 };
+                        let _ = app.emit("setting", format!("activity:{}", v));
                     }
                     id if id.starts_with("theme_") => {
                         let t = id.strip_prefix("theme_").unwrap_or("flat");
