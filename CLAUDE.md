@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 翡(KingfisherPet):一只住在你 Mac 菜单栏的翠鸟桌面宠物。纯 **Swift + AppKit**(无 Xcode 工程,SwiftPM 托管),无边框透明置顶窗口常驻后台。所有美术素材由 Python 脚本生成,不依赖外部图片。
 
-私有仓 `hizml/KingfisherPet`,`gh` 已认证。**先读 `README.md`(功能与目录)和 `docs/DEV_NOTES.md`(深入架构与已知坑)**——本文件只补充跨文件才能看出来的「承重」知识与必须遵守的不变量。
+仓库 `hizml/KingfisherPet`。**先读 `README.md`(功能与目录)和 `docs/DEV_NOTES.md`(深入架构与已知坑)**——本文件只补充跨文件才能看出来的「承重」知识与必须遵守的不变量。
 
 ## 常用命令
 
