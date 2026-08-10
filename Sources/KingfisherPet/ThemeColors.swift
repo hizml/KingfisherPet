@@ -19,20 +19,33 @@ final class ThemeColors {
     }
 
     private func load(theme: String) {
-        // 子目录形式
-        if let url = Bundle.main.url(forResource: "colors", withExtension: "json",
-                                     subdirectory: "Sprites/\(theme)"),
-           let data = try? Data(contentsOf: url),
-           let m = try? JSONSerialization.jsonObject(with: data) as? [String: [Int]] {
+        if let m = readColors(theme: theme) {
             colors = m
-            return
-        }
-        // 兜底:主 bundle 根
-        if let url = Bundle.main.url(forResource: "colors", withExtension: "json"),
-           let data = try? Data(contentsOf: url),
-           let m = try? JSONSerialization.jsonObject(with: data) as? [String: [Int]] {
+        } else if let m = readColors(theme: nil) {   // 兜底:主 bundle 根
             colors = m
         }
+        NSLog("KF ThemeColors load theme=\(theme) keys=\(colors.count)")
+    }
+
+    /// 解析某主题的 colors.json:优先 Sprites/<theme>/,theme=nil 时读 bundle 根。
+    /// 用 compactMap 逐个 NSNumber→Int,比 `as? [String:[Int]]` 稳健——后者对 NSArray of NSNumber
+    /// 会整批转换,任一元素类型不符就全盘失败,导致 colors 为空、所有特效走 fallback 固定色(主题切了也不变)。
+    private func readColors(theme: String?) -> [String: [Int]]? {
+        let url: URL?
+        if let t = theme {
+            url = Bundle.main.url(forResource: "colors", withExtension: "json", subdirectory: "Sprites/\(t)")
+        } else {
+            url = Bundle.main.url(forResource: "colors", withExtension: "json")
+        }
+        guard let u = url, let data = try? Data(contentsOf: u),
+              let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        var m: [String: [Int]] = [:]
+        for (k, v) in raw {
+            guard let arr = v as? [Any] else { continue }
+            let ints = arr.compactMap { ($0 as? NSNumber)?.intValue }
+            if ints.count == arr.count { m[k] = ints }
+        }
+        return m.isEmpty ? nil : m
     }
 
     /// 取色:name 对应 colors.json 的键;返回 NSColor。找不到用 fallback。
