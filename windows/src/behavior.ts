@@ -104,7 +104,7 @@ async function startWalk() {
     const tx = Math.min(Math.max(o.x + dir * dist, a.minX), a.maxX - SIZE);
     if (Math.abs(tx - o.x) < 20) { finish(); return; }
     setFacing(tx > o.x);
-    animateMove({ x: tx, y: o.y }, Math.max(0.6, Math.abs(tx - o.x) / 70), () => finish());
+    animateMove({ x: tx, y: a.maxY - SIZE - FEET_OFFSET }, Math.max(0.6, Math.abs(tx - o.x) / 70), () => finish());   // 走在地面(任务栏上),不空中走
   } catch (e) { console.error("walk", e); finish(); }
 }
 
@@ -118,8 +118,11 @@ async function startFly() {
     const tx = a.minX + Math.random() * (a.maxX - a.minX - SIZE);
     const ty = Math.random() < 0.5 ? (a.maxY - SIZE) : a.minY;
     setFacing(tx > o.x);
-    if (ty < a.maxY / 2) branch.showBranch();   // 落上半屏(悬空)显树枝
-    animateFlight({ x: tx, y: ty }, 1.3, () => { branch.hideBranch(); finish(); });
+    branch.hideBranch();   // 起飞 → 先收树枝(避免带飞)
+    animateFlight({ x: tx, y: ty }, 1.3, () => {
+      if (ty < a.maxY / 2) branch.showBranch();   // 落定悬空 → 才显树枝(不预显)
+      finish();
+    });
   } catch (e) { console.error("fly", e); finish(); }
 }
 
