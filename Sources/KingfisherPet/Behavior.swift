@@ -14,6 +14,9 @@ final class Behavior: PetViewDelegate {
     private var current = "idle"
     private var busy = false          // 正在执行一个多阶段动作
     private var onScreen = true       // 用户意图:是否可见
+    /// 因用户离开(锁屏/系统睡眠)而睡;区别于 think() 里鸟自己困了的 startSleep。
+    /// 为 true 时禁声;被任何新动作打断(点击/菜单/唤醒后活动)即惊醒清除(见 beginAction)。
+    private var userSleeping = false
     private var gen = 0               // 动作代际;新动作/拖动 bump,旧的 hold/动画自动作废
 
     private let size = CGSize(width: 160, height: 160)
@@ -48,6 +51,10 @@ final class Behavior: PetViewDelegate {
     private func beginAction() {
         gen &+= 1
         busy = true
+        if userSleeping {            // 正在睡/赖床时被新动作打断 → 惊醒,恢复声音
+            userSleeping = false
+            SpriteLibrary.shared.mutedForSleep = false
+        }
         thinkTimer?.invalidate()
         poopTimer?.invalidate()
         stopZzz()
@@ -66,6 +73,25 @@ final class Behavior: PetViewDelegate {
         let maxY = a.maxY - size.height    // 窗口顶不超菜单栏下(原版逻辑)
         return CGPoint(x: min(max(origin.x, minX), maxX),
                        y: min(max(origin.y, minY), maxY))
+    }
+
+    /// 停窗/吸附专用几何:横向不出 visibleFrame、下界不低于 Dock 顶、上界放宽到物理屏顶
+    /// (screen.frame.maxY - 鸟高,允许盖菜单栏但不超屏)。配合 wouldOvershootTop:停之前先
+    /// 过滤掉"脚踩上去会头超屏"的过高窗口(直接飞走),到这里的不超屏,脚精确踩窗台。
+    private func clampPerch(_ origin: CGPoint) -> CGPoint {
+        let vf = area
+        let topCap = (screen?.frame.maxY ?? vf.maxY) - size.height   // 物理屏顶 - 鸟高(可盖菜单栏)
+        let cx = min(max(origin.x, vf.minX), vf.maxX - size.width)
+        let cy = min(max(origin.y, vf.minY - feetOffset), topCap)
+        return CGPoint(x: cx, y: cy)
+    }
+
+    /// 脚踩 surfaceY(窗台上沿/Dock 顶)时,鸟头顶是否会超出物理屏顶。
+    /// 鸟全身在屏内的上限:origin.y ≤ screen.frame.maxY - size.height(可盖菜单栏);
+    /// 脚踩 surfaceY 的 origin.y = surfaceY - feetOffset,超上限即头出屏 → 该窗口太高,不停、飞走。
+    private func wouldOvershootTop(surfaceY: CGFloat) -> Bool {
+        guard let maxY = screen?.frame.maxY else { return false }
+        return surfaceY - feetOffset > maxY - size.height
     }
 
     // MARK: - 启动
@@ -124,9 +150,9 @@ final class Behavior: PetViewDelegate {
         let ground = scr.visibleFrame.minY
         let (surfY, surfID) = WindowTracker.nearestSurface(atX: w.frame.midX,
                                                             feetY: feetY, groundY: ground)
-        if abs(surfY - feetY) <= 70 {
-            // 吸附:窗口原点 y = 表面 y - feetOffset,让脚精确踩在表面上
-            let origin = clamp(CGPoint(x: w.frame.origin.x, y: surfY - feetOffset))
+        if abs(surfY - feetY) <= 70 && !wouldOvershootTop(surfaceY: surfY) {
+            // 吸附:窗口原点 y = 表面 y - feetOffset,让脚精确踩在表面上(太高会头超屏的不吸)
+            let origin = clampPerch(CGPoint(x: w.frame.origin.x, y: surfY - feetOffset))
             w.setFrameOrigin(origin)
             shadow?.updateNow()
             if let id = surfID {
@@ -151,13 +177,10 @@ final class Behavior: PetViewDelegate {
     }
 
     /// 脚下没有近表面(Dock/窗口)= 在空中(悬空)
+    /// 鸟当前是否悬空(脚下既无窗口也无 Dock)。供拖拽松手、树枝显隐判断用。
     func isAirborne() -> Bool {
-        guard let w = window, let scr = screen else { return true }
-        let ground = scr.visibleFrame.minY + 6
-        let feetY = w.frame.minY + feetOffset
-        let (ly, _) = WindowTracker.landingSpot(belowX: w.frame.midX,
-                                                fromY: feetY + 40, groundY: ground)
-        return abs(ly - feetY) > 30
+        guard let w = window else { return true }
+        return isPointAirborne(w.frame.origin)
     }
 
     // MARK: - 状态
@@ -316,9 +339,7 @@ final class Behavior: PetViewDelegate {
         let dest = clamp(CGPoint(x: tx, y: ty))
         view?.facingRight = dest.x > ox
         // 落点若悬空(飞到高处),提前在落脚处显树枝——鸟要落树枝,树枝先到
-        if isPointAirborne(dest) {
-            branch?.showAt(CGPoint(x: dest.x + size.width / 2, y: dest.y + feetOffset))
-        }
+        perchBranchIfNeeded(at: dest)
         if Int.random(in: 0..<100) < 35 {
             hold(Double.random(in: 0.3...0.7)) { [weak self] in self?.airPoop() }
         }
@@ -364,7 +385,9 @@ final class Behavior: PetViewDelegate {
                 let perchX = CGFloat.random(in: (a.minX + 30) ... max(a.minX + 31, a.maxX - self.size.width - 30))
                 let perchY = Bool.random() ? topY : (a.minY - self.feetOffset)
                 self.view?.facingRight = perchX > window.frame.origin.x
-                self.animateWindow(to: self.clamp(CGPoint(x: perchX, y: perchY)), duration: 0.95) {
+                let dest = self.clamp(CGPoint(x: perchX, y: perchY))
+                self.perchBranchIfNeeded(at: dest)   // 落屏顶悬空时提前显树枝,避免鸟叼鱼落定后才冒
+                self.animateWindow(to: dest, duration: 0.95) {
                     self.enter("eat")
                     SpriteLibrary.shared.playPeep()
                     self.hold(1.1) {
@@ -435,7 +458,9 @@ final class Behavior: PetViewDelegate {
         let toLeft = Bool.random()
         let tx = toLeft ? (a.minX + 20) : (a.maxX - size.width - 20)
         view?.facingRight = !toLeft
-        animateWindow(to: CGPoint(x: tx, y: window.frame.origin.y),
+        let dest = CGPoint(x: tx, y: window.frame.origin.y)
+        perchBranchIfNeeded(at: dest)   // 从高处触发时落点悬空,提前显树枝
+        animateWindow(to: dest,
                       duration: 0.55) { [weak self] in self?.finish() }
     }
 
@@ -494,10 +519,12 @@ final class Behavior: PetViewDelegate {
     func startPerchWindow() {
         guard let window = window, screen != nil,
               let perch = WindowTracker.frontPerch(birdWidth: size.width) else { finish(); return }
+        // 窗台太高 → 脚踩上去鸟头会超屏顶 → 不停这个窗口,飞走
+        if wouldOvershootTop(surfaceY: perch.point.y) { startFly(minDist: 300); return }
         beginAction()
         enter("fly")
         // 脚踩在窗口上沿(perch.y - feetOffset)
-        let target = clamp(CGPoint(x: perch.point.x, y: perch.point.y - feetOffset))
+        let target = clampPerch(CGPoint(x: perch.point.x, y: perch.point.y - feetOffset))
         view?.facingRight = target.x > window.frame.origin.x
         animateFlight(to: target, duration: 1.1) { [weak self] in
             guard let self = self else { return }
@@ -543,6 +570,10 @@ final class Behavior: PetViewDelegate {
         if w.frame.midX < f.minX - 10 || w.frame.midX > f.maxX + 10 {
             leavePerch(); startFly(minDist: 300); return
         }
+        // 窗口被拖到太高:鸟脚踩上沿会头超屏顶 → 脱离飞走
+        if wouldOvershootTop(surfaceY: scr.frame.height - f.minY) {
+            leavePerch(); startFly(minDist: 300); return
+        }
         // 跟随窗口移动:用窗口位移增量(dxw/dyw),鸟保持相对窗口的位置(不往中间凑)
         let dxw = f.minX - perchedWinFrame.minX
         let dyw = (scr.frame.height - f.minY) - (scr.frame.height - perchedWinFrame.minY)
@@ -550,7 +581,7 @@ final class Behavior: PetViewDelegate {
             // 窗口正在被拖动:用户实时交互,优先级高于预设动作 → think 推迟
             perchWinMoving = true
             lastPerchMoveAt = CACurrentMediaTime()
-            w.setFrameOrigin(clamp(CGPoint(x: w.frame.origin.x + dxw,
+            w.setFrameOrigin(clampPerch(CGPoint(x: w.frame.origin.x + dxw,
                                            y: w.frame.origin.y + dyw)))
             shadow?.updateNow()
         } else if perchWinMoving, CACurrentMediaTime() - lastPerchMoveAt > 0.6 {
@@ -657,21 +688,30 @@ final class Behavior: PetViewDelegate {
                                    y: a.minY + a.height * 0.55))
         view?.facingRight = target.x > window.frame.origin.x
         // 落点若悬空(没踩 Dock/窗口),提前在落脚处显树枝,鸟到了无缝接管
-        if isPointAirborne(target) {
-            branch?.showAt(CGPoint(x: target.x + size.width / 2,
-                                   y: target.y + feetOffset))
-        }
+        perchBranchIfNeeded(at: target)
         animateFlight(to: target, duration: 1.0) { [weak self] in self?.finish() }
     }
 
-    /// 判断某个窗口原点位置是否悬空(脚下没有近表面)。供 callOver 落点预判用。
+    /// 判断某个窗口原点位置是否悬空:鸟脚下有没有可踩的表面(窗口上沿 / Dock 顶)。
+    /// 踩在窗口上沿或 Dock 上 → 不悬空(不出树枝);脚下无表面 → 悬空(出树枝)。
+    /// 用 nearestSurface 找离脚最近(上下都找)的窗口上沿/Dock。landingSpot 只找脚"正下方",
+    /// 鸟踩在上沿上(上沿≈脚)时可能漏判成悬空、冒出树枝;nearestSurface 直接按距离判断更稳。
+    /// 不能用 frontWindowAt 的 2D 矩形包含——会把"悬空在窗口前方"误判成"在窗口上"。
     private func isPointAirborne(_ origin: CGPoint) -> Bool {
         guard let scr = screen else { return true }
-        let ground = scr.visibleFrame.minY + 6
+        let feetX = origin.x + size.width / 2
         let feetY = origin.y + feetOffset
-        let (ly, _) = WindowTracker.landingSpot(belowX: origin.x + size.width / 2,
-                                                fromY: feetY + 40, groundY: ground)
-        return abs(ly - feetY) > 30
+        let ground = scr.visibleFrame.minY + 6
+        let (surfY, _) = WindowTracker.nearestSurface(atX: feetX, feetY: feetY, groundY: ground)
+        return abs(surfY - feetY) > 30
+    }
+
+    /// 落点若悬空(脚下无 Dock/窗口),在脚的落点提前显树枝——鸟要落树枝,树枝先到,
+    /// 鸟到了由 BranchController 无缝接管。所有"飞到某处落下"的路径统一调用,避免漏判
+    /// 导致鸟落定后才由滞后检测冒出树枝(BranchController.tick 的 eligibleAt + 0.3s 兜底)。
+    private func perchBranchIfNeeded(at origin: CGPoint) {
+        guard isPointAirborne(origin) else { return }
+        branch?.showAt(CGPoint(x: origin.x + size.width / 2, y: origin.y + feetOffset))
     }
 
     func toggleVisibility() { setVisible(!onScreen) }
@@ -717,11 +757,37 @@ final class Behavior: PetViewDelegate {
         shadow?.updateNow()
     }
 
-    /// 系统唤醒后重置:取消一切进行中的动作/待发定时器,回到干净 idle 重新开始。
-    /// (睡眠时 Timer/asyncAfter 挂起,唤醒后密集补发会触发一堆动作、堆出多个特效)
-    func resetToIdle() {
-        beginAction()        // 代际 bump → 作废所有进行中的 hold/动画/timer 回调
-        finish()             // busy=false + enter idle + scheduleThink
+    /// 用户离开(锁屏 / 系统睡眠)→ 入睡。
+    /// - systemSleep=true:进程将挂起,无条件 suspend 停所有定时器,防唤醒时 asyncAfter/Timer
+    ///   密集补发堆出特效卡死(历史顽疾)。屏幕已黑,视觉次要。
+    /// - systemSleep=false(锁屏):进程继续,走 beginAction 打断当前动作 + 自然 startZzz。
+    /// 两种路径视觉一致(sleep 动画 + zzz + 禁声)。已睡时再调幂等。
+    func sleepForUserAbsence(systemSleep: Bool) {
+        let alreadySleeping = userSleeping
+        if systemSleep {
+            suspend()                  // 无条件:挂起前必须停 think/poop/zzz/perch + 代际 bump
+        } else if !alreadySleeping {
+            beginAction()              // 首次锁屏:代际 bump 取消进行中的飞/走
+            startZzz()                 // 锁屏进程在跑,zzz 自然飘(beginAction 已 stopZzz,这里重开)
+        }
+        userSleeping = true            // 标志在 beginAction/suspend 之后设,避免入睡误触发惊醒
+        SpriteLibrary.shared.mutedForSleep = true
+        enter("sleep")                 // 切 sleep 动画;enter 里 s=="sleep" 不 stopZzz,保住 zzz
+    }
+
+    /// 用户回来(解锁 / 系统唤醒)→ 赖床随机 2–4 秒后醒来。
+    /// 赖床期间用户点击/菜单操作会走 beginAction 惊醒打断(见 beginAction)。
+    func wakeFromUserAbsence() {
+        guard userSleeping else { return }
+        enter("sleep")
+        startZzz()                     // 系统唤醒后 zzz 已被 suspend 停,这里重开呈现睡觉视觉
+        hold(Double.random(in: 2...4)) { [weak self] in
+            guard let self = self, self.userSleeping else { return }
+            self.userSleeping = false
+            SpriteLibrary.shared.mutedForSleep = false
+            if self.onWindow, self.perchedID != nil { self.startPerchCheck() }  // 恢复窗口跟随(防回归)
+            self.finish()              // busy=false + enter idle + scheduleThink
+        }
     }
 
     /// 系统睡眠前彻底暂停:停掉所有定时器(think/zzz/poop/perch)+ 代际 bump,
