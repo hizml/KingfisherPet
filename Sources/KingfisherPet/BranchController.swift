@@ -67,6 +67,16 @@ final class BranchController {
         timer = t
     }
 
+    /// 系统睡眠前停树枝 timer(防唤醒补发堆积);唤醒后 resume。
+    func suspend() { timer?.invalidate(); timer = nil; kfLog("Branch suspend") }
+    func resume() {
+        guard timer == nil else { return }
+        let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.tick() }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
+        kfLog("Branch resume")
+    }
+
     /// 飞往高处前在"脚的落点"提前显示树枝;鸟到了由常规跟踪无缝接管
     func showAt(_ feetPoint: CGPoint) {
         preview = feetPoint

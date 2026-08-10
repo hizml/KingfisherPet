@@ -19,10 +19,26 @@ final class PoopController {
         timer = t
     }
 
+    /// 系统睡眠前停屎物理 timer(防唤醒补发堆积);唤醒后 resume。
+    func suspend() { timer?.invalidate(); timer = nil; kfLog("Poop suspend") }
+    func resume() {
+        guard timer == nil else { return }
+        lastTime = CACurrentMediaTime()
+        let t = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in self?.update() }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
+        kfLog("Poop resume")
+    }
+
     /// 解析屎应使用的屏:鸟所在屏,否则主屏
     private var screen: NSScreen? { bird?.screen ?? NSScreen.main }
 
     func dropPoop(at point: CGPoint) {
+        // 上限:防 sitting 屎堆积放大 30fps 全窗口枚举。超出时移除最老的(已 sit 一阵,移除不突兀)。
+        if poops.count >= 8 {
+            let old = poops.removeFirst()
+            old.window.orderOut(nil)
+        }
         let p = Poop(start: point)
         poops.append(p)
         if let scr = screen {
@@ -59,6 +75,7 @@ private final class Poop {
     var sitRemain: TimeInterval = 0
     var opacity: CGFloat = 1
     var dead = false
+    private var occludeFrame = 0   // 遮挡检测降频计数(frontWindowAt 全窗口枚举,贵)
 
     init(start: CGPoint) {
         x = start.x
@@ -124,8 +141,11 @@ private final class Poop {
                 if let b = WindowTracker.frameOfWindow(id: id) {
                     let topNS = screenH - b.minY
                     let off = x < b.minX || x > b.maxX || topNS < y - 12
-                    // 遮挡:屎处最前面的窗口不是本窗口(被更大窗口盖住)→ 落下
-                    let occluded = WindowTracker.frontWindowAt(nsPoint: CGPoint(x: x, y: y)) != id
+                    // 遮挡检测降频:frontWindowAt 是全窗口枚举(贵),每 10 帧(≈3fps)查一次;
+                    // 其余帧只看横向/垂直脱离(单查 frameOfWindow,便宜)。
+                    occludeFrame += 1
+                    let occluded = (occludeFrame % 10 == 0)
+                        && WindowTracker.frontWindowAt(nsPoint: CGPoint(x: x, y: y)) != id
                     if off || occluded {
                         resumeFall(ground: ground)
                     } else {
