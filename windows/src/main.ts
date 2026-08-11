@@ -66,6 +66,8 @@ async function main() {
       if (v === "sound") { setSound(!settings.soundOn); setSoundOn(settings.soundOn); }
       else if (v.startsWith("activity:")) { setActivity(Number(v.split(":")[1])); }
     });
+    listen("sleep", () => behavior.sleepForUserAbsence());   // Rust 监听到睡眠 → 鸟睡
+    listen("wake", () => behavior.wakeFromUserAbsence());     // 唤醒 → 赖床 2–4 秒
     await behavior.start();
     requestAnimationFrame(tick);
   } catch (e: any) {

@@ -247,6 +247,34 @@ function animateFlight(end: { x: number; y: number }, duration: number, done: ()
 }
 
 // MARK: 拖拽(main 调)
+// 睡眠/锁屏(对应 macOS sleepForUserAbsence / wakeFromUserAbsence;赖床 2–4 秒)
+let userSleeping = false;
+let zzzTimer: ReturnType<typeof setInterval> | null = null;
+function startZzzInterval() {
+  if (zzzTimer) clearInterval(zzzTimer);
+  zzzTimer = setInterval(() => effects.zzz(80, 50), 900);
+}
+function stopZzzInterval() { if (zzzTimer) { clearInterval(zzzTimer); zzzTimer = null; } }
+
+export function sleepForUserAbsence() {
+  if (userSleeping) return;
+  beginAction();
+  userSleeping = true;
+  enter("sleep");
+  startZzzInterval();
+}
+
+export function wakeFromUserAbsence() {
+  if (!userSleeping) return;
+  enter("sleep");
+  startZzzInterval();
+  hold(2 + Math.random() * 2, () => {   // 赖床
+    userSleeping = false;
+    stopZzzInterval();
+    finish();
+  });
+}
+
 export function dragBegin() { beginAction(); enter("idle"); }
 export async function dragDidEnd() {
   try {
