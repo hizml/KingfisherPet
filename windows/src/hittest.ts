@@ -1,10 +1,22 @@
-// Phase 2 简化:不穿透(鸟 + 透明区都收点击),保证可点/可拖。
-// macOS 的逐像素 hitTest 在 Tauri 上要靠 setIgnoreCursorEvents(true, forward) + alpha,
-// mac WKWebView 的 forward 不可靠,先关掉穿透让鸟能交互;逐像素穿透后续单独调。
-
+// 逐像素点击穿透:mousemove 查当前帧像素 alpha,透明 → setIgnoreCursorEvents(true) 穿透,实体 → false 接收。
+// 对应 macOS PetView.hitTest。Tauri forward=ignore(穿透时转发 mousemove 供判断)。
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { SpriteLibrary } from "./sprite";
 
-export function setupHitTest(_lib: SpriteLibrary, _getCurrentFrame: () => string, _size = 160) {
-  getCurrentWindow().setIgnoreCursorEvents(false).catch(() => {});
+const petWin = getCurrentWindow();
+let ignoring = false;
+
+async function setIgnore(b: boolean) {
+  if (b === ignoring) return;
+  ignoring = b;
+  try { await petWin.setIgnoreCursorEvents(b, b); }     // forward=ignore
+  catch { try { await petWin.setIgnoreCursorEvents(b); } catch { /* */ } }
+}
+
+export function setupHitTest(lib: SpriteLibrary, getCurrentFrame: () => string, size = 160) {
+  setIgnore(true);
+  document.addEventListener("mousemove", (e) => {
+    const alpha = lib.alphaAt(getCurrentFrame(), e.offsetX / size, e.offsetY / size);
+    setIgnore(alpha < 16);   // 透明区穿透,实体区接收
+  });
 }

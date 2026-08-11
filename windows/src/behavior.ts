@@ -24,6 +24,7 @@ let onMoved: (x: number, y: number) => void;
 let gen = 0;
 let busy = false;
 let thinkTimer: ReturnType<typeof setTimeout> | null = null;
+let perchTimer: ReturnType<typeof setInterval> | null = null;   // 栖窗跟随轮询
 
 const sp = (s: number) => s / settings.speed;   // 受全局动画速度影响
 
@@ -58,6 +59,19 @@ function beginAction() {
   gen++;
   busy = true;
   if (thinkTimer) { clearTimeout(thinkTimer); thinkTimer = null; }
+  stopPerchCheck();   // 新动作 → 停栖窗跟随
+}
+function stopPerchCheck() {
+  if (perchTimer) { clearInterval(perchTimer); perchTimer = null; }
+}
+function startPerchCheck() {
+  stopPerchCheck();
+  perchTimer = setInterval(async () => {
+    try {
+      const perch = await invoke<[number, number] | null>("front_perch_cmd", { birdW: SIZE });
+      if (perch) await setOrigin(perch[0], perch[1]);   // 跟窗口上沿
+    } catch (e) { /* */ }
+  }, 500);
 }
 
 function enter(s: string) { setState(s); }
@@ -153,7 +167,7 @@ async function startPerchWindow() {
     if (!perch) { finish(); return; }
     const o = await getOrigin();
     setFacing(perch[0] > o.x);
-    animateFlight({ x: perch[0], y: perch[1] }, 1.1, () => finish());
+    animateFlight({ x: perch[0], y: perch[1] }, 1.1, () => { startPerchCheck(); finish(); });   // 落定后跟随窗口
   } catch (e) { finish(); }
 }
 
