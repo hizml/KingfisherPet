@@ -24,7 +24,7 @@ pub fn run() {
         ))
         .invoke_handler(tauri::generate_handler![front_perch_cmd])
         .setup(|app| {
-            crate::system::setup_power();   // 睡眠/唤醒监听 stub(后续平台完善 → emit sleep/wake)
+            crate::system::setup_power(app.handle().clone());   // Windows 睡眠/唤醒监听 → emit sleep/wake
             // 前端 log 事件 → 终端(调试 webview 错)
             app.listen("log", |event| { println!("[webview] {}", event.payload()); });
             // 托盘菜单:召唤/唱/吃/显示/退出(对应 macOS AppDelegate 菜单栏)
