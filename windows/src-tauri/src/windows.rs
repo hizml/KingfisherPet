@@ -8,7 +8,7 @@ pub fn front_perch(bird_w: f64) -> Option<(f64, f64)> {
     use windows::Win32::System::Threading::GetCurrentProcessId;
     unsafe {
         let hwnd = GetForegroundWindow();
-        if hwnd.0 == 0 { return None; }
+        if hwnd.0.is_null() { return None; }   // windows crate V0.61 HWND.0 是 *mut c_void
         let mut pid: u32 = 0;
         GetWindowThreadProcessId(hwnd, Some(&mut pid));
         if pid == GetCurrentProcessId() { return None; }   // 排除自己
