@@ -42,7 +42,7 @@ async function main() {
       setState: (s) => { if (s !== state) { state = s; animTime = 0; last = 0; } },
       setFacing: (r) => { facingRight = r; img.style.transform = r ? "scaleX(-1)" : "none"; },
       playPeep: playPeep,
-      onMoved: (x, y) => updateShadow(x, y),
+      onMoved: (x: number, y: number) => updateShadow(x, y),
     });
     setupHitTest(lib, () => currentFrame, 160);
     setupEffects(lib, effectLayer);
