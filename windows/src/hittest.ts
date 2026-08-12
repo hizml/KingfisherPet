@@ -9,8 +9,7 @@ let ignoring = false;
 async function setIgnore(b: boolean) {
   if (b === ignoring) return;
   ignoring = b;
-  try { await petWin.setIgnoreCursorEvents(b, b); }     // forward=ignore
-  catch { try { await petWin.setIgnoreCursorEvents(b); } catch { /* */ } }
+  try { await petWin.setIgnoreCursorEvents(b); } catch { /* */ }
 }
 
 export function setupHitTest(lib: SpriteLibrary, getCurrentFrame: () => string, size = 160) {

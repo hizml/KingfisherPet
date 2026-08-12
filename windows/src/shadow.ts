@@ -1,7 +1,7 @@
 // 地面阴影:shadow.png,窗内 local(鸟脚下),跟鸟窗走。简化版(固定 opacity;随高度变淡 Phase 4)。
 
 import type { SpriteLibrary } from "./sprite";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, WebviewWindow } from "@tauri-apps/api/window";
 
 let shadowEl: HTMLImageElement;
 
@@ -19,7 +19,8 @@ export function setupShadow(lib: SpriteLibrary) {
 export async function updateShadow(_birdX: number, birdY: number) {
   if (!shadowEl) return;
   try {
-    const m = await getCurrentWindow().currentMonitor();
+    const w: WebviewWindow = getCurrentWindow();
+    const m = await w.currentMonitor();
     const screenH = m?.size.height ?? 800;
     const heightAbove = Math.max(0, screenH - birdY - 160);   // 鸟底距屏底
     shadowEl.style.opacity = String(Math.max(0.16, 0.85 * (1 - heightAbove / 700)));
