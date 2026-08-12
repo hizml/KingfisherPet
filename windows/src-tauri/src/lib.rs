@@ -64,7 +64,7 @@ pub fn run() {
                     }
                     "sound" => { let _ = app.emit("setting", "sound"); }
                     "act_low" | "act_mid" | "act_high" => {
-                        let v = match id { "act_low" => 0.2, "act_high" => 0.9, _ => 0.5 };
+                        let v = match event.id.as_ref() { "act_low" => 0.2, "act_high" => 0.9, _ => 0.5 };
                         let _ = app.emit("setting", format!("activity:{}", v));
                     }
                     id if id.starts_with("theme_") => {
