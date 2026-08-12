@@ -1,6 +1,9 @@
 // Phase 1:透明置顶窗 + 托盘(显示/退出)+ 整体点击穿透
 // 对应 macOS 版:PetWindowController(透明窗)+ AppDelegate(菜单栏)
 
+mod windows;
+mod system;
+
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
