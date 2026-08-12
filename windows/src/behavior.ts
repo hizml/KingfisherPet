@@ -1,7 +1,8 @@
 // 行为状态机 + 移动(走/飞)+ 代际取消。移植自 macOS Behavior.swift。
 // 坐标统一用物理像素(PhysicalPosition),和 outerPosition/screenX 一致,避免 logical/physical 混淆。
 
-import { getCurrentWindow, PhysicalPosition, WebviewWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
+import type { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { emit } from "@tauri-apps/api/event";
 import type { SpriteLibrary } from "./sprite";
 import * as effects from "./effects";
