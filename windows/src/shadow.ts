@@ -2,7 +2,7 @@
 
 import type { SpriteLibrary } from "./sprite";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import type { Window as TauriWindow } from "@tauri-apps/api/window";
 
 let shadowEl: HTMLImageElement;
 
@@ -20,7 +20,7 @@ export function setupShadow(lib: SpriteLibrary) {
 export async function updateShadow(_birdX: number, birdY: number) {
   if (!shadowEl) return;
   try {
-    const w: WebviewWindow = getCurrentWindow();
+    const w: TauriWindow = getCurrentWindow();
     const m = await w.currentMonitor();
     const screenH = m?.size.height ?? 800;
     const heightAbove = Math.max(0, screenH - birdY - 160);   // 鸟底距屏底
