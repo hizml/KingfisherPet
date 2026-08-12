@@ -21,7 +21,7 @@ export async function updateShadow(_birdX: number, birdY: number) {
   if (!shadowEl) return;
   try {
     const w: TauriWindow = getCurrentWindow();
-    const m = await w.currentMonitor();
+    const m = await (w as any).currentMonitor();
     const screenH = m?.size.height ?? 800;
     const heightAbove = Math.max(0, screenH - birdY - 160);   // 鸟底距屏底
     shadowEl.style.opacity = String(Math.max(0.16, 0.85 * (1 - heightAbove / 700)));

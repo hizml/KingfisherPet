@@ -31,7 +31,7 @@ const sp = (s: number) => s / settings.speed;   // 受全局动画速度影响
 
 async function area(): Promise<{ minX: number; minY: number; maxX: number; maxY: number }> {
   try {
-    const m = await win.currentMonitor();
+    const m = await (win as any).currentMonitor();   // Tauri Window.currentMonitor(TS lib DOM Window 类型冲突,局部 cast)
     if (m) return { minX: 0, minY: 0, maxX: m.size.width, maxY: m.size.height - 70 };   // -70 预留 Dock/任务栏
   } catch (e) { emit("log", "area " + e); }
   return { minX: 0, minY: 0, maxX: 1280, maxY: 730 };
