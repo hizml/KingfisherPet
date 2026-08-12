@@ -2,7 +2,7 @@
 // 坐标统一用物理像素(PhysicalPosition),和 outerPosition/screenX 一致,避免 logical/physical 混淆。
 
 import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
-import type { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import type { Window as TauriWindow } from "@tauri-apps/api/window";
 import { emit } from "@tauri-apps/api/event";
 import type { SpriteLibrary } from "./sprite";
 import * as effects from "./effects";
@@ -12,7 +12,7 @@ import * as branch from "./branch";
 import { invoke } from "@tauri-apps/api/core";
 import { settings } from "./settings";
 
-const win: WebviewWindow = getCurrentWindow();
+const win: TauriWindow = getCurrentWindow();
 const SIZE = 160;
 const FEET_OFFSET = 26;
 
