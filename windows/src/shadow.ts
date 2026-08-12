@@ -1,7 +1,8 @@
 // 地面阴影:shadow.png,窗内 local(鸟脚下),跟鸟窗走。简化版(固定 opacity;随高度变淡 Phase 4)。
 
 import type { SpriteLibrary } from "./sprite";
-import { getCurrentWindow, WebviewWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import type { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 let shadowEl: HTMLImageElement;
 

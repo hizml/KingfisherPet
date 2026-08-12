@@ -13,7 +13,7 @@ async function ensure() {
       resizable: false, skipTaskbar: true, focus: false,
       width: 3000, height: 2000, x: 0, y: 0,
     });
-    await win.once("tauri://created").catch(() => {});
+    await win.once("tauri://created", () => {});
     await win.setIgnoreCursorEvents(true).catch(() => {});   // 点击穿透,别挡屏幕内容区
   }
 }
