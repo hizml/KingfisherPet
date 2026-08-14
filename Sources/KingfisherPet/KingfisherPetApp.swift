@@ -149,7 +149,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let pipe = Pipe()
                 task.standardOutput = pipe
                 do { try task.run() } catch { watchdogBusy = false; return }
+                // 超时保护:3 秒 ps 不返回就强杀(唤醒后系统高负载时 ps 可能卡)
+                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 3.0) {
+                    if task.isRunning { task.terminate() }
+                }
                 task.waitUntilExit()
+                guard task.terminationStatus == 0 else {
+                    DispatchQueue.main.async { watchdogBusy = false }
+                    return
+                }
                 let data = pipe.fileHandleForReading.readDataToEndOfFile()
                 var cpu: Double = 0
                 var rss: Double = 0
@@ -168,7 +176,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     watchdogBusy = false
                     let state = self.petController?.behavior.currentStateForLog() ?? "?"
                     let onWin = self.petController?.behavior.onWindow ?? false
-                    kfLog("WATCHDOG cpu=\(String(format: "%.1f", cpu))% rss=\(String(format: "%.0f", rss))MB effects=\(Effect.active.count) state=\(state) onWindow=\(onWin)")
+                    // 自己进程的窗口数(泄漏监控:CGWindowList 过滤本 pid)
+                    var winCount = -1
+                    if let infos = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] {
+                        let myPID = ProcessInfo.processInfo.processIdentifier
+                        winCount = infos.filter { ($0[kCGWindowOwnerPID as String] as? Int32) == myPID }.count
+                    }
+                    kfLog("WATCHDOG cpu=\(String(format: "%.1f", cpu))% rss=\(String(format: "%.0f", rss))MB effects=\(Effect.active.count) windows=\(winCount) state=\(state) onWindow=\(onWin)")
                     if cpu > 40 {
                         highCpuStreak += 1
                         if highCpuStreak >= 3 {
