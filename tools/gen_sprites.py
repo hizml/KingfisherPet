@@ -735,17 +735,28 @@ def _effect_palette(theme, pal):
 
 
 def draw_sun_rays(W, H, ep):
+    """可爱的太阳星芒:8 根粗短圆头光芒(不尖不细不密)。
+    每根是宽底圆头的胶囊形,像卡通太阳。"""
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     s = W / 256.0
     cx, cy = W / 2, H / 2
-    inner, outer, hw = 46 * s, 102 * s, 0.13
-    for i in range(12):
-        a = i / 12 * 2 * math.pi
-        tri = [(cx + math.cos(a - hw) * inner, cy + math.sin(a - hw) * inner),
-               (cx + math.cos(a) * outer,      cy + math.sin(a) * outer),
-               (cx + math.cos(a + hw) * inner, cy + math.sin(a + hw) * inner)]
-        d.polygon(tri, fill=ep["sun_ray"])
+    inner = 52 * s      # 星芒起点(离圆盘近)
+    outer = 86 * s      # 星芒终点(短,不伸出太远)
+    n_rays = 8          # 8 根(原来 12 根太密)
+    ray_w = 14 * s      # 星芒宽度(粗,原来 hw=0.13 对应很窄)
+    for i in range(n_rays):
+        a = i / n_rays * 2 * math.pi
+        # 星芒中心线两端
+        x0, y0 = cx + math.cos(a) * inner, cy + math.sin(a) * inner
+        x1, y1 = cx + math.cos(a) * outer, cy + math.sin(a) * outer
+        # 垂直方向偏移(星芒宽度)
+        px, py = -math.sin(a), math.cos(a)
+        # 胶囊形:矩形 + 两端圆,用粗线段近似(圆头)
+        d.line([(x0, y0), (x1, y1)], fill=ep["sun_ray"], width=int(ray_w * 2))
+        # 起点和终点画圆(圆头)
+        d.ellipse([x0-ray_w, y0-ray_w, x0+ray_w, y0+ray_w], fill=ep["sun_ray"])
+        d.ellipse([x1-ray_w, y1-ray_w, x1+ray_w, y1+ray_w], fill=ep["sun_ray"])
     return img
 
 
