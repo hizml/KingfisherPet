@@ -813,43 +813,40 @@ def _shade(base_rgb, factor):
 
 
 def draw_poop(W, H, ep):
-    """仿 3D 鸟屎:圆润的小堆(像挤一团奶油),顶亮底暗有体积感,不是破碎多边形。
-    用多层同心椭圆做假 3D 明暗:外圈暗(边缘)→中间亮(本体)→顶部高光。
-    深色粪便:一小撮偏侧(不居中、不大)。底边贴地。"""
+    """鸟屎:还原原版多块圆角叠加风格(不规则摊 + 飞溅小点 + 深色)。
+    底边贴地。多块不同大小的扁椭圆叠出不规则感,不是单个圆润椭圆。
+    加描边(纯白背景可见)。"""
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     s = W / 256.0
     cx = W / 2
-    base_y = H * 0.74
-    white = ep["poop_w"][:3]    # 基础白色
+    base_y = H * 0.74       # 屎摊底边(贴地)
+    white = ep["poop_w"]
+    off = ep["poop_o"]
+    dark = ep["poop_d"]
+    outline_c = (*_shade(white[:3], 0.45), 180)
+    ow = max(2, int(2.5 * s))
 
-    # 描边:暗色细轮廓(纯白背景可见)
-    outline_c = (*_shade(white, 0.45), 200)
+    def blob(w, h, bx, by, c, out=True):
+        """画一个圆角扁椭圆,底边在 base_y+by,中心 x=cx+bx。"""
+        x0, x1 = cx + bx - w/2, cx + bx + w/2
+        y0, y1 = base_y - h + by, base_y + by
+        d.ellipse([x0, y0, x1, y1], fill=c,
+                  outline=outline_c if out else None, width=ow if out else 0)
 
-    # 主堆形状参数:宽底窄顶(圆胖的小山丘)
-    bw = 80 * s     # 底部半宽
-    bh = 30 * s     # 高度
-
-    # --- 3 层同心椭圆,从暗到亮,制造体积感 ---
-    # 第 1 层(最外/最暗):边缘阴影
-    d.ellipse([cx-bw, base_y-bh, cx+bw, base_y+3*s],
-              fill=(*_shade(white, 0.72), 255), outline=outline_c, width=int(2*s))
-    # 第 2 层(中间/正常):主体
-    d.ellipse([cx-bw+6*s, base_y-bh+4*s, cx+bw-6*s, base_y+1*s],
-              fill=(*white, 255))
-    # 第 3 层(最内/最亮):高光(偏左上,光源在左上)
-    hl_cx = cx - 18*s
-    hl_cy = base_y - bh*0.55
-    d.ellipse([hl_cx-22*s, hl_cy-8*s, hl_cx+22*s, hl_cy+6*s],
-              fill=(*_shade(white, 1.15), 255))
-
-    # 深色粪便:小撮扁椭圆偏右侧(不居中、不大、不隆起)
-    d.ellipse([cx+18*s, base_y-bh*0.5, cx+42*s, base_y-bh*0.5+10*s],
-              fill=ep["poop_d"], outline=outline_c, width=max(1, int(1.5*s)))
-
-    # 底部投影:扁椭圆暗 alpha(地面阴影)
-    d.ellipse([cx-bw-4*s, base_y-1*s, cx+bw+4*s, base_y+6*s],
-              fill=(0, 0, 0, 35))
+    # 主体:宽扁白色椭圆(底边贴地)
+    blob(150*s, 24*s, 0, 2*s, white)
+    # 中间略厚:稍小的米白椭圆,偏左上(不规则厚度)
+    blob(100*s, 16*s, -10*s, 0, off)
+    # 飞溅:主体两侧的小圆点(不同大小,不对称,像稀屎溅出)
+    blob(22*s, 14*s, -68*s, 0, white)
+    blob(16*s, 10*s, -82*s, -4*s, white)
+    blob(20*s, 12*s, 66*s, 1*s, white)
+    blob(14*s, 9*s, 80*s, -3*s, white)
+    blob(12*s, 8*s, 56*s, -5*s, white)
+    # 深色粪便:小撮扁椭圆偏右(不居中、不大)
+    blob(24*s, 12*s, 24*s, -2*s, dark, out=False)
+    return img
     return img
 
 
