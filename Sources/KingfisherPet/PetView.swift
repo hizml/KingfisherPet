@@ -84,6 +84,7 @@ final class PetView: NSView {
     func suspendAnimation() { timer?.invalidate(); timer = nil; kfLog("PetView suspend") }
     func resumeAnimation() {
         guard timer == nil, window != nil else { return }
+        lastTick = 0   // 重置:防止睡眠期间 CACurrentMediaTime 没停(只锁屏没睡眠)导致 animTime 爆炸
         let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.tick() }
         RunLoop.main.add(t, forMode: .common)
         timer = t

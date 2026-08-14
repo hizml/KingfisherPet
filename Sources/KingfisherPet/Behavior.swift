@@ -12,6 +12,7 @@ final class Behavior: PetViewDelegate {
     private var zzzTimer: Timer?
     private var perchChecker: Timer?
     private var current = "idle"
+    func currentStateForLog() -> String { current }
     private var busy = false          // 正在执行一个多阶段动作
     private var onScreen = true       // 用户意图:是否可见
     /// 因用户离开(锁屏/系统睡眠)而睡;区别于 think() 里鸟自己困了的 startSleep。

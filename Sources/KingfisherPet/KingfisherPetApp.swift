@@ -121,6 +121,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.petController.behavior.startPoop()
             }
         }
+
+        // CPU 自监控:每 5 秒记录进程 CPU% + 线程数 + effect 数 + 当前状态,定位唤醒卡死
+        startWatchdog()
+    }
+
+    /// 看门狗:定期记录资源占用。卡死时日志里有铁证。
+    private func startWatchdog() {
+        let pid = ProcessInfo.processInfo.processIdentifier
+        Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            let task = Process()
+            task.launchPath = "/bin/ps"
+            task.arguments = ["-p", "\(pid)", "-o", "%cpu,rss"]
+            let pipe = Pipe()
+            task.standardOutput = pipe
+            do { try task.run() } catch { return }
+            task.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            var cpu: Double = 0
+            var rss: Double = 0
+            if let s = String(data: data, encoding: .utf8) {
+                let lines = s.split(separator: "\n")
+                if lines.count > 1 {
+                    let parts = lines[1].split(whereSeparator: { $0.isWhitespace }).filter { !$0.isEmpty }
+                    if parts.count >= 2 {
+                        cpu = Double(parts[0]) ?? 0
+                        rss = (Double(parts[1]) ?? 0) / 1024   // KB → MB
+                    }
+                }
+            }
+            let state = self?.petController?.behavior.currentStateForLog() ?? "?"
+            let onWin = self?.petController?.behavior.onWindow ?? false
+            kfLog("WATCHDOG cpu=\(String(format: "%.1f", cpu))% rss=\(String(format: "%.0f", rss))MB effects=\(Effect.active.count) state=\(state) onWindow=\(onWin)")
+        }
     }
 
     /// 调试:把当前视图渲染成 PNG 并记录窗口信息(不经过屏幕录制权限)
@@ -277,6 +310,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         petController?.petView.suspendAnimation()   // 锁屏屏幕黑:停所有常驻 timer,防长时间高 CPU 发烫卡死
         poopCtl?.suspend()
         branchCtl?.suspend()
+        // 注意:不 Effects.clearAll()——锁屏屏幕黑,特效看不见;解锁后会自然到期消失。
+        // 但如果锁屏很久(系统没真睡,只是锁屏),Effects 的 asyncAfter close 会继续清。
     }
 
     /// 解锁:鸟赖床 2–4 秒后醒来。
