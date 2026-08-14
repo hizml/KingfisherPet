@@ -79,7 +79,7 @@ final class PoopController {
         // 上限:防 sitting 屎堆积放大 30fps 全窗口枚举。超出时移除最老的(已 sit 一阵,移除不突兀)。
         if poops.count >= 8 {
             let old = poops.removeFirst()
-            old.window.orderOut(nil)
+            old.window.close()   // 真正释放(orderOut 只隐藏会泄漏窗口)
         }
         let p = Poop(start: point)
         poops.append(p)
@@ -101,7 +101,8 @@ final class PoopController {
         let sh = scr.frame.height
         for p in poops { p.update(dt: dt, ground: ground, screenH: sh) }
         let gone = poops.filter { $0.dead }
-        gone.forEach { $0.window.orderOut(nil) }
+        // close() 真正释放窗口(orderOut 只隐藏,窗口对象+WindowServer 资源永远累积 → 泄漏)
+        gone.forEach { $0.window.close() }
         poops.removeAll { $0.dead }
     }
 }
@@ -138,7 +139,7 @@ private final class Poop {
         window.level = NSWindow.Level(rawValue: 21)      // 高于 Dock、低于鸟
         window.ignoresMouseEvents = true
         window.collectionBehavior = [.canJoinAllSpaces, .stationary]
-        window.isReleasedWhenClosed = false
+        window.isReleasedWhenClosed = false   // Poop 持有引用;close() 已断开 WindowServer,对象随 Poop 释放
 
         let v = NSView(frame: NSRect(x: 0, y: 0, width: w, height: h))
         v.wantsLayer = true

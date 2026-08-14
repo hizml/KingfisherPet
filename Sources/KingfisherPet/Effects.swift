@@ -42,7 +42,7 @@ final class Effect {
         }
     }
 
-    /// 彻底撤掉:停动画 + 清 layer + 关窗口 + 移出 active
+    /// 彻底撤掉:停动画 + 清 layer + 关窗口(真正释放 WindowServer 资源)+ 移出 active
     func dismiss() {
         // 停掉所有 CA 动画(防止无限重复动画在后台渲染占用 GPU)
         if let v = window.contentView {
@@ -53,6 +53,7 @@ final class Effect {
         }
         window.contentView = nil      // 释放 layer 树
         window.orderOut(nil)
+        window.close()                // close 真正断开 WindowServer(orderOut 只隐藏,窗口资源泄漏)
         Effect.active.removeAll { $0 === self }
         kfLog("Effect- total=\(Effect.active.count)")
     }
