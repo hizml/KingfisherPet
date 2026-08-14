@@ -129,7 +129,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 看门狗:定期记录资源占用。卡死时日志里有铁证。
     private func startWatchdog() {
         let pid = ProcessInfo.processInfo.processIdentifier
+        var highCpuStreak = 0
         Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
             let task = Process()
             task.launchPath = "/bin/ps"
             task.arguments = ["-p", "\(pid)", "-o", "%cpu,rss"]
@@ -146,13 +148,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     let parts = lines[1].split(whereSeparator: { $0.isWhitespace }).filter { !$0.isEmpty }
                     if parts.count >= 2 {
                         cpu = Double(parts[0]) ?? 0
-                        rss = (Double(parts[1]) ?? 0) / 1024   // KB → MB
+                        rss = (Double(parts[1]) ?? 0) / 1024
                     }
                 }
             }
-            let state = self?.petController?.behavior.currentStateForLog() ?? "?"
-            let onWin = self?.petController?.behavior.onWindow ?? false
+            let state = self.petController?.behavior.currentStateForLog() ?? "?"
+            let onWin = self.petController?.behavior.onWindow ?? false
             kfLog("WATCHDOG cpu=\(String(format: "%.1f", cpu))% rss=\(String(format: "%.0f", rss))MB effects=\(Effect.active.count) state=\(state) onWindow=\(onWin)")
+
+            // 熔断:CPU 连续 3 次(15秒)超 40% → 彻底重置,防止卡死整个系统
+            if cpu > 40 {
+                highCpuStreak += 1
+                if highCpuStreak >= 3 {
+                    kfLog("⚠️ CIRCUIT BREAKER: cpu=\(cpu)% 持续 \(highCpuStreak*5)s → 熔断重置")
+                    self.emergencyReset()
+                    highCpuStreak = 0
+                }
+            } else {
+                highCpuStreak = 0
+            }
+        }
+    }
+
+    /// 熔断重置:停一切 + 清一切 + 干净重启。不管根因是什么,保证不卡死系统。
+    private func emergencyReset() {
+        // 停所有 Behavior 定时器 + 代际 bump
+        petController?.behavior.suspend()
+        // 停所有常驻 timer
+        petController?.petView.suspendAnimation()
+        poopCtl?.suspend()
+        branchCtl?.suspend()
+        // 撤所有特效窗口
+        Effects.clearAll()
+        // 清裂纹 layer(保留裂纹数据,只移除 layer 树防 GPU 合成开销)
+        crackCtl?.purgeLayers()
+        // 短暂等待后干净恢复
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self = self else { return }
+            self.petController?.petView.resumeAnimation()
+            self.poopCtl?.resume()
+            self.branchCtl?.resume()
+            self.petController?.behavior.forceIdle()
+            kfLog("CIRCUIT BREAKER: 重置完成,恢复运行")
         }
     }
 

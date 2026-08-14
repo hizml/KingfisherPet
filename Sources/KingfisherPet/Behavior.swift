@@ -811,4 +811,15 @@ final class Behavior: PetViewDelegate {
         stopZzz()
         stopPerchCheck()
     }
+
+    /// 熔断恢复:解除 sleep 标志 + 回 idle + 排 think(供 emergencyReset 用)
+    func forceIdle() {
+        userSleeping = false
+        SpriteLibrary.shared.mutedForSleep = false
+        beginAction()
+        current = "idle"
+        view?.state = "idle"
+        busy = false
+        scheduleThink()
+    }
 }
