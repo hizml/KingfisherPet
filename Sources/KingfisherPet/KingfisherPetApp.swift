@@ -4,15 +4,21 @@ import Foundation
 import QuartzCore
 
 /// 诊断日志:append 到 /tmp/kf_debug.log(睡眠唤醒卡死排查用)。CACurrentMediaTime 打时间戳。
+/// 用缓存的 FileHandle(不每次开关文件,避免高频 IO 吃 CPU)。
+private var _kfLogHandle: FileHandle?
 func kfLog(_ msg: String) {
     let line = String(format: "%.2f %@\n", CACurrentMediaTime(), msg)
     let url = URL(fileURLWithPath: "/tmp/kf_debug.log")
-    if let h = try? FileHandle(forWritingTo: url) {
-        h.seekToEndOfFile()
-        if let d = line.data(using: .utf8) { h.write(d) }
-        try? h.close()
-    } else {
+    if _kfLogHandle == nil {
+        // 首次:创建文件(覆盖旧的)+ 打开 handle 持久持有
         try? line.write(to: url, atomically: true, encoding: .utf8)
+        _kfLogHandle = try? FileHandle(forWritingTo: url)
+        _kfLogHandle?.seekToEndOfFile()
+        return
+    }
+    if let d = line.data(using: .utf8) {
+        _kfLogHandle?.seekToEndOfFile()
+        _kfLogHandle?.write(d)
     }
 }
 
@@ -130,42 +136,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func startWatchdog() {
         let pid = ProcessInfo.processInfo.processIdentifier
         var highCpuStreak = 0
+        var watchdogBusy = false   // 防重入:上一个 ps 没完成不 fork 新的
         Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
-            let task = Process()
-            task.launchPath = "/bin/ps"
-            task.arguments = ["-p", "\(pid)", "-o", "%cpu,rss"]
-            let pipe = Pipe()
-            task.standardOutput = pipe
-            do { try task.run() } catch { return }
-            task.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            var cpu: Double = 0
-            var rss: Double = 0
-            if let s = String(data: data, encoding: .utf8) {
-                let lines = s.split(separator: "\n")
-                if lines.count > 1 {
-                    let parts = lines[1].split(whereSeparator: { $0.isWhitespace }).filter { !$0.isEmpty }
-                    if parts.count >= 2 {
-                        cpu = Double(parts[0]) ?? 0
-                        rss = (Double(parts[1]) ?? 0) / 1024
+            guard !watchdogBusy else { return }   // 上一个 ps 还没完(系统高负载时 ps 会慢),跳过
+            watchdogBusy = true
+            // ps 在后台线程跑,不阻塞主线程(主线程阻塞 = 丢帧 = 卡顿加剧)
+            DispatchQueue.global(qos: .utility).async {
+                let task = Process()
+                task.launchPath = "/bin/ps"
+                task.arguments = ["-p", "\(pid)", "-o", "%cpu,rss"]
+                let pipe = Pipe()
+                task.standardOutput = pipe
+                do { try task.run() } catch { watchdogBusy = false; return }
+                task.waitUntilExit()
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                var cpu: Double = 0
+                var rss: Double = 0
+                if let s = String(data: data, encoding: .utf8) {
+                    let lines = s.split(separator: "\n")
+                    if lines.count > 1 {
+                        let parts = lines[1].split(whereSeparator: { $0.isWhitespace }).filter { !$0.isEmpty }
+                        if parts.count >= 2 {
+                            cpu = Double(parts[0]) ?? 0
+                            rss = (Double(parts[1]) ?? 0) / 1024
+                        }
                     }
                 }
-            }
-            let state = self.petController?.behavior.currentStateForLog() ?? "?"
-            let onWin = self.petController?.behavior.onWindow ?? false
-            kfLog("WATCHDOG cpu=\(String(format: "%.1f", cpu))% rss=\(String(format: "%.0f", rss))MB effects=\(Effect.active.count) state=\(state) onWindow=\(onWin)")
-
-            // 熔断:CPU 连续 3 次(15秒)超 40% → 彻底重置,防止卡死整个系统
-            if cpu > 40 {
-                highCpuStreak += 1
-                if highCpuStreak >= 3 {
-                    kfLog("⚠️ CIRCUIT BREAKER: cpu=\(cpu)% 持续 \(highCpuStreak*5)s → 熔断重置")
-                    self.emergencyReset()
-                    highCpuStreak = 0
+                // 回主线程记日志 + 检查熔断
+                DispatchQueue.main.async {
+                    watchdogBusy = false
+                    let state = self.petController?.behavior.currentStateForLog() ?? "?"
+                    let onWin = self.petController?.behavior.onWindow ?? false
+                    kfLog("WATCHDOG cpu=\(String(format: "%.1f", cpu))% rss=\(String(format: "%.0f", rss))MB effects=\(Effect.active.count) state=\(state) onWindow=\(onWin)")
+                    if cpu > 40 {
+                        highCpuStreak += 1
+                        if highCpuStreak >= 3 {
+                            kfLog("⚠️ CIRCUIT BREAKER: cpu=\(cpu)% 持续 \(highCpuStreak*5)s → 熔断重置")
+                            self.emergencyReset()
+                            highCpuStreak = 0
+                        }
+                    } else {
+                        highCpuStreak = 0
+                    }
                 }
-            } else {
-                highCpuStreak = 0
             }
         }
     }
