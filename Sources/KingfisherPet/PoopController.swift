@@ -89,7 +89,6 @@ final class PoopController {
                                                      groundY: groundY)
             p.landingY = ly
             p.landedID = id
-            kfLog("POOP drop at=\(Int(point.y)) groundY=\(Int(groundY)) landingY=\(Int(ly)) landedID=\(id != nil ? "窗口" : "地面")")
         }
     }
 
@@ -146,9 +145,10 @@ private final class Poop {
 
     private func buildBlob() {
         blob.bounds = CGRect(x: 0, y: 0, width: 30, height: 20)
-        blob.position = CGPoint(x: 15, y: 10)
-        // 主题贴图(像素/霓虹/水墨…),替代手画三色圆点。fading/splat 动画无损。
-        blob.contents = PoopController.effectImage("poop")
+        // position.y 偏低:让屎底边压进表面一点(屎摊在地上,底边嵌入,不悬浮)
+        blob.position = CGPoint(x: 15, y: 7)
+        let img = PoopController.effectImage("poop")
+        blob.contents = img
         blob.contentsGravity = .resize
     }
 
@@ -162,7 +162,6 @@ private final class Poop {
                 state = .sitting
                 sitRemain = Double.random(in: 8...15)
                 splat()
-                kfLog("POOP land y=\(Int(y)) landingY=\(Int(landingY)) ground=\(Int(ground))")
             }
             applyOrigin()
         case .sitting:
