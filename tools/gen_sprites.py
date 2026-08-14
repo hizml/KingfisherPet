@@ -800,23 +800,26 @@ def draw_splash_drop(W, H, ep):
 
 
 def draw_poop(W, H, ep):
-    """画一摊稀屎:底部宽平贴地、上面不规则隆起 + 几滴飞溅。
+    """画一摊稀屎:底部宽平贴地、上面不规则隆起 + 几滴飞溅 + 深色描边(纯白背景可见)。
     底边贴画布底(cropToAlpha 裁后底边 = 屎摊底)。不是上下对称椭圆(那像飞碟)。"""
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     s = W / 256.0
     cx = W / 2
     base_y = H * 0.72          # 屎摊底边(贴地)
-    # 主体:很扁的椭圆,底边在 base_y(宽 200,高仅 16,几乎贴地)
-    d.ellipse([cx - 100*s, base_y - 16*s, cx + 100*s, base_y + 4*s], fill=ep["poop_w"])
-    # 中层隆起:偏左上,不规则厚度(像真屎堆)
-    d.ellipse([cx - 70*s, base_y - 28*s, cx + 50*s, base_y - 2*s], fill=ep["poop_o"])
+    # 描边色:用 poop_d(深色)半透明,给所有形状一个深色轮廓
+    outline = (ep["poop_d"][0], ep["poop_d"][1], ep["poop_d"][2], 180)
+    ow = int(3 * s)            # 描边宽度
+    # 主体:很扁的椭圆,底边在 base_y(宽 200,高仅 16,几乎贴地)+ 描边
+    d.ellipse([cx - 100*s, base_y - 16*s, cx + 100*s, base_y + 4*s], fill=ep["poop_w"], outline=outline, width=ow)
+    # 中层隆起:偏左上,不规则厚度(像真屎堆)+ 描边
+    d.ellipse([cx - 70*s, base_y - 28*s, cx + 50*s, base_y - 2*s], fill=ep["poop_o"], outline=outline, width=ow)
     # 深色核心:小撮深色(粪便),在隆起顶部偏右
     d.ellipse([cx - 10*s, base_y - 22*s, cx + 30*s, base_y - 6*s], fill=ep["poop_d"])
-    # 几滴飞溅:主体两侧的小点(稀屎溅出)
+    # 几滴飞溅:主体两侧的小点(稀屎溅出)+ 描边
     for dx, dy, r in [(-90, -6, 5), (-76, -10, 4), (85, -4, 6), (72, -12, 4), (60, -8, 3)]:
         d.ellipse([cx + dx*s - r*s, base_y + dy*s - r*s,
-                   cx + dx*s + r*s, base_y + dy*s + r*s], fill=ep["poop_w"])
+                   cx + dx*s + r*s, base_y + dy*s + r*s], fill=ep["poop_w"], outline=outline, width=max(1, int(2*s)))
     return img
 
 
