@@ -799,58 +799,51 @@ def draw_splash_drop(W, H, ep):
     return img
 
 
+def _shade(base_rgb, factor):
+    """颜色变亮(factor>1)或变暗(factor<1),返回 (r,g,b) tuple。"""
+    return (max(0, min(255, int(base_rgb[0] * factor))),
+            max(0, min(255, int(base_rgb[1] * factor))),
+            max(0, min(255, int(base_rgb[2] * factor))))
+
+
 def draw_poop(W, H, ep):
-    """画鸟屎:白色尿酸液体摊(不规则锯齿边缘,像溅开的牛奶)+ 偏一侧的深色粪便小点。
-    真实鸟屎两部分不混合:白色液体摊大面积 + 深色固体小撮贴在偏侧。
-    底边贴画布底(cropToAlpha 裁后底边 = 屎摊底)。"""
-    import random
-    rnd = random.Random(99)
+    """仿 3D 鸟屎:圆润的小堆(像挤一团奶油),顶亮底暗有体积感,不是破碎多边形。
+    用多层同心椭圆做假 3D 明暗:外圈暗(边缘)→中间亮(本体)→顶部高光。
+    深色粪便:一小撮偏侧(不居中、不大)。底边贴地。"""
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     s = W / 256.0
     cx = W / 2
-    base_y = H * 0.70
-    outline = (ep["poop_d"][0], ep["poop_d"][1], ep["poop_d"][2], 160)
+    base_y = H * 0.74
+    white = ep["poop_w"][:3]    # 基础白色
 
-    # 白色尿酸摊:不规则多边形(随机锯齿边缘,模拟液体溅开),不是椭圆
-    n_pts = 24
-    poly = []
-    for i in range(n_pts):
-        ang = 2 * math.pi * i / n_pts
-        # 基础半径:横向大(摊开)、纵向小(扁),加随机扰动
-        rx = (90 + rnd.uniform(-18, 18)) * s
-        ry = (10 + rnd.uniform(-3, 4)) * s
-        px = cx + math.cos(ang) * rx
-        py = base_y - ry + math.sin(ang) * ry * 0.7   # 底部几乎平(贴地),上部略隆
-        poly.append((px, py))
-    d.polygon(poly, fill=ep["poop_w"], outline=outline)
+    # 描边:暗色细轮廓(纯白背景可见)
+    outline_c = (*_shade(white, 0.45), 200)
 
-    # 米白色第二层:稍小的不规则摊(白色尿酸里略厚/略脏的部分),偏一侧
-    poly2 = []
-    for i in range(n_pts):
-        ang = 2 * math.pi * i / n_pts
-        rx = (55 + rnd.uniform(-12, 12)) * s
-        ry = (7 + rnd.uniform(-2, 3)) * s
-        ox = -15 * s    # 偏左
-        px = cx + ox + math.cos(ang) * rx
-        py = base_y - ry + math.sin(ang) * ry * 0.7
-        poly2.append((px, py))
-    d.polygon(poly2, fill=ep["poop_o"])
+    # 主堆形状参数:宽底窄顶(圆胖的小山丘)
+    bw = 80 * s     # 底部半宽
+    bh = 30 * s     # 高度
 
-    # 深色粪便:很小一撮(不是球!是扁平不规则小块),偏右侧,贴在白色摊上
-    dark_cx = cx + 35 * s
-    dark_poly = []
-    for i in range(10):
-        ang = 2 * math.pi * i / 10
-        rx = (11 + rnd.uniform(-3, 3)) * s
-        ry = (5 + rnd.uniform(-1, 2)) * s
-        dark_poly.append((dark_cx + math.cos(ang) * rx, base_y - 4*s + math.sin(ang) * ry))
-    d.polygon(dark_poly, fill=ep["poop_d"])
+    # --- 3 层同心椭圆,从暗到亮,制造体积感 ---
+    # 第 1 层(最外/最暗):边缘阴影
+    d.ellipse([cx-bw, base_y-bh, cx+bw, base_y+3*s],
+              fill=(*_shade(white, 0.72), 255), outline=outline_c, width=int(2*s))
+    # 第 2 层(中间/正常):主体
+    d.ellipse([cx-bw+6*s, base_y-bh+4*s, cx+bw-6*s, base_y+1*s],
+              fill=(*white, 255))
+    # 第 3 层(最内/最亮):高光(偏左上,光源在左上)
+    hl_cx = cx - 18*s
+    hl_cy = base_y - bh*0.55
+    d.ellipse([hl_cx-22*s, hl_cy-8*s, hl_cx+22*s, hl_cy+6*s],
+              fill=(*_shade(white, 1.15), 255))
 
-    # 几滴飞溅:远离主体的孤立小点(稀屎溅出)
-    for dx, dy, r in [(-95, -3, 4), (-82, -8, 3), (92, -2, 5), (78, -10, 3)]:
-        d.ellipse([cx + dx*s - r*s, base_y + dy*s - r*s,
-                   cx + dx*s + r*s, base_y + dy*s + r*s], fill=ep["poop_w"], outline=outline, width=max(1, int(2*s)))
+    # 深色粪便:小撮扁椭圆偏右侧(不居中、不大、不隆起)
+    d.ellipse([cx+18*s, base_y-bh*0.5, cx+42*s, base_y-bh*0.5+10*s],
+              fill=ep["poop_d"], outline=outline_c, width=max(1, int(1.5*s)))
+
+    # 底部投影:扁椭圆暗 alpha(地面阴影)
+    d.ellipse([cx-bw-4*s, base_y-1*s, cx+bw+4*s, base_y+6*s],
+              fill=(0, 0, 0, 35))
     return img
 
 
