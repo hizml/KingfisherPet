@@ -51,6 +51,13 @@ final class CrackController {
         sizeToScreen()
     }
 
+    /// 熔断:移除所有裂纹 layer 树(释放 GPU 合成开销),保留裂纹数据。
+    /// 下次 peck/setVisible 时会重建。
+    func purgeLayers() {
+        guard let layer = overlay.contentView?.layer else { return }
+        layer.sublayers?.forEach { $0.removeFromSuperlayer() }
+    }
+
     /// 啄一下:附近(55px 内)有裂纹就扩大,否则新建一道;老裂纹始终保留,直到"修复屏幕"
     func peck(at point: CGPoint) {
         guard let layer = overlay.contentView?.layer else { return }
