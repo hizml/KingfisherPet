@@ -4,10 +4,9 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen, emit } from "@tauri-apps/api/event";
 import { SpriteLibrary } from "./sprite";
 import { setupHitTest } from "./hittest";
-import { setupEffects } from "./effects";
 import { setupShadow, updateShadow } from "./shadow";
 import { setupPoop } from "./poop";
-import { setupCrack } from "./crack";
+import { setupCrack, clearCracks } from "./crack";
 import { setupBranch } from "./branch";
 import { setupTheme, setTheme } from "./theme";
 import { setupAudio, playPeep, setSoundOn } from "./audio";
@@ -45,7 +44,6 @@ async function main() {
       onMoved: (x: number, y: number) => updateShadow(x, y),
     });
     setupHitTest(lib, () => currentFrame, 160);
-    setupEffects(lib, effectLayer);
     setupShadow(lib);
     setupPoop();
     setupCrack();
@@ -59,6 +57,7 @@ async function main() {
       if (id === "call") behavior.callOver();
       else if (id === "sing") behavior.doSing();
       else if (id === "eat") behavior.doEat();
+      else if (id === "repair") { clearCracks(); }   // 托盘"修复屏幕"
     });
     listen<string>("theme", (e) => setTheme(e.payload));   // 托盘主题菜单 → 切换 + reload
     listen<string>("setting", (e) => {
@@ -77,7 +76,7 @@ async function main() {
 
 function tick(now: number) {
   if (last === 0) last = now;
-  animTime += (now - last) / 1000;
+  animTime += (now - last) / 1000 * settings.speed;   // 帧速受全局动画速度影响(macOS 同款)
   last = now;
   const seq = lib.sequence(state);
   const f = Math.max(1, lib.fps(state));
@@ -91,16 +90,31 @@ function tick(now: number) {
 }
 
 // 拖拽:Tauri 原生 startDragging(系统跟手,绕开 DPI/坐标坑)
+// Windows 上 startDragging 进入 Win32 模态移动循环,webview 常收不到 mouseup
+// → 用窗口移动事件停息判定兜底(300ms 不动 = 拖拽结束)
+let dragWaiter: ReturnType<typeof setTimeout> | null = null;
+let dragging = false;
 function setupDrag() {
   img.draggable = false;
   img.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return;
     e.preventDefault();
-    emit("log", "mousedown → startDragging");
     behavior.dragBegin();
+    dragging = true;
     petWin.startDragging().catch((err: any) => emit("log", "startDragging err: " + err));
   });
-  window.addEventListener("mouseup", () => behavior.dragDidEnd());
+  window.addEventListener("mouseup", () => { if (dragging) endDrag(); });
+  // 兜底:窗口移动事件停息 = 松手(mouseup 丢失也能恢复)
+  petWin.onMoved(() => {
+    if (!dragging) return;
+    if (dragWaiter) clearTimeout(dragWaiter);
+    dragWaiter = setTimeout(endDrag, 300);
+  });
+}
+function endDrag() {
+  dragging = false;
+  if (dragWaiter) { clearTimeout(dragWaiter); dragWaiter = null; }
+  behavior.dragDidEnd();
 }
 
 main();

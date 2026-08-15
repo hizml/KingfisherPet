@@ -1,20 +1,86 @@
 <!DOCTYPE html>
 <html><head><meta charset="utf-8">
-<style>html,body{margin:0;background:transparent;overflow:hidden;width:100vw;height:100vh}img{position:fixed;transition:top 1s ease-in,opacity 0.5s;pointer-events:none;width:30px;height:20px}</style>
+<style>
+html,body{margin:0;background:transparent;overflow:hidden;width:100vw;height:100vh}
+img,div.fx{position:fixed;pointer-events:none}
+.kf-sun-rot{animation:kf-sun-rot 14s linear infinite}
+.kf-sun-pulse{animation:kf-sun-pulse 1.4s ease-in-out infinite alternate}
+@keyframes kf-sun-rot{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+@keyframes kf-sun-pulse{from{transform:scale(0.95)}to{transform:scale(1.1)}}
+</style>
 </head><body>
 <script type="module">
-import { listen } from "@tauri-apps/api/event";
+import { listen, emit } from "@tauri-apps/api/event";
 const theme = localStorage.getItem("kf_theme") || "flat";
+const dpr = window.devicePixelRatio || 1;   // 事件载荷是物理像素,CSS 用逻辑:除以 dpr
+
+// 屎下落
 listen("poop-drop", (e) => {
-  const { x, y } = e.payload;
+  const x = e.payload.x / dpr, y = e.payload.y / dpr;
   const img = document.createElement("img");
   img.src = `${import.meta.env.BASE_URL}Sprites/${theme}/poop.png`;
   img.style.left = (x - 15) + "px";
   img.style.top = y + "px";
+  img.style.transition = "top 1s ease-in,opacity 0.5s";
+  img.style.width = "30px"; img.style.height = "20px";
   document.body.appendChild(img);
-  requestAnimationFrame(() => { img.style.top = (y + 400) + "px"; });   // 下落(屏幕物理)
+  requestAnimationFrame(() => { img.style.top = (y + 400) + "px"; });   // 下落
   setTimeout(() => { img.style.opacity = "0"; }, 1100);                  // 淡出
   setTimeout(() => img.remove(), 1700);
 });
+
+// 特效(屏幕坐标):水花/音符/zzz/太阳。搬自 effects.ts(原在鸟窗内被 160px 裁剪)
+function imgEl(name, w, h) {
+  const img = document.createElement("img");
+  img.src = `${import.meta.env.BASE_URL}Sprites/${theme}/${name}.png`;
+  img.style.width = w + "px"; img.style.height = h + "px";
+  return img;
+}
+listen("fx", (e) => {
+  const { kind, x: px, y: py, dur } = e.payload;
+  const x = px / dpr, y = py / dpr;
+  if (kind === "splash") {
+    const ring = imgEl("splash_ring", 30, 30);
+    ring.style.left = (x - 15) + "px"; ring.style.top = (y - 15) + "px";
+    ring.style.transform = "scale(0.3)"; ring.style.opacity = "0.9";
+    ring.style.transition = "transform 0.55s ease-out,opacity 0.55s ease-out";
+    document.body.appendChild(ring);
+    requestAnimationFrame(() => { ring.style.transform = "scale(3.2)"; ring.style.opacity = "0"; });
+    setTimeout(() => ring.remove(), 700);
+  } else if (kind === "notes") {
+    for (let i = 0; i < 3; i++) {
+      const n = imgEl("note", 32, 32);
+      n.style.left = (x + (i - 1) * 14) + "px"; n.style.top = y + "px";
+      n.style.opacity = "0";
+      n.style.transition = `transform 1.2s ease-out ${i * 0.25}s,opacity 1.2s ${i * 0.25}s`;
+      document.body.appendChild(n);
+      requestAnimationFrame(() => { n.style.transform = "translateY(-40px)"; n.style.opacity = "1"; });
+      setTimeout(() => { n.style.opacity = "0"; }, 800 + i * 250);
+      setTimeout(() => n.remove(), 1700);
+    }
+  } else if (kind === "zzz") {
+    const z = imgEl("zzz", 28, 28);
+    z.style.left = x + "px"; z.style.top = y + "px";
+    z.style.opacity = "0";
+    z.style.transition = "transform 1.8s ease-out,opacity 1.8s ease-out";
+    document.body.appendChild(z);
+    requestAnimationFrame(() => { z.style.transform = "translateY(-80px)"; z.style.opacity = "1"; });
+    setTimeout(() => { z.style.opacity = "0"; }, 1200);
+    setTimeout(() => z.remove(), 1900);
+  } else if (kind === "sun") {
+    const c = document.createElement("div");
+    c.className = "fx";
+    c.style.left = (x - 60) + "px"; c.style.top = (y - 60) + "px";
+    c.style.width = "120px"; c.style.height = "120px";
+    const rays = imgEl("sun_rays", 120, 120); rays.classList.add("kf-sun-rot");
+    const disk = imgEl("sun_disk", 58, 58);
+    disk.style.position = "absolute"; disk.style.left = "31px"; disk.style.top = "31px";
+    disk.classList.add("kf-sun-pulse");
+    c.appendChild(rays); c.appendChild(disk);
+    document.body.appendChild(c);
+    setTimeout(() => c.remove(), dur * 1000);
+  }
+});
+emit("child-ready", "poop");   // 告诉主窗 listener 已注册(防首次 emit 丢失)
 </script>
 </body></html>

@@ -23,3 +23,5 @@ build/
 
 # 生成器自检图(各主题子目录下的 contact.png)
 **/Sprites/*/contact.png
+windows/dist/
+windows/src/*.js

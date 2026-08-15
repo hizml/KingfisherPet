@@ -81,7 +81,7 @@ final class PetView: NSView {
     }
 
     /// 系统睡眠前停逐帧 timer(防唤醒补发堆积卡死);唤醒后 resumeAnimation 恢复。
-    func suspendAnimation() { timer?.invalidate(); timer = nil; kfLog("PetView suspend") }
+    func suspendAnimation() { timer?.invalidate(); timer = nil; didDrag = false; kfLog("PetView suspend") }  // didDrag 清:睡眠时正拖着,唤醒后幽灵 mouseUp 不误判
     func resumeAnimation() {
         guard timer == nil, window != nil else { return }
         lastTick = 0   // 重置:防止睡眠期间 CACurrentMediaTime 没停(只锁屏没睡眠)导致 animTime 爆炸

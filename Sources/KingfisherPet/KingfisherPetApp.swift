@@ -4,22 +4,41 @@ import Foundation
 import QuartzCore
 
 /// 诊断日志:append 到 /tmp/kf_debug.log(睡眠唤醒卡死排查用)。CACurrentMediaTime 打时间戳。
-/// 用缓存的 FileHandle(不每次开关文件,避免高频 IO 吃 CPU)。
+/// 用缓存的 FileHandle(不每次开关文件,避免高频 IO 吃 CPU)。超过 5MB 截断(防无限增长)。
 private var _kfLogHandle: FileHandle?
+private var _kfLogSize: Int = 0
 func kfLog(_ msg: String) {
     let line = String(format: "%.2f %@\n", CACurrentMediaTime(), msg)
     let url = URL(fileURLWithPath: "/tmp/kf_debug.log")
+    guard let d = line.data(using: .utf8) else { return }
     if _kfLogHandle == nil {
-        // 首次:创建文件(覆盖旧的)+ 打开 handle 持久持有
-        try? line.write(to: url, atomically: true, encoding: .utf8)
+        // 首次:若旧日志超 5MB 从头写,否则追加
+        var oldSize = 0
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let n = attrs[.size] as? NSNumber {
+            oldSize = n.intValue
+        }
+        if !FileManager.default.fileExists(atPath: url.path) {
+            FileManager.default.createFile(atPath: url.path, contents: nil)
+        }
         _kfLogHandle = try? FileHandle(forWritingTo: url)
-        _kfLogHandle?.seekToEndOfFile()
+        if oldSize > 5_000_000 {
+            try? _kfLogHandle?.truncate(atOffset: 0)   // 覆盖:截断旧日志
+        } else {
+            _kfLogHandle?.seekToEndOfFile()
+        }
+        _kfLogSize = min(oldSize, 5_000_000)
+        _kfLogHandle?.write(d)
+        _kfLogSize += d.count
         return
     }
-    if let d = line.data(using: .utf8) {
-        _kfLogHandle?.seekToEndOfFile()
-        _kfLogHandle?.write(d)
+    if _kfLogSize > 5_000_000 {
+        try? _kfLogHandle?.truncate(atOffset: 0)   // 超限:清空重写(诊断日志只关心最近的事)
+        _kfLogSize = 0
     }
+    _kfLogHandle?.seekToEndOfFile()
+    _kfLogHandle?.write(d)
+    _kfLogSize += d.count
 }
 
 @main

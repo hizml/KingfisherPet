@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "默认权限:前端访问核心 API",
-  "windows": ["main"],
+  "windows": ["main", "crack", "poop"],
   "permissions": [
     "core:default",
     "core:event:default",
