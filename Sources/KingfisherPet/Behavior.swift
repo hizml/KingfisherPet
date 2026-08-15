@@ -547,6 +547,7 @@ final class Behavior: PetViewDelegate {
         perchedID = nil
         perchedWinFrame = .zero
         perchWinMoving = false
+        perchBadStreak = 0
         stopPerchCheck()
     }
     private func startPerchCheck() {
@@ -560,28 +561,37 @@ final class Behavior: PetViewDelegate {
         perchChecker?.invalidate()
         perchChecker = nil
     }
+    /// 栖窗"坏判定"迟滞:遮挡/脱离/过高要连续 3 次(≈150ms)才真飞走。
+    /// 唤醒瞬间窗口层级混乱(锁屏窗淡出/App 重建),单次判定会反复翻转
+    /// → 栖→飞→落高→树枝出→又栖→又遮 → 树枝"一会有一会没有"闪现。
+    private var perchBadStreak = 0
+    /// 唤醒宽限:此刻之前不做遮挡判定(窗口层级未稳)
+    private var perchGraceUntil: CFTimeInterval = 0
+
     private func checkPerch() {
         guard let wid = perchedID, let scr = screen, let w = window,
               let f = WindowTracker.frameOfWindow(id: wid) else {
-            leavePerch(); startFly(minDist: 300); return      // 窗口没了 → 飞远
+            perchBadStreak += 1
+            if perchBadStreak >= 3 { leavePerch(); startFly(minDist: 300) }   // 窗口连续3帧没了才飞
+            return
         }
         let feetY = w.frame.minY + feetOffset
-        // 遮挡检测降频:frontWindowAt 是全窗口枚举(贵),每 10 帧(≈2fps)查一次;
-        // 其余帧只看水平脱离/过高(用 frameOfWindow 单查,便宜)。
+        var bad = false
+        // 遮挡检测降频:frontWindowAt 是全窗口枚举(贵),每 10 帧(≈2fps)查一次
         perchOccludeFrame += 1
-        if perchOccludeFrame % 10 == 0 {
+        if perchOccludeFrame % 10 == 0, CACurrentMediaTime() > perchGraceUntil {
             let feetPt = CGPoint(x: w.frame.midX, y: feetY)
-            if WindowTracker.frontWindowAt(nsPoint: feetPt) != wid {
-                leavePerch(); startFly(minDist: 300); return
-            }
+            if WindowTracker.frontWindowAt(nsPoint: feetPt) != wid { bad = true }
         }
-        // 水平脱离:鸟脚不在窗口横向范围内了 → 飞走(走到窗口边了)
-        if w.frame.midX < f.minX - 10 || w.frame.midX > f.maxX + 10 {
-            leavePerch(); startFly(minDist: 300); return
-        }
-        // 窗口被拖到太高:鸟脚踩上沿会头超屏顶 → 脱离飞走
-        if wouldOvershootTop(surfaceY: scr.frame.height - f.minY) {
-            leavePerch(); startFly(minDist: 300); return
+        // 水平脱离:鸟脚不在窗口横向范围内了
+        if w.frame.midX < f.minX - 10 || w.frame.midX > f.maxX + 10 { bad = true }
+        // 窗口被拖到太高:鸟脚踩上沿会头超屏顶
+        if wouldOvershootTop(surfaceY: scr.frame.height - f.minY) { bad = true }
+        if bad {
+            perchBadStreak += 1
+            if perchBadStreak >= 3 { leavePerch(); startFly(minDist: 300); return }
+        } else {
+            perchBadStreak = 0
         }
         // 跟随窗口移动:用窗口位移增量(dxw/dyw),鸟保持相对窗口的位置(不往中间凑)
         let dxw = f.minX - perchedWinFrame.minX
@@ -792,6 +802,7 @@ final class Behavior: PetViewDelegate {
         }
         userSleeping = true            // 标志在 beginAction/suspend 之后设,避免入睡误触发惊醒
         SpriteLibrary.shared.mutedForSleep = true
+        SpriteLibrary.shared.pauseAllPeeps()   // 锁屏前一瞬在播的叫声也停掉
         enter("sleep")                 // 切 sleep 动画;enter 里 s=="sleep" 不 stopZzz,保住 zzz
     }
 
@@ -799,6 +810,8 @@ final class Behavior: PetViewDelegate {
     /// 赖床期间用户点击/菜单操作会走 beginAction 惊醒打断(见 beginAction)。
     func wakeFromUserAbsence() {
         guard userSleeping else { return }
+        perchGraceUntil = CACurrentMediaTime() + 2.0   // 唤醒宽限:窗口层级未稳,先不做遮挡判定
+        perchBadStreak = 0
         // 鸟隐藏着(fallAway 后)不能复活:不 zzz、不 finish 重启行为,
         // 否则隐形鸟继续拉屎/唱歌出幽灵特效。只清睡眠状态。
         guard onScreen else {

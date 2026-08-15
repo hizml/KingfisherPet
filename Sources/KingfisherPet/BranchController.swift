@@ -62,7 +62,8 @@ final class BranchController {
 
     func start() {
         timer?.invalidate()
-        let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.tick() }
+        // 30fps:内容 8-14fps 足够,省一半常驻唤醒
+        let t = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in self?.tick() }
         RunLoop.main.add(t, forMode: .common)
         timer = t
     }
@@ -71,7 +72,8 @@ final class BranchController {
     func suspend() { timer?.invalidate(); timer = nil; kfLog("Branch suspend") }
     func resume() {
         guard timer == nil else { return }
-        let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.tick() }
+        // 30fps:内容 8-14fps 足够,省一半常驻唤醒
+        let t = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in self?.tick() }
         RunLoop.main.add(t, forMode: .common)
         timer = t
         kfLog("Branch resume")

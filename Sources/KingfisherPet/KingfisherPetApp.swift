@@ -136,6 +136,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         name: Notification.Name("com.apple.screenIsLocked"), object: nil)
         dnc.addObserver(self, selector: #selector(screenUnlocked),
                         name: Notification.Name("com.apple.screenIsUnlocked"), object: nil)
+        // 黑屏/亮屏:合盖只熄屏(外接屏/阻止睡眠场景)不锁屏不睡眠时,鸟也要安静入睡
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(screenDidSleep),
+            name: NSWorkspace.screensDidSleepNotification, object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(screenDidWake),
+            name: NSWorkspace.screensDidWakeNotification, object: nil)
 
         if ProcessInfo.processInfo.environment["KF_SNAPSHOT"] != nil {
             writeDebugSnapshot()
@@ -402,14 +409,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         kfLog("didWake effects=\(Effect.active.count)")
         Effects.clearAll()
         crackCtl?.setVisible(true)
-        // 鸟隐藏着(fallAway 挂起了 60fps)不恢复定时器——否则锁屏一晚空转 CPU
-        if petController?.behavior.isVisible == true {
-            petController?.petView.resumeAnimation()
-            poopCtl?.resume()
-            branchCtl?.resume()
+        // 恢复延迟 1.5s:系统唤醒瞬间自己在重建窗口/网络,别用 60fps 定时器抢资源(唤醒卡顿)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self = self else { return }
+            // 鸟隐藏着(fallAway 挂起了 60fps)不恢复——否则锁屏一晚空转 CPU
+            if self.petController?.behavior.isVisible == true {
+                self.petController?.petView.resumeAnimation()
+                self.poopCtl?.resume()
+                self.branchCtl?.resume()
+            }
+            self.petController?.behavior.wakeFromUserAbsence()
+            kfLog("didWake done effects=\(Effect.active.count)")
         }
-        petController?.behavior.wakeFromUserAbsence()
-        kfLog("didWake done effects=\(Effect.active.count)")
     }
 
     /// 锁屏:鸟入睡(进程不挂起,自然 sleep + zzz + 禁声)。不清场,特效自然到期。
@@ -426,12 +437,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 解锁:鸟赖床 2–4 秒后醒来。
     @objc private func screenUnlocked() {
         kfLog("screenUnlocked effects=\(Effect.active.count)")
-        if petController?.behavior.isVisible == true {   // 隐藏鸟不空转
-            petController?.petView.resumeAnimation()
-            poopCtl?.resume()
-            branchCtl?.resume()
+        resumeAfterWake()   // 与 didWake 同款:延迟恢复(幂等,timer==nil 守卫)
+    }
+
+    /// 黑屏入睡(合盖只熄屏场景):鸟睡 + 停常驻定时器(跟锁屏同一条路)
+    @objc private func screenDidSleep() {
+        kfLog("screensDidSleep")
+        petController?.behavior.sleepForUserAbsence(systemSleep: false)
+        petController?.petView.suspendAnimation()
+        poopCtl?.suspend()
+        branchCtl?.suspend()
+    }
+
+    /// 亮屏:延迟恢复(系统正在点亮面板)
+    @objc private func screenDidWake() {
+        kfLog("screensDidWake")
+        resumeAfterWake()
+    }
+
+    /// 唤醒/解锁/亮屏统一恢复入口:1.5s 宽限 + 幂等(多个信号连发只生效一次)
+    private var wakeResumeScheduled = false
+    private func resumeAfterWake() {
+        guard !wakeResumeScheduled else { return }
+        wakeResumeScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self = self else { return }
+            self.wakeResumeScheduled = false
+            if self.petController?.behavior.isVisible == true {   // 隐藏鸟不空转
+                self.petController?.petView.resumeAnimation()
+                self.poopCtl?.resume()
+                self.branchCtl?.resume()
+            }
+            self.petController?.behavior.wakeFromUserAbsence()
         }
-        petController?.behavior.wakeFromUserAbsence()
     }
 
     /// 设置变化:应用到各子系统 + 同步菜单
