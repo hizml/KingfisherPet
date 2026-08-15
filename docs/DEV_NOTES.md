@@ -118,3 +118,8 @@ PoopController / CrackController / ShadowController / BranchController
 - 判定标准:用户可见的改动(功能/美术/行为修复)→ 打;纯文档/CI 调试 → 不打
 - 版本:小改 patch(+0.0.1),新功能 minor(+0.1.0)
 - CI 全绿后**停在 draft,用户确认后再发布**(仓库已公开,发布动作由用户拍板);CI 挂了先修复重打,不发坏的
+
+## 验证与措辞纪律
+
+见 docs/TESTING.md。要点:改完汇报必须注明验证方式(编译/场景/快照/仅推理四档),
+"仅推理"不得表述为"已修复/没问题";发版前跑 `./tools/run_tests.sh` + 手动清单。

@@ -106,5 +106,7 @@ echo "==> 6/6 启动"
 # 若已在运行先关掉
 pkill -x "$EXEC" 2>/dev/null || true
 sleep 0.2
-open "$APP"
+if [ -z "${KF_NO_LAUNCH:-}" ]; then
+  open "$APP"
+fi
 echo "完成: $APP"

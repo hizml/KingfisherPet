@@ -147,6 +147,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if ProcessInfo.processInfo.environment["KF_SNAPSHOT"] != nil {
             writeDebugSnapshot()
         }
+
+        // 自动化场景测试:KF_TEST=<场景> 运行,结果写 /tmp/kf_debug.log(tools/run_tests.sh 消费)
+        if let scenario = ProcessInfo.processInfo.environment["KF_TEST"] {
+            runTestScenario(scenario)
+        }
         if ProcessInfo.processInfo.environment["KF_DEMO"] != nil {
             // 调试:2.5s 后自动拉一坨,便于截图看下落/落地
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
@@ -247,6 +252,92 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: - 自动化场景测试(KF_TEST)
+    /// 场景跑完写一行 "TEST <名> PASS/FAIL <细节>" 并退出;runner grep 这行定结果。
+    private func runTestScenario(_ name: String) {
+        kfLog("TEST-START \(name)")
+        func done(_ ok: Bool, _ detail: String) {
+            kfLog("TEST \(name) \(ok ? "PASS" : "FAIL") \(detail)")
+            writeDebugSnapshot()   // 顺带出快照(正立性由 runner 像素校验)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NSApp.terminate(nil) }
+        }
+        switch name {
+        case "smoke":
+            // 启动→破壳→idle;常驻窗口数稳定;状态在合理集合内
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
+                guard let self = self else { return }
+                let st = self.petController?.behavior.currentStateForLog() ?? "?"
+                let okStates: Set<String> = ["idle","walk","fly","sing","watch","sun","sleep","eat","peck","poop","happy","hover"]
+                var winCount = -1
+                if let infos = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] {
+                    let myPID = ProcessInfo.processInfo.processIdentifier
+                    winCount = infos.filter { ($0[kCGWindowOwnerPID as String] as? Int32) == myPID }.count
+                }
+                let ok = okStates.contains(st) && winCount >= 3 && winCount <= 6
+                done(ok, "state=\(st) windows=\(winCount)")
+            }
+        case "sleepwake":
+            // 2.5s 入睡(走真实 systemWillSleep 路径)→ 3.5s 唤醒 → 验证苏醒完成/无特效风暴
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+                self?.systemWillSleep()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
+                self?.systemDidWake()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 14.0) { [weak self] in
+                guard let self = self else { return }
+                let beh = self.petController?.behavior
+                let st = beh?.currentStateForLog() ?? "?"
+                let ok = (beh?.isVisible ?? false) && ["idle","sleep"].contains(st) && Effect.active.count <= 3
+                done(ok, "state=\(st) effects=\(Effect.active.count) visible=\(beh?.isVisible ?? false)")
+                // 注:唤醒后 refall=0(屎不重落)由 runner 在日志段内 grep 断言
+            }
+        case "themecycle":
+            // 6 主题逐个 reload,帧数一致(抓缺资源/加载失败)
+            let themes = SpriteLibrary.themes.map { $0.id }
+            var results = ""
+            for (i, t) in themes.enumerated() {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5 + Double(i) * 0.9) {
+                    SpriteLibrary.shared.reload(theme: t)
+                    kfLog("TEST theme=\(t) frames=\(SpriteLibrary.shared.frames.count)")
+                    results += "\(t):\(SpriteLibrary.shared.frames.count) "
+                    if i == themes.count - 1 {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                            let counts = Set(themes.compactMap { _ in SpriteLibrary.shared.frames.count })
+                            // 最后只校验当前帧数 ≥30(逐主题值已在日志,runner 细查)
+                            done(SpriteLibrary.shared.frames.count >= 30, "final=\(SpriteLibrary.shared.frames.count) [\(results)]")
+                        }
+                    }
+                }
+            }
+        case "vis_toggle":
+            // 隐藏(死掉掉出)→ 验证不可见+无幽灵特效 → 再显示(破壳)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                self?.petController?.behavior.fallAway()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) { [weak self] in
+                guard let self = self else { return }
+                let beh = self.petController?.behavior
+                let hiddenOk = (beh?.isVisible ?? true) == false
+                    && !(self.petController?.window?.isVisible ?? true)
+                    && Effect.active.count == 0
+                kfLog("TEST vis hidden=\(hiddenOk)")
+                self.petController?.behavior.hatchIn()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { [weak self] in
+                guard let self = self else { return }
+                let beh = self.petController?.behavior
+                let shown = (beh?.isVisible ?? false) && (self.petController?.window?.isVisible ?? false)
+                let st = beh?.currentStateForLog() ?? "?"
+                // 破壳 1.4s 后 think 已开跑,sleep/walk 等都合法;只要活着+可见+不在 dead
+                let alive = ["idle","walk","fly","sing","watch","sun","sleep","eat","peck","poop","happy","egg"].contains(st)
+                done(shown && alive, "visible=\(shown) state=\(st)")
+            }
+        default:
+            done(false, "unknown-scenario")
+        }
+    }
+
     /// 调试:把当前视图渲染成 PNG 并记录窗口信息(不经过屏幕录制权限)
     private func writeDebugSnapshot() {
         let view = petController.petView
@@ -259,7 +350,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         可见 frame = \(NSScreen.main?.visibleFrame ?? .zero)
         视图 bounds = \(view.bounds)
         """
-        try? info.write(toFile: "/tmp/kf_debug.log", atomically: true, encoding: .utf8)
+        try? info.write(toFile: "/tmp/kf_snapshot_debug.log", atomically: true, encoding: .utf8)   // 别覆写主日志(TEST 行会被抹掉)
 
         let w = Int(view.bounds.width), h = Int(view.bounds.height)
         guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil,
