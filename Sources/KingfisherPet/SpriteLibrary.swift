@@ -124,7 +124,10 @@ final class SpriteLibrary {
         nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil)
     }
 
-    /// 把 cgImage 渲染到 RGBA 缓冲,提取 alpha 通道(顶行在前)
+    /// 把 cgImage 渲染到 RGBA 缓冲 + 清理低 alpha 光晕,返回 (alpha, w, h, 清理后位图)。
+    /// 注意:不要加 flip——ctx.makeImage() 会原样包行,翻转 CTM 画进去的图出来是
+    /// 上下颠倒的(实测行宽相关度:翻转 1.0)。默认朝向下内存 row0 = 图像顶行,
+    /// 与 PetView(isFlipped)的 alphaAt 顶行优先索引一致。
     private func alphaBuffer(for cg: CGImage) -> ([UInt8], Int, Int, CGImage?) {
         let w = cg.width, h = cg.height
         guard w > 0, h > 0 else { return ([], 0, 0, nil) }
@@ -137,9 +140,6 @@ final class SpriteLibrary {
             return ([], 0, 0, nil)
         }
         ctx.clear(CGRect(x: 0, y: 0, width: w, height: h))
-        // 翻转,使缓冲顶行 == 图像顶行
-        ctx.translateBy(x: 0, y: CGFloat(h))
-        ctx.scaleBy(x: 1, y: -1)
         ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
 
         // 清理低 alpha 光晕:抗锯齿边缘 alpha 1..15 的像素让窗口服务器把该点
