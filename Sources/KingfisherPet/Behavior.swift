@@ -720,7 +720,12 @@ final class Behavior: PetViewDelegate {
     /// 鸟到了由 BranchController 无缝接管。所有"飞到某处落下"的路径统一调用,避免漏判
     /// 导致鸟落定后才由滞后检测冒出树枝(BranchController.tick 的 eligibleAt + 0.3s 兜底)。
     private func perchBranchIfNeeded(at origin: CGPoint) {
-        guard isPointAirborne(origin) else { return }
+        // 预显判断用 y 高度(和 BranchController.tick 的显示条件同一套):
+        // 之前用 isPointAirborne(实时探测脚下窗口)与落地判定不一致,会出现
+        // 预显被跳过、鸟落定后树枝才补出来的诡异时序。脚高于 Dock 区即悬空 → 树枝先到。
+        guard let scr = screen else { return }
+        let feetY = origin.y + feetOffset
+        guard feetY > scr.visibleFrame.minY + 40 else { return }
         branch?.showAt(CGPoint(x: origin.x + size.width / 2, y: origin.y + feetOffset))
     }
 

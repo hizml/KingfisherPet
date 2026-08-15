@@ -60,8 +60,8 @@ final class PetView: NSView {
         // 无障碍:把宠物本身暴露为一个可交互元素
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
-        setAccessibilityLabel(NSLocalizedString("ax.petName", comment: ""))
-        setAccessibilityHelp(NSLocalizedString("ax.petHelp", comment: ""))
+        setAccessibilityLabel(Language.t("ax.petName"))
+        setAccessibilityHelp(Language.t("ax.petHelp"))
         // 主题切换:清掉缓存帧名,下一 tick 重画新主题的同名帧
         SpriteLibrary.shared.observeThemeChanged { [weak self] in
             self?.lastName = ""

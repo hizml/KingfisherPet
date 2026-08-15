@@ -735,23 +735,27 @@ def _effect_palette(theme, pal):
 
 
 def draw_sun_rays(W, H, ep):
-    """太阳星芒:8 根短粗尖头三角形(底宽顶尖,但不细长不锐)。
-    像卡通太阳的光芒:胖胖的、尖端钝收(不是针尖,不是圆头)。"""
+    """太阳光芒:8 片圆润花瓣(宽底、外端圆收)。像儿童插画太阳,可爱不扎。
+    花瓣 = 底部两点 + 外端圆弧(椭圆),叠在圆盘后面读作一朵小太阳花。"""
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     s = W / 256.0
     cx, cy = W / 2, H / 2
-    inner = 50 * s      # 星芒底部(离圆盘近)
-    outer = 80 * s      # 星芒尖端(短,不伸出太远)
     n_rays = 8
-    hw = 0.22           # 底部半角宽(原来 0.13 太窄细,0.22 粗胖;尖端自然收尖)
+    base_r = 52 * s       # 花瓣根部(贴圆盘)
+    tip_r = 84 * s        # 花瓣外端中心
+    petal_w = 13 * s      # 花瓣半宽(圆头粗细)
     for i in range(n_rays):
         a = i / n_rays * 2 * math.pi
-        # 底部两点(宽)+ 尖端一点 = 等腰三角形,底宽顶尖
-        tri = [(cx + math.cos(a - hw) * inner, cy + math.sin(a - hw) * inner),
-               (cx + math.cos(a) * outer,      cy + math.sin(a) * outer),
-               (cx + math.cos(a + hw) * inner, cy + math.sin(a + hw) * inner)]
-        d.polygon(tri, fill=ep["sun_ray"])
+        ca, sa = math.cos(a), math.sin(a)
+        px, py = -sa, ca   # 垂直方向
+        # 花瓣外端圆心
+        tx, ty = cx + ca * tip_r, cy + sa * tip_r
+        # 外端圆头
+        d.ellipse([tx - petal_w, ty - petal_w, tx + petal_w, ty + petal_w], fill=ep["sun_ray"])
+        # 根部到圆头的连接(粗线,整体读作圆头花瓣)
+        bx, by = cx + ca * base_r, cy + sa * base_r
+        d.line([(bx, by), (tx, ty)], fill=ep["sun_ray"], width=int(petal_w * 2))
     return img
 
 
@@ -813,40 +817,32 @@ def _shade(base_rgb, factor):
 
 
 def draw_poop(W, H, ep):
-    """鸟屎:还原原版多块圆角叠加风格(不规则摊 + 飞溅小点 + 深色)。
-    底边贴地。多块不同大小的扁椭圆叠出不规则感,不是单个圆润椭圆。
-    加描边(纯白背景可见)。"""
+    """鸟屎:一团软软的白色奶油堆(原版手绘感)。无描边——描边会把整体切成
+    '碎蛋壳'碎片感。主体一坨 + 底部微摊开 + 小深点,读作一坨,不是碎片。"""
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     s = W / 256.0
     cx = W / 2
-    base_y = H * 0.74       # 屎摊底边(贴地)
+    base_y = H * 0.74       # 底边(贴地)
     white = ep["poop_w"]
     off = ep["poop_o"]
     dark = ep["poop_d"]
-    outline_c = (*_shade(white[:3], 0.45), 180)
-    ow = max(2, int(2.5 * s))
+    shadow = (0, 0, 0, 28)
 
-    def blob(w, h, bx, by, c, out=True):
-        """画一个圆角扁椭圆,底边在 base_y+by,中心 x=cx+bx。"""
-        x0, x1 = cx + bx - w/2, cx + bx + w/2
-        y0, y1 = base_y - h + by, base_y + by
-        d.ellipse([x0, y0, x1, y1], fill=c,
-                  outline=outline_c if out else None, width=ow if out else 0)
-
-    # 主体:宽扁白色椭圆(底边贴地)
-    blob(150*s, 24*s, 0, 2*s, white)
-    # 中间略厚:稍小的米白椭圆,偏左上(不规则厚度)
-    blob(100*s, 16*s, -10*s, 0, off)
-    # 飞溅:主体两侧的小圆点(不同大小,不对称,像稀屎溅出)
-    blob(22*s, 14*s, -68*s, 0, white)
-    blob(16*s, 10*s, -82*s, -4*s, white)
-    blob(20*s, 12*s, 66*s, 1*s, white)
-    blob(14*s, 9*s, 80*s, -3*s, white)
-    blob(12*s, 8*s, 56*s, -5*s, white)
-    # 深色粪便:小撮扁椭圆偏右(不居中、不大)
-    blob(24*s, 12*s, 24*s, -2*s, dark, out=False)
-    return img
+    # 地面软影(极淡,压住贴地感)
+    d.ellipse([cx - 78*s, base_y - 3*s, cx + 78*s, base_y + 6*s], fill=shadow)
+    # 主体一坨:大圆(身体)+ 底部左右两个小圆摊开,union 成一坨带裙边
+    d.ellipse([cx - 52*s, base_y - 40*s, cx + 52*s, base_y + 4*s], fill=white)
+    d.ellipse([cx - 74*s, base_y - 14*s, cx - 18*s, base_y + 4*s], fill=white)
+    d.ellipse([cx + 16*s, base_y - 12*s, cx + 70*s, base_y + 4*s], fill=white)
+    # 顶部小圆(堆得略高一点,偏左,不对称)
+    d.ellipse([cx - 30*s, base_y - 50*s, cx + 22*s, base_y - 16*s], fill=white)
+    # 内层阴影色(同族略暗,做体积,不用描边)
+    d.ellipse([cx - 26*s, base_y - 34*s, cx + 18*s, base_y - 12*s], fill=off)
+    # 深色粪便:一小点,偏右上
+    d.ellipse([cx + 8*s, base_y - 30*s, cx + 24*s, base_y - 20*s], fill=dark)
+    # 一滴小飞溅(只留一滴,多了碎)
+    d.ellipse([cx + 62*s, base_y - 6*s, cx + 76*s, base_y + 3*s], fill=white)
     return img
 
 

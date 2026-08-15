@@ -95,11 +95,16 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// 语言切换时外部调:关掉窗口(isReleasedWhenClosed=false),下次 show 按新语言重建
+    func closeWindow() {
+        window?.orderOut(nil)
+    }
+
     private func buildWindow() {
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 320, height: 280),
                          styleMask: [.titled, .closable],
                          backing: .buffered, defer: false)
-        w.title = NSLocalizedString("settings.title", comment: "")
+        w.title = Language.t("settings.title")
         w.titlebarAppearsTransparent = false
         w.isReleasedWhenClosed = false
         w.delegate = self
@@ -115,7 +120,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
         // 主题
         y -= 18
-        let themeTitle = label(NSLocalizedString("settings.theme", comment: ""))
+        let themeTitle = label(Language.t("settings.theme"))
         place(themeTitle, root, top: &y, margin: margin)
         y -= 26
         let popup = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -137,7 +142,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
         // 活跃度
         y -= 18
-        place(label(NSLocalizedString("settings.activity", comment: "")), root, top: &y, margin: margin)
+        place(label(Language.t("settings.activity")), root, top: &y, margin: margin)
         y -= 4
         let actRow = NSView(frame: NSRect(x: margin, y: y - 22, width: root.bounds.width - margin * 2, height: 22))
         let actSlider = NSSlider(value: Double(s.activity), minValue: 0, maxValue: 1,
@@ -159,7 +164,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
         // 动画速度
         y -= 14
-        place(label(NSLocalizedString("settings.speed", comment: "")), root, top: &y, margin: margin)
+        place(label(Language.t("settings.speed")), root, top: &y, margin: margin)
         y -= 4
         let spdRow = NSView(frame: NSRect(x: margin, y: y - 22, width: root.bounds.width - margin * 2, height: 22))
         let spdSlider = NSSlider(value: Double(s.speed), minValue: 0.5, maxValue: 1.5,
@@ -184,7 +189,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
         // 声音
         y -= 22
-        let sndBtn = NSButton(checkboxWithTitle: NSLocalizedString("settings.sound", comment: ""),
+        let sndBtn = NSButton(checkboxWithTitle: Language.t("settings.sound"),
                               target: self, action: #selector(soundToggled(_:)))
         sndBtn.state = s.soundOn ? .on : .off
         sndBtn.frame = NSRect(x: margin, y: y, width: root.bounds.width - margin * 2, height: 22)
@@ -266,9 +271,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         return y - 10
     }
     private func activityText(_ a: Double) -> String {
-        if a < 0.34 { return NSLocalizedString("settings.activity.low", comment: "") }
-        if a > 0.66 { return NSLocalizedString("settings.activity.high", comment: "") }
-        return NSLocalizedString("settings.activity.mid", comment: "")
+        if a < 0.34 { return Language.t("settings.activity.low") }
+        if a > 0.66 { return Language.t("settings.activity.high") }
+        return Language.t("settings.activity.mid")
     }
 
     deinit { NotificationCenter.default.removeObserver(self) }
