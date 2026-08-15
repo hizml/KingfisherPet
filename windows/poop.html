@@ -11,7 +11,8 @@ img,div.fx{position:fixed;pointer-events:none}
 </head><body>
 <script type="module">
 import { listen, emit } from "@tauri-apps/api/event";
-const theme = localStorage.getItem("kf_theme") || "flat";
+let theme = localStorage.getItem("kf_theme") || "flat";
+listen<string>("theme", (e) => { theme = e.payload; });   // 主窗切主题(reload 不影响本窗),素材跟着换
 // 载荷已是逻辑像素(behavior 统一逻辑坐标),直接用
 
 // 屎下落

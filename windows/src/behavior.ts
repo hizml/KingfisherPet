@@ -368,7 +368,8 @@ let userSleeping = false;
 let zzzTimer: ReturnType<typeof setInterval> | null = null;
 function startZzzInterval() {
   if (zzzTimer) clearInterval(zzzTimer);
-  zzzTimer = setInterval(() => effects.zzz(80, 50), 900);
+  const zx = facingRight ? 110 : 50;   // 从头上方出,随朝向(macOS 同款)
+  zzzTimer = setInterval(() => effects.zzz(zx, 50), 900);
 }
 function stopZzzInterval() { if (zzzTimer) { clearInterval(zzzTimer); zzzTimer = null; } }
 
@@ -394,11 +395,30 @@ export function wakeFromUserAbsence() {
 export function dragBegin() { beginAction(); branch.hideBranch(); enter("idle"); }   // 拖拽收枝(macOS 同款)
 export async function dragDidEnd() {
   try {
+    const sc = await scale();
     const o = await getOrigin();
     const a = await area();
     const feetY = o.y + FEET_OFFSET;
-    if (Math.abs(feetY - a.maxY) <= 70) {
-      await setOrigin(o.x, a.maxY - FEET_OFFSET);   // 地面(任务栏顶)±70 内:吸附到精确位置
+    // 吸附候选:任务栏顶 + 水平覆盖鸟的所有窗口上沿(macOS nearestSurface)
+    type Surf = { y: number; hwnd: number | null; left: number; topPhys: number };
+    const cands: Surf[] = [{ y: a.maxY, hwnd: null, left: 0, topPhys: 0 }];
+    try {
+      const list = await invoke<[number, number, number, number][]>("surfaces_below_cmd", { x: (o.x + SIZE / 2) * sc });
+      for (const s of list) cands.push({ y: toLog(s[1]), hwnd: s[3], left: toLog(s[0]), topPhys: s[1] });
+    } catch { /* 枚举失败只试任务栏 */ }
+    let best: Surf | null = null, bestD = 1e9;
+    for (const c of cands) {
+      const d = Math.abs(c.y - feetY);
+      if (d < bestD) { bestD = d; best = c; }
+    }
+    if (best && bestD <= 70) {
+      await setOrigin(o.x, best.y - FEET_OFFSET);   // 脚精确踩表面(x 保持松手位置)
+      if (best.hwnd != null) {
+        // 吸到窗口上沿:接管栖窗增量跟随(不居中)
+        perchedHwnd = best.hwnd;
+        lastPerchRect = { x: best.left, y: toLog(best.topPhys) };
+        startPerchCheck();
+      }
       finish();
     } else {
       startFly(300);   // 空中松手:飞远

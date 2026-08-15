@@ -25,6 +25,11 @@ fn window_rect_cmd(hwnd_val: isize) -> Option<(f64, f64, f64, f64)> {
     crate::windows::window_rect(hwnd_val)
 }
 
+#[tauri::command]
+fn surfaces_below_cmd(x: f64) -> Vec<(f64, f64, f64, isize)> {
+    crate::windows::surfaces_below(x)
+}
+
 /// 界面语言:系统首选语言 zh 开头 → 中文,否则英文。
 /// 用 reg.exe 查注册表(纯 std + CommandExt,不依赖 windows crate feature——
 /// Win32_Globalization 在 CI 上 feature 门控行为不稳,E0433)。
@@ -60,7 +65,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_rect_cmd])
+        .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_rect_cmd, surfaces_below_cmd])
         .setup(|app| {
             crate::system::setup_power(app.handle().clone());   // Windows 睡眠/唤醒监听 → emit sleep/wake
             // 前端 log 事件 → 终端(调试 webview 错)

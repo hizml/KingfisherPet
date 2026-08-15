@@ -14,7 +14,10 @@ let cracks = [];                             // {x,y,r}
 listen("crack-at", (e) => {
   const { x, y } = e.payload;
   // 55px 内已有裂纹 → 扩大它;否则新建(到上限不建)。对应 macOS peck 合并/生长
-  const near = cracks.reverse().find(c => Math.hypot(c.x - x, c.y - y) < 55);
+  let near = null;   // 从最新往旧找(不 reverse 原数组)
+for (let i = cracks.length - 1; i >= 0; i--) {
+  if (Math.hypot(cracks[i].x - x, cracks[i].y - y) < 55) { near = cracks[i]; break; }
+}
   if (near) {
     near.r = Math.min(180, near.r + 18);
     drawC(near);
