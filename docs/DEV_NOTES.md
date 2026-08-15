@@ -117,4 +117,4 @@ PoopController / CrackController / ShadowController / BranchController
 改完认为有必要打包时**直接自动打 tag**(推 `v*` 触发 release.yml 三端打包,产物进 draft)。
 - 判定标准:用户可见的改动(功能/美术/行为修复)→ 打;纯文档/CI 调试 → 不打
 - 版本:小改 patch(+0.0.1),新功能 minor(+0.1.0)
-- draft 发布仍由用户手动确认
+- CI 全绿后**自动发布 release**(gh release edit --draft=false);CI 挂了先修复重打,不发坏的
