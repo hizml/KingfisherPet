@@ -179,6 +179,11 @@ final class SpriteLibrary {
         }
     }
 
+    /// 入睡时停掉正在播/排队中的叫声(锁屏前一瞬开播的没人管)
+    func pauseAllPeeps() {
+        for p in peepPlayers { p.pause() }
+    }
+
     func playPeep() {
         guard soundOn, !mutedForSleep, !peepPlayers.isEmpty else { return }
         let p = peepPlayers.randomElement()!

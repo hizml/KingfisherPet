@@ -14,7 +14,8 @@ final class PoopController {
 
     func start() {
         lastTime = CACurrentMediaTime()
-        let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.update() }
+        // 30fps:内容 8-14fps 足够,省一半常驻唤醒
+        let t = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in self?.update() }
         RunLoop.main.add(t, forMode: .common)
         timer = t
     }
@@ -24,7 +25,8 @@ final class PoopController {
     func resume() {
         guard timer == nil else { return }
         lastTime = CACurrentMediaTime()
-        let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.update() }
+        // 30fps:内容 8-14fps 足够,省一半常驻唤醒
+        let t = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in self?.update() }
         RunLoop.main.add(t, forMode: .common)
         timer = t
         kfLog("Poop resume")
