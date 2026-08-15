@@ -93,7 +93,7 @@ pub fn run() {
             let _ = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
-                .show_menu_on_left_click(false)
+                .show_menu_on_left_click(true)   // 左键直接开菜单(Mac 端同款,别右键)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "quit" => app.exit(0),
                     "show" => {

@@ -1,7 +1,9 @@
 // 行为状态机 + 移动(走/飞)+ 代际取消。移植自 macOS Behavior.swift。
-// 坐标统一用物理像素(PhysicalPosition),和 outerPosition/screenX 一致,避免 logical/physical 混淆。
+// 坐标统一用【逻辑像素】:Rust(Win32)返回物理,这里统一 /scale 转逻辑;
+// 窗口定位用 LogicalPosition。之前物理/逻辑混用,在 125%/150% 缩放下
+// 脚位、树枝、地面全部错位(鸟落不到树枝上的根源之一)。
 
-import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalPosition } from "@tauri-apps/api/window";
 import type { Window as TauriWindow } from "@tauri-apps/api/window";
 import { emit } from "@tauri-apps/api/event";
 import type { SpriteLibrary } from "./sprite";
@@ -13,8 +15,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { settings } from "./settings";
 
 const win: TauriWindow = getCurrentWindow();
-const SIZE = 160;
-const FEET_OFFSET = 26;
+const SIZE = 160;      // 窗口逻辑宽高
+const FEET_OFFSET = 26; // 脚距窗口底(逻辑;256 sprite 的脚 ≈ 42/256*160)
 
 let lib: SpriteLibrary;
 let setState: (s: string) => void;
@@ -29,27 +31,40 @@ let perchTimer: ReturnType<typeof setInterval> | null = null;   // 栖窗跟随�
 
 const sp = (s: number) => s / settings.speed;   // 受全局动画速度影响
 
+/// 当前显示器缩放(逻辑 = 物理 / scale)。缓存,变化少。
+let _scale = 1;
+async function scale(): Promise<number> {
+  try {
+    const m = await (win as any).currentMonitor();
+    if (m && m.scaleFactor) { _scale = m.scaleFactor; }
+  } catch { /* */ }
+  return _scale;
+}
+const toLog = (v: number) => v / _scale;   // 物理 → 逻辑(先 await scale() 过)
+
 async function area(): Promise<{ minX: number; minY: number; maxX: number; maxY: number }> {
   try {
+    const sc = await scale();
     const m = await (win as any).currentMonitor();   // Tauri Window.currentMonitor(TS lib DOM Window 类型冲突,局部 cast)
-    // 多屏:monitor.position 是全局物理原点(副屏可能是负),clamp 必须用它,否则鸟被推出屏外
+    // 多屏:monitor.position 是全局物理原点(副屏可能为负),转逻辑后 clamp
     if (m) return {
-      minX: m.position.x, minY: m.position.y,
-      maxX: m.position.x + m.size.width,
-      maxY: m.position.y + m.size.height - 70,   // -70 预留任务栏
+      minX: toLog(m.position.x), minY: toLog(m.position.y),
+      maxX: toLog(m.position.x + m.size.width),
+      maxY: toLog(m.position.y + m.size.height) - 70 / sc,   // -70 物理预留任务栏 → 逻辑
     };
   } catch (e) { emit("log", "area " + e); }
   return { minX: 0, minY: 0, maxX: 1280, maxY: 730 };
 }
 
 async function getOrigin(): Promise<{ x: number; y: number }> {
+  await scale();                 // 刷新 _scale(物理→逻辑换算用)
   const p = await win.outerPosition();
-  return { x: p.x, y: p.y };
+  return { x: toLog(p.x), y: toLog(p.y) };
 }
 
 async function setOrigin(x: number, y: number) {
   try {
-    await win.setPosition(new PhysicalPosition(Math.round(x), Math.round(y)));   // PhysicalPosition 要 i32
+    await win.setPosition(new LogicalPosition(Math.round(x), Math.round(y)));
     onMoved(x, y);
   } catch (e) { emit("log", "setOrigin err x=" + x + " y=" + y + ": " + e); }
 }
@@ -84,14 +99,16 @@ function startPerchCheck() {
   const hwnd = perchedHwnd;
   perchTimer = setInterval(async () => {
     try {
+      await scale();
       const r = await invoke<[number, number, number, number] | null>("window_rect_cmd", { hwndVal: hwnd });
       if (!r) { stopPerchCheck(); startFly(300); return; }   // 窗口没了 → 飞远
-      if (!lastPerchRect) { lastPerchRect = { x: r[0], y: r[1] }; return; }
-      const dx = r[0] - lastPerchRect.x, dy = r[1] - lastPerchRect.y;
+      const wx = toLog(r[0]), wy = toLog(r[1]);   // 物理 → 逻辑
+      if (!lastPerchRect) { lastPerchRect = { x: wx, y: wy }; return; }
+      const dx = wx - lastPerchRect.x, dy = wy - lastPerchRect.y;
       if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
         const o = await getOrigin();
         await setOrigin(o.x + dx, o.y + dy);   // 增量跟随,保持相对位置(不往窗口中间凑)
-        lastPerchRect = { x: r[0], y: r[1] };
+        lastPerchRect = { x: wx, y: wy };
       }
     } catch (e) { /* */ }
   }, 50);
@@ -131,13 +148,17 @@ async function think() {
   else startPeck();
 }
 
-// MARK: 走(线性;沿当前表面高度走,macOS 同款不瞬移 Y)
+// MARK: 走(线性)。门控:只在"地面"走——任务栏顶,或栖着的窗口上沿(macOS 同款);
+// 空中/半空不走路,改飞。沿当前表面高度走,不瞬移 Y。
 async function startWalk() {
+  const perched = perchedHwnd;   // 先记下(beginAction→stopPerchCheck 会清)
   beginAction();
   enter("walk");
   try {
     const a = await area();
     const o = await getOrigin();
+    const onGround = o.y + FEET_OFFSET >= a.maxY - 40;      // 脚贴近任务栏顶
+    if (!onGround && perched == null) { startFly(); return; }   // 空中/半空 → 不走,飞
     const dir = Math.random() < 0.5 ? 1 : -1;
     const dist = 80 + Math.random() * 120;
     const tx = Math.min(Math.max(o.x + dir * dist, a.minX), a.maxX - SIZE);
@@ -202,18 +223,17 @@ function startPoop() {
 async function startPerchWindow() {
   beginAction(); enter("fly");
   try {
-    const perch = await invoke<[number, number, number] | null>("front_perch_cmd", { birdW: SIZE });
+    const sc = await scale();
+    const perch = await invoke<[number, number, number] | null>("front_perch_cmd", { birdW: SIZE * sc });   // Rust 收物理
     if (!perch) { finish(); return; }
+    const px = toLog(perch[0]), py = toLog(perch[1]);   // 物理 → 逻辑
     const o = await getOrigin();
-    setFacing(perch[0] > o.x);
-    animateFlight({ x: perch[0], y: perch[1] }, 1.1, () => {
+    setFacing(px > o.x);
+    animateFlight({ x: px, y: py - FEET_OFFSET }, 1.1, () => {   // 脚踩窗口上沿
       // 记住栖的窗口(HWND+矩形),增量跟随
       perchedHwnd = perch[2];
-      lastPerchRect = { x: 0, y: 0 };
-      invoke<[number, number, number, number] | null>("window_rect_cmd", { hwndVal: perch[2] }).then(r => {
-        if (r) lastPerchRect = { x: r[0], y: r[1] };
-        startPerchCheck();
-      }).catch(() => {});
+      lastPerchRect = null;
+      startPerchCheck();
       finish();
     });
   } catch (e) { finish(); }
@@ -343,7 +363,28 @@ export async function dragDidEnd() {
 }
 
 // MARK: 外部控制(菜单)
-export function callOver() { startFly(); }
+/// 召唤:飞向鼠标位置(水平对齐,高度取屏中;macOS 同款)
+export async function callOver() {
+  beginAction();
+  enter("fly");
+  try {
+    const sc = await scale();
+    const a = await area();
+    const cur = await invoke<[number, number] | null>("cursor_pos_cmd");
+    const mx = cur ? toLog(cur[0]) : (a.minX + a.maxX) / 2;   // 拿不到鼠标就屏中
+    const target = {
+      x: Math.min(Math.max(mx - SIZE / 2, a.minX), a.maxX - SIZE),
+      y: a.minY + (a.maxY - a.minY) * 0.45,
+    };
+    const o = await getOrigin();
+    setFacing(target.x > o.x);
+    branch.hideBranch();
+    animateFlight(target, 1.0, () => {
+      branch.showBranchAt(target.x + SIZE / 2, target.y + FEET_OFFSET);   // 落点悬空 → 树枝接脚
+      finish();
+    });
+  } catch (e) { startFly(); }
+}
 export function doSing() { if (!busy) startSing(); }
 export function doEat() { if (!busy) startEat(); }
 

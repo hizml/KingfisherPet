@@ -12,11 +12,11 @@ img,div.fx{position:fixed;pointer-events:none}
 <script type="module">
 import { listen, emit } from "@tauri-apps/api/event";
 const theme = localStorage.getItem("kf_theme") || "flat";
-const dpr = window.devicePixelRatio || 1;   // 事件载荷是物理像素,CSS 用逻辑:除以 dpr
+// 载荷已是逻辑像素(behavior 统一逻辑坐标),直接用
 
 // 屎下落
 listen("poop-drop", (e) => {
-  const x = e.payload.x / dpr, y = e.payload.y / dpr;
+  const { x, y } = e.payload;
   const img = document.createElement("img");
   img.src = `${import.meta.env.BASE_URL}Sprites/${theme}/poop.png`;
   img.style.left = (x - 15) + "px";
@@ -38,7 +38,7 @@ function imgEl(name, w, h) {
 }
 listen("fx", (e) => {
   const { kind, x: px, y: py, dur } = e.payload;
-  const x = px / dpr, y = py / dpr;
+  const x = px, y = py;
   if (kind === "splash") {
     const ring = imgEl("splash_ring", 30, 30);
     ring.style.left = (x - 15) + "px"; ring.style.top = (y - 15) + "px";
@@ -91,8 +91,8 @@ listen("branch", (e) => {
   const { show, x, y, theme } = e.payload;
   if (!show) { branchImg.style.display = "none"; return; }
   branchImg.src = `${import.meta.env.BASE_URL}Sprites/${theme}/branch.png`;
-  branchImg.style.left = (x / dpr - 80) + "px";     // 居中于脚点
-  branchImg.style.top = (y / dpr - 54) + "px";      // 枝面在脚点略下方
+  branchImg.style.left = (x - 80) + "px";     // 居中于脚点
+  branchImg.style.top = (y - 30) + "px";      // 枝面中线(60px 高的 30px 处)托住脚
   branchImg.style.display = "block";
 });
 

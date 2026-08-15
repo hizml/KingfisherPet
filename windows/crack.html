@@ -9,20 +9,19 @@ const cv = document.getElementById("c");
 const ctx = cv.getContext("2d");
 function resize() { cv.width = window.innerWidth; cv.height = window.innerHeight; }
 resize(); window.addEventListener("resize", resize);
-const dpr = window.devicePixelRatio || 1;   // 载荷物理像素 → CSS 逻辑
 const MAX_CRACKS = 8;                        // 上限(macOS maxCracks=8,防无限累积)
 let cracks = [];                             // {x,y,r}
 listen("crack-at", (e) => {
-  const x = e.payload.x / dpr, y = e.payload.y / dpr;
+  const { x, y } = e.payload;
   // 55px 内已有裂纹 → 扩大它;否则新建(到上限不建)。对应 macOS peck 合并/生长
-  const near = cracks.reverse().find(c => Math.hypot(c.x - x, c.y - y) < 55 / dpr);
+  const near = cracks.reverse().find(c => Math.hypot(c.x - x, c.y - y) < 55);
   if (near) {
-    near.r = Math.min(180 / dpr, near.r + 18 / dpr);
+    near.r = Math.min(180, near.r + 18);
     drawC(near);
     return;
   }
   if (cracks.length >= MAX_CRACKS) return;
-  const c = { x, y, r: 44 / dpr };
+  const c = { x, y, r: 44 };
   cracks.push(c);
   drawC(c);
 });

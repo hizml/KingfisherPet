@@ -11,8 +11,10 @@ const petWin = getCurrentWindow();
 async function fx(kind: string, x: number, y: number, dur = 0) {
   try {
     await ensurePoopStage();   // 特效舞台 = 屎全屏窗(已建好,幂等)
-    const p = await petWin.outerPosition();   // 物理像素
-    await emit("fx", { kind, x: p.x + x, y: p.y + y, dur });
+    const p = await petWin.outerPosition();   // 物理
+    const sc = await petWin.scaleFactor();
+    // 屏幕逻辑 = 窗口物理原点/scale + 窗口内逻辑偏移(x/y 是 local 逻辑)
+    await emit("fx", { kind, x: p.x / sc + x, y: p.y / sc + y, dur });
   } catch { /* */ }
 }
 
