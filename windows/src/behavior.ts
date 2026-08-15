@@ -463,11 +463,12 @@ export function sleepForUserAbsence() {
   startZzzInterval();
 }
 
-export function wakeFromUserAbsence() {
+export async function wakeFromUserAbsence() {
   if (!userSleeping) return;
   if (!onScreen) { userSleeping = false; return; }   // 隐藏鸟不复活(macOS 同款守卫)
   wakeGraceUntil = performance.now() + 2000;   // 唤醒宽限:窗口层级未稳,先别急着动作
   setSleepMuted(false);
+  try { await poop.wakeGrace(); } catch { /* */ }   // 坐着的屎 3s 内不误判重落
   enter("sleep");
   startZzzInterval();
   hold(2 + Math.random() * 2, () => {   // 赖床

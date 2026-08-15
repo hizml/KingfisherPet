@@ -15,6 +15,10 @@ let theme = localStorage.getItem("kf_theme") || "flat";
 listen<string>("theme", (e) => { theme = e.payload; });   // 主窗切主题(reload 不影响本窗),素材跟着换
 // 载荷已是逻辑像素(behavior 统一逻辑坐标),直接用
 
+// 唤醒宽限:3s 内承载面监测不判"没了"(唤醒瞬间窗口层级混乱,否则满屏屎同时重落)
+const graceState = { until: 0 };   // 唤醒宽限截止时刻
+listen("poop-grace", () => { graceState.until = performance.now() + 3000; });
+
 // 屎贴图 alpha 裁剪:poop.png 是 256 画布、内容只占中间一坨;
 // 直接缩到 30x20 会挤成 ~18x4 的细线。按主题裁出内容 dataURL(macOS cropToAlpha 同款)
 const poopSpriteCache = {};
@@ -70,15 +74,20 @@ listen("poop-drop", async (e) => {
   setTimeout(() => { img.style.opacity = "0"; }, fadeAt);
   setTimeout(() => { img.remove(); poopCount--; }, fadeAt + 1400);
   // 承载面监测(3fps):窗口移走/消失 → 重新下落到下一表面(macOS resumeFall)
+  // 迟滞:连续 3 次坏判定(≈1s)才重落;唤醒宽限 3s 内不判
   if (hwnd) {
     const sc = scale ?? 1;
+    let bad = 0;
     const poll = setInterval(async () => {
       if (!img.isConnected) { clearInterval(poll); return; }
       if (performance.now() < fadeAt - 500) return;   // 落定前不查
+      if (performance.now() < graceState.until) return;   // 唤醒宽限
       try {
         const r = await (await import("@tauri-apps/api/core")).invoke("window_rect_cmd", { hwndVal: hwnd });
         const gone = !r || (x * sc < r[0] || x * sc > r[0] + r[2]);
         if (gone) {
+          bad++;
+          if (bad < 3) return;   // 迟滞
           clearInterval(poll);
           // 找新落点:该 x 下方最近表面(简化:直接掉到传入的地面兜底 = landingY 下方一屏)
           let nl = landingY + 600;

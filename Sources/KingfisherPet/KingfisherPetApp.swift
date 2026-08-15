@@ -409,8 +409,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         kfLog("didWake effects=\(Effect.active.count)")
         Effects.clearAll()
         crackCtl?.setVisible(true)
-        // 恢复延迟 1.5s:系统唤醒瞬间自己在重建窗口/网络,别用 60fps 定时器抢资源(唤醒卡顿)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+        // 恢复延迟 3s:等系统唤醒完(重建窗口/网络),鸟再醒(叠加 2-4s 赖床)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
             guard let self = self else { return }
             // 鸟隐藏着(fallAway 挂起了 60fps)不恢复——否则锁屏一晚空转 CPU
             if self.petController?.behavior.isVisible == true {
@@ -460,7 +460,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func resumeAfterWake() {
         guard !wakeResumeScheduled else { return }
         wakeResumeScheduled = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
             guard let self = self else { return }
             self.wakeResumeScheduled = false
             if self.petController?.behavior.isVisible == true {   // 隐藏鸟不空转
