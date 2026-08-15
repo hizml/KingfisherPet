@@ -161,9 +161,12 @@ async function startFly(minDist = 0) {
       if (Math.hypot(tx - o.x, ty - o.y) >= minDist) break;
     }
     setFacing(tx > o.x);
-    branch.hideBranch();   // 起飞 → 先收树枝(避免带飞)
+    branch.hideBranch();   // 起飞 → 先收当前树枝
+    // 落点悬空(脚高于任务栏区)→ 树枝先到(屏幕坐标预显,对应 macOS perchBranchIfNeeded)
+    const feetY = ty + FEET_OFFSET;
+    if (feetY < a.maxY - 40) branch.showBranchAt(tx + SIZE / 2, feetY);
     animateFlight({ x: tx, y: ty }, 1.3, () => {
-      if (ty < a.maxY / 2) branch.showBranch();   // 落定悬空 → 才显树枝(不预显)
+      if (feetY >= a.maxY - 40) branch.hideBranch();   // 落地(任务栏)→ 确保无枝
       finish();
     });
   } catch (e) { console.error("fly", e); finish(); }
@@ -324,7 +327,7 @@ export function wakeFromUserAbsence() {
   });
 }
 
-export function dragBegin() { beginAction(); enter("idle"); }
+export function dragBegin() { beginAction(); branch.hideBranch(); enter("idle"); }   // 拖拽收枝(macOS 同款)
 export async function dragDidEnd() {
   try {
     const o = await getOrigin();
