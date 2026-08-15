@@ -280,33 +280,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             sized.isTemplate = false
             button?.image = sized
         }
-        button?.toolTip = NSLocalizedString("statusitem.tooltip", comment: "")
-        button?.setAccessibilityLabel(NSLocalizedString("ax.tooltip", comment: ""))
+        button?.toolTip = Language.t("statusitem.tooltip")
+        button?.setAccessibilityLabel(Language.t("ax.tooltip"))
 
         let menu = NSMenu()
-        menu.addItem(item(NSLocalizedString("menu.callOver", comment: ""), action: #selector(callOver)))
-        menu.addItem(item(NSLocalizedString("menu.fish", comment: ""), action: #selector(doFish)))
-        menu.addItem(item(NSLocalizedString("menu.sing", comment: ""), action: #selector(doSing)))
-        menu.addItem(item(NSLocalizedString("menu.perch", comment: ""), action: #selector(doPerch)))
-        menu.addItem(item(NSLocalizedString("menu.peck", comment: ""), action: #selector(doPeck)))
-        menu.addItem(item(NSLocalizedString("menu.toggleVisibility", comment: ""), action: #selector(toggleVisibility)))
+        menu.addItem(item(Language.t("menu.callOver"), action: #selector(callOver)))
+        menu.addItem(item(Language.t("menu.fish"), action: #selector(doFish)))
+        menu.addItem(item(Language.t("menu.sing"), action: #selector(doSing)))
+        menu.addItem(item(Language.t("menu.perch"), action: #selector(doPerch)))
+        menu.addItem(item(Language.t("menu.peck"), action: #selector(doPeck)))
+        menu.addItem(item(Language.t("menu.toggleVisibility"), action: #selector(toggleVisibility)))
         menu.addItem(.separator())
-        soundMenuItem = item(NSLocalizedString("menu.soundOn", comment: ""), action: #selector(toggleSound))
+        soundMenuItem = item(Language.t("menu.soundOn"), action: #selector(toggleSound))
         menu.addItem(soundMenuItem)
-        autoLoginMenuItem = item(NSLocalizedString("menu.autoLogin", comment: ""), action: #selector(toggleAutoLogin))
+        autoLoginMenuItem = item(Language.t("menu.autoLogin"), action: #selector(toggleAutoLogin))
         menu.addItem(autoLoginMenuItem)
-        menu.addItem(item(NSLocalizedString("menu.repairScreen", comment: ""), action: #selector(repairScreen)))
-        menu.addItem(item(NSLocalizedString("menu.settings", comment: ""), action: #selector(showSettings)))
+        menu.addItem(item(Language.t("menu.repairScreen"), action: #selector(repairScreen)))
+        menu.addItem(item(Language.t("menu.settings"), action: #selector(showSettings)))
+        // 语言子菜单:跟随系统 / 中文 / English(切换即时生效)
+        let langItem = NSMenuItem(title: Language.t("menu.language"), action: nil, keyEquivalent: "")
+        let langMenu = NSMenu()
+        for (c, key) in [(Language.Choice.system, "menu.lang.system"),
+                         (Language.Choice.zh, "menu.lang.zh"),
+                         (Language.Choice.en, "menu.lang.en")] {
+            let mi = item(Language.t(key), action: #selector(switchLanguage(_:)))
+            mi.representedObject = c.rawValue
+            mi.state = (Language.choice == c) ? .on : .off
+            langMenu.addItem(mi)
+        }
+        langItem.submenu = langMenu
+        menu.addItem(langItem)
         menu.addItem(.separator())
-        menu.addItem(item(NSLocalizedString("menu.about", comment: ""), action: #selector(showAbout)))
-        menu.addItem(item(NSLocalizedString("menu.quit", comment: ""), action: #selector(quit)))
+        menu.addItem(item(Language.t("menu.about"), action: #selector(showAbout)))
+        menu.addItem(item(Language.t("menu.quit"), action: #selector(quit)))
         statusItem.menu = menu
         refreshMenuState()
     }
 
+    /// 切语言:改设置 → 重建菜单;设置窗口关掉,下次打开按新语言重建
+    @objc private func switchLanguage(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let c = Language.Choice(rawValue: raw), c != Language.choice else { return }
+        Language.choice = c
+        configureStatusItem()
+        settingsWindowController?.closeWindow()
+        settingsWindowController = nil
+    }
+
     private func refreshMenuState() {
-        soundMenuItem.title = NSLocalizedString(
-            Settings.shared.soundOn ? "menu.soundOn" : "menu.soundOff", comment: "")
+        soundMenuItem.title = Language.t(Settings.shared.soundOn ? "menu.soundOn" : "menu.soundOff")
         let on = UserDefaults.standard.bool(forKey: Self.kAutoLogin)
         autoLoginMenuItem.state = on ? .on : .off
     }
@@ -413,8 +435,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch key {
         case "kingfisher.settings.soundOn":
             SpriteLibrary.shared.soundOn = Settings.shared.soundOn
-            soundMenuItem.title = NSLocalizedString(
-                Settings.shared.soundOn ? "menu.soundOn" : "menu.soundOff", comment: "")
+            soundMenuItem.title = Language.t(Settings.shared.soundOn ? "menu.soundOn" : "menu.soundOff")
         case "kingfisher.settings.theme":
             SpriteLibrary.shared.reload(theme: Settings.shared.theme)
         default: break
@@ -444,11 +465,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showAbout() {
         let alert = NSAlert()
-        alert.messageText = NSLocalizedString("about.title", comment: "")
-        alert.informativeText = NSLocalizedString("about.body", comment: "")
+        alert.messageText = Language.t("about.title")
+        alert.informativeText = Language.t("about.body")
         alert.alertStyle = .informational
-        alert.addButton(withTitle: NSLocalizedString("about.github", comment: ""))
-        alert.addButton(withTitle: NSLocalizedString("about.ok", comment: ""))
+        alert.addButton(withTitle: Language.t("about.github"))
+        alert.addButton(withTitle: Language.t("about.ok"))
         if let img = SpriteLibrary.shared.frame("idle_0")?.image {
             alert.icon = img
         }
