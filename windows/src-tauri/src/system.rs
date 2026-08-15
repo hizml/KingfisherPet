@@ -6,6 +6,7 @@
 
 #[cfg(windows)]
 pub fn setup_power(app: tauri::AppHandle) {
+    use tauri::Emitter;   // app.emit 需要 trait 在作用域(mac cargo check 编不到这段,CI 才暴露)
     std::thread::spawn(move || {
         use windows::Win32::System::SystemInformation::GetTickCount64;
         let mut last = unsafe { GetTickCount64() };
