@@ -6,6 +6,7 @@ import QuartzCore
 final class Effect {
     static var active: [Effect] = []
     let window: NSWindow
+    private var dismissed = false   // dismiss 幂等:clearAll 与挂起的 close(after:) 可能先后触发,双重 close 会抛异常
 
     init(centeredAt point: CGPoint, size: CGSize, on screen: NSScreen?,
          level: NSWindow.Level = .floating,
@@ -21,7 +22,9 @@ final class Effect {
         w.level = level
         w.ignoresMouseEvents = true
         w.collectionBehavior = [.canJoinAllSpaces, .stationary]
-        w.isReleasedWhenClosed = true
+        // ARC 下必须 false:true 会让 AppKit 在 close() 时额外 release → 过度释放,
+        // 下一次 CA 提交摸到野指针直接段错误(_NSWindowTransformAnimation dealloc 崩溃)
+        w.isReleasedWhenClosed = false
 
         let v = NSView(frame: NSRect(origin: .zero, size: size))
         v.wantsLayer = true
@@ -42,8 +45,10 @@ final class Effect {
         }
     }
 
-    /// 彻底撤掉:停动画 + 清 layer + 关窗口(真正释放 WindowServer 资源)+ 移出 active
+    /// 彻底撤掉:停动画 + 清 layer + 关窗口(真正释放 WindowServer 资源)+ 移出 active。幂等。
     func dismiss() {
+        guard !dismissed else { return }
+        dismissed = true
         // 停掉所有 CA 动画(防止无限重复动画在后台渲染占用 GPU)
         if let v = window.contentView {
             v.layer?.removeAllAnimations()
