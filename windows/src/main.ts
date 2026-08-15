@@ -79,6 +79,7 @@ async function main() {
 }
 
 function tick(now: number) {
+  if (behavior.isSleeping()) { last = now; requestAnimationFrame(tick); return; }   // 睡眠:不推进渲染(省电)
   if (last === 0) last = now;
   animTime += (now - last) / 1000 * settings.speed;   // 帧速受全局动画速度影响(macOS 同款)
   last = now;

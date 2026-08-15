@@ -14,6 +14,7 @@ import * as branch from "./branch";
 import { hideShadow } from "./shadow";
 import { invoke } from "@tauri-apps/api/core";
 import { settings } from "./settings";
+import { setSleepMuted } from "./audio";
 
 const win: TauriWindow = getCurrentWindow();
 const SIZE = 160;      // 窗口逻辑宽高
@@ -84,7 +85,7 @@ function beginAction() {
   if (thinkTimer) { clearTimeout(thinkTimer); thinkTimer = null; }
   stopZzzInterval();   // 无条件停打盹 zzz(macOS 同款;之前只在 userSleeping 时停会泄漏)
   // 惊醒:赖床中被新动作打断要清睡眠标志,否则 userSleeping 永久卡 true
-  if (userSleeping) { userSleeping = false; }
+  if (userSleeping) { userSleeping = false; setSleepMuted(false); }
   // 注意:不无条件弃栖——静态动作(唱/守候/日光浴/拉屎)在窗口上做时保持栖窗跟随(macOS 同款);
   // 移动类动作自己调 leavePerchWin()
 }
@@ -141,8 +142,9 @@ function scheduleThink() {
   thinkTimer = setTimeout(think, (lo + Math.random() * (hi - lo)) * 1000);
 }
 
+let wakeGraceUntil = 0;   // 唤醒宽限:此刻前 think 推迟(系统正在恢复,别抢)
 async function think() {
-  if (busy || perchMoving) { scheduleThink(); return; }   // 栖窗被用户拖动中:推迟预设动作
+  if (busy || perchMoving || performance.now() < wakeGraceUntil) { scheduleThink(); return; }   // 栖窗被用户拖动中:推迟预设动作
   // 权重对齐 macOS think():idle/walk 带随活跃度伸缩(高活跃→少待机多走动),
   // 其余固定:fish 8 / fly 7 / sing 7 / dart 7 / watch 7 / sun 5 / peck 5 / poop 5 / perch 4
   const a = settings.activity;
@@ -456,6 +458,7 @@ export function sleepForUserAbsence() {
   if (!onScreen) return;   // 隐藏着不睡(否则隐形 zzz/醒来满血复活)
   beginAction();
   userSleeping = true;
+  setSleepMuted(true);   // 睡眠期间不叫(macOS 同款);正在播的也停
   enter("sleep");
   startZzzInterval();
 }
@@ -463,6 +466,8 @@ export function sleepForUserAbsence() {
 export function wakeFromUserAbsence() {
   if (!userSleeping) return;
   if (!onScreen) { userSleeping = false; return; }   // 隐藏鸟不复活(macOS 同款守卫)
+  wakeGraceUntil = performance.now() + 2000;   // 唤醒宽限:窗口层级未稳,先别急着动作
+  setSleepMuted(false);
   enter("sleep");
   startZzzInterval();
   hold(2 + Math.random() * 2, () => {   // 赖床
@@ -594,6 +599,7 @@ export function happyAction() {
 // 显示/隐藏 toggle(macOS:隐藏=死掉掉出屏幕,显示=破壳而出)
 let onScreen = true;
 export function isVisible() { return onScreen; }
+export function isSleeping() { return userSleeping; }   // main.ts 睡眠时跳过渲染用
 export async function fallAway() {
   if (!onScreen) return;
   onScreen = false;
