@@ -790,6 +790,15 @@ final class Behavior: PetViewDelegate {
     /// 赖床期间用户点击/菜单操作会走 beginAction 惊醒打断(见 beginAction)。
     func wakeFromUserAbsence() {
         guard userSleeping else { return }
+        // 鸟隐藏着(fallAway 后)不能复活:不 zzz、不 finish 重启行为,
+        // 否则隐形鸟继续拉屎/唱歌出幽灵特效。只清睡眠状态。
+        guard onScreen else {
+            userSleeping = false
+            SpriteLibrary.shared.mutedForSleep = false
+            busy = false
+            enter("idle")
+            return
+        }
         enter("sleep")
         startZzz()                     // 系统唤醒后 zzz 已被 suspend 停,这里重开呈现睡觉视觉
         hold(Double.random(in: 2...4)) { [weak self] in
@@ -810,16 +819,19 @@ final class Behavior: PetViewDelegate {
         poopTimer?.invalidate(); poopTimer = nil
         stopZzz()
         stopPerchCheck()
+        dragging = false        // 合盖瞬间可能正拖着鸟:mouseUp 丢失,不清则永久卡住(树枝永不显示)
     }
 
     /// 熔断恢复:解除 sleep 标志 + 回 idle + 排 think(供 emergencyReset 用)
     func forceIdle() {
         userSleeping = false
         SpriteLibrary.shared.mutedForSleep = false
+        perchWinMoving = false          // 熔断时若用户正拖栖窗,标志可能卡 true → think 永久推迟
         beginAction()
         current = "idle"
         view?.state = "idle"
         busy = false
-        scheduleThink()
+        if onScreen { scheduleThink() } // 隐藏着不复活行为
+        if onWindow, perchedID != nil { startPerchCheck() }   // 恢复栖窗跟随
     }
 }

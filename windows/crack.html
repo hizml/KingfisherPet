@@ -4,22 +4,39 @@
 </head><body>
 <canvas id="c"></canvas>
 <script type="module">
-import { listen } from "@tauri-apps/api/event";
+import { listen, emit } from "@tauri-apps/api/event";
 const cv = document.getElementById("c");
 const ctx = cv.getContext("2d");
 function resize() { cv.width = window.innerWidth; cv.height = window.innerHeight; }
 resize(); window.addEventListener("resize", resize);
+const dpr = window.devicePixelRatio || 1;   // 载荷物理像素 → CSS 逻辑
+const MAX_CRACKS = 8;                        // 上限(macOS maxCracks=8,防无限累积)
+let cracks = [];                             // {x,y,r}
 listen("crack-at", (e) => {
-  const { x, y } = e.payload;
+  const x = e.payload.x / dpr, y = e.payload.y / dpr;
+  // 55px 内已有裂纹 → 扩大它;否则新建(到上限不建)。对应 macOS peck 合并/生长
+  const near = cracks.reverse().find(c => Math.hypot(c.x - x, c.y - y) < 55 / dpr);
+  if (near) {
+    near.r = Math.min(180 / dpr, near.r + 18 / dpr);
+    drawC(near);
+    return;
+  }
+  if (cracks.length >= MAX_CRACKS) return;
+  const c = { x, y, r: 44 / dpr };
+  cracks.push(c);
+  drawC(c);
+});
+function drawC(c) {
   ctx.strokeStyle = "rgba(20,20,20,0.55)";
   ctx.lineWidth = 2; ctx.lineCap = "round";
   for (let i = 0; i < 7; i++) {
     const a = i / 7 * Math.PI * 2 + Math.random() * 0.3;
-    ctx.beginPath(); ctx.moveTo(x, y);
-    ctx.lineTo(x + Math.cos(a) * (30 + Math.random() * 15), y + Math.sin(a) * (30 + Math.random() * 15));
+    ctx.beginPath(); ctx.moveTo(c.x, c.y);
+    ctx.lineTo(c.x + Math.cos(a) * (c.r * (0.7 + Math.random() * 0.3)), c.y + Math.sin(a) * (c.r * (0.7 + Math.random() * 0.3)));
     ctx.stroke();
   }
-});
-listen("crack-clear", () => ctx.clearRect(0, 0, cv.width, cv.height));
+}
+listen("crack-clear", () => { cracks = []; ctx.clearRect(0, 0, cv.width, cv.height); });
+emit("child-ready", "crack");   // listener 已注册
 </script>
 </body></html>

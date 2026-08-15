@@ -1,6 +1,9 @@
-// 逐像素点击穿透:mousemove 查当前帧像素 alpha,透明 → setIgnoreCursorEvents(true) 穿透,实体 → false 接收。
-// 对应 macOS PetView.hitTest。Tauri forward=ignore(穿透时转发 mousemove 供判断)。
+// 逐像素点击穿透。对应 macOS PetView.hitTest。
+// Windows 上 setIgnoreCursorEvents(true) 后 webview 收不到任何 mousemove(Tauri #6164),
+// 所以不能靠 mousemove 判断——改为轮询全局光标(Rust GetCursorPos),换算到窗口本地坐标,
+// 查当前帧 alpha:透明 → 穿透,实体 → 接收(可点/可拖)。
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
 import type { SpriteLibrary } from "./sprite";
 
 const petWin = getCurrentWindow();
@@ -13,9 +16,27 @@ async function setIgnore(b: boolean) {
 }
 
 export function setupHitTest(lib: SpriteLibrary, getCurrentFrame: () => string, size = 160) {
-  setIgnore(true);
-  document.addEventListener("mousemove", (e) => {
-    const alpha = lib.alphaAt(getCurrentFrame(), e.offsetX / size, e.offsetY / size);
-    setIgnore(alpha < 16);   // 透明区穿透,实体区接收
-  });
+  setIgnore(true);   // 初始穿透,轮询命中实体再切回
+  const POLL_MS = 33;   // ~30fps,足够跟手
+  let polling = false;
+  setInterval(async () => {
+    if (polling) return;
+    polling = true;
+    try {
+      const cur = await invoke<[number, number]>("cursor_pos_cmd");
+      if (!cur) { setIgnore(true); return; }
+      const pos = await petWin.outerPosition();      // 物理像素
+      const scale = await petWin.scaleFactor();
+      // 光标物理 → 窗口本地逻辑
+      const lx = (cur[0] - pos.x) / scale;
+      const ly = (cur[1] - pos.y) / scale;
+      if (lx < 0 || ly < 0 || lx >= size || ly >= size) {
+        setIgnore(true);   // 光标不在窗口范围 → 穿透
+        return;
+      }
+      const alpha = lib.alphaAt(getCurrentFrame(), lx / size, ly / size);
+      setIgnore(alpha < 16);
+    } catch { /* dev 非 Windows:cursor_pos_cmd 返回 null → 穿透 */ }
+    finally { polling = false; }
+  }, POLL_MS);
 }

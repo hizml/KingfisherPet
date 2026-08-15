@@ -65,6 +65,8 @@ final class CrackController {
         let c = CGPoint(x: point.x - origin.x, y: point.y - origin.y)
 
         if let near = cracks.last(where: { hypot($0.center.x - c.x, $0.center.y - c.y) < 55 }) {
+            // 熔断 purgeLayers 后 container 脱离了 layer 树:扩展前先挂回去
+            if near.container.superlayer == nil { layer.addSublayer(near.container) }
             near.grow()
             return
         }
