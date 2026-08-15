@@ -100,3 +100,21 @@ pub fn surfaces_below(x: f64) -> Vec<(f64, f64, f64, isize)> {
 pub fn surfaces_below(_x: f64) -> Vec<(f64, f64, f64, isize)> {
     Vec::new()
 }
+
+/// 显示窗口但不激活(SetWindowPos SHOWWINDOW|NOACTIVATE),防 show() 抢前台焦点。
+#[cfg(windows)]
+pub fn show_no_activate(w: &tauri::WebviewWindow) {
+    use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, HWND_TOPMOST, SWP_SHOWWINDOW, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE};
+    use windows::Win32::Foundation::HWND;
+    if let Ok(h) = w.hwnd() {
+        unsafe {
+            let _ = SetWindowPos(HWND(h.0 as _), Some(HWND_TOPMOST), 0, 0, 0, 0,
+                SWP_SHOWWINDOW | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn show_no_activate(w: &tauri::WebviewWindow) {
+    let _ = w.show();   // 非 Windows 退化为普通显示
+}

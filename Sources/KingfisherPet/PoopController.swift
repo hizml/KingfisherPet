@@ -96,6 +96,7 @@ final class PoopController {
         let now = CACurrentMediaTime()
         let dt = lastTime == 0 ? 1.0 / 30.0 : min(0.05, now - lastTime)
         lastTime = now
+        guard !poops.isEmpty else { return }   // 99% 的时间没有屎:跳过屏幕查询(WindowServer IPC)
         guard let scr = screen else { return }
         let ground = scr.visibleFrame.minY
         let sh = scr.frame.height
@@ -176,15 +177,16 @@ private final class Poop {
             applyOrigin()
         case .sitting:
             // 落在窗口上时,跟着窗口上沿;窗口移走/消失/被盖住 → 重新下落到 Dock / 下一窗口
+            // 承载窗口查询(frameOfWindow = WindowServer 往返)降到 3fps(每 10 物理帧):
+            // 窗口不会在 160ms 内消失,60fps 查纯属烧 CPU
             if let id = landedID {
+                occludeFrame += 1
+                if occludeFrame % 10 != 0 { sitRemain -= dt; if sitRemain <= 0 { state = .fading }; return }
                 if let b = WindowTracker.frameOfWindow(id: id) {
                     let topNS = screenH - b.minY
                     let off = x < b.minX || x > b.maxX || topNS < y - 12
-                    // 遮挡检测降频:frontWindowAt 是全窗口枚举(贵),每 10 帧(≈3fps)查一次;
-                    // 其余帧只看横向/垂直脱离(单查 frameOfWindow,便宜)。
-                    occludeFrame += 1
-                    let occluded = (occludeFrame % 10 == 0)
-                        && WindowTracker.frontWindowAt(nsPoint: CGPoint(x: x, y: y)) != id
+                    // 遮挡检测与承载窗口查询同频(每 10 帧一次)
+                    let occluded = WindowTracker.frontWindowAt(nsPoint: CGPoint(x: x, y: y)) != id
                     if off || occluded {
                         resumeFall(ground: ground)   // 窗口移开/下沉/被盖 → 重新掉
                     }

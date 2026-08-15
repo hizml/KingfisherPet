@@ -30,6 +30,15 @@ fn surfaces_below_cmd(x: f64) -> Vec<(f64, f64, f64, isize)> {
     crate::windows::surfaces_below(x)
 }
 
+/// 显示主窗但不激活(不抢用户前台焦点)。Windows 走 SetWindowPos(NOACTIVATE),
+/// 其他平台退化为普通 show。
+#[tauri::command]
+fn show_no_activate(app: tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        crate::windows::show_no_activate(&w);
+    }
+}
+
 /// 界面语言:系统首选语言 zh 开头 → 中文,否则英文。
 /// 用 reg.exe 查注册表(纯 std + CommandExt,不依赖 windows crate feature——
 /// Win32_Globalization 在 CI 上 feature 门控行为不稳,E0433)。
@@ -65,7 +74,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_rect_cmd, surfaces_below_cmd])
+        .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate])
         .setup(|app| {
             crate::system::setup_power(app.handle().clone());   // Windows 睡眠/唤醒监听 → emit sleep/wake
             // 前端 log 事件 → 终端(调试 webview 错)
@@ -77,6 +86,15 @@ pub fn run() {
             let fish = MenuItem::with_id(app, "fish", if zh { "去抓条鱼" } else { "Catch a Fish" }, true, None::<&str>)?;
             let show = MenuItem::with_id(app, "show", if zh { "显示 / 隐藏" } else { "Show / Hide" }, true, None::<&str>)?;
             let repair = MenuItem::with_id(app, "repair", if zh { "修复屏幕" } else { "Repair Screen" }, true, None::<&str>)?;
+            let perch = MenuItem::with_id(app, "perch", if zh { "停到窗口上" } else { "Perch on a Window" }, true, None::<&str>)?;
+            let peck = MenuItem::with_id(app, "peck", if zh { "啄一下" } else { "Peck" }, true, None::<&str>)?;
+            let about = MenuItem::with_id(app, "about", if zh { "关于 翡" } else { "About Fei" }, true, None::<&str>)?;
+            let auto_on = {
+                use tauri_plugin_autostart::ManagerExt;
+                app.autolaunch().is_enabled().unwrap_or(false)
+            };
+            let login = tauri::menu::CheckMenuItem::with_id(app, "login",
+                if zh { "开机自启" } else { "Launch at Login" }, true, auto_on, None::<&str>)?;
             let t_flat = MenuItem::with_id(app, "theme_flat", if zh { "主题:扁平" } else { "Theme: Flat" }, true, None::<&str>)?;
             let t_clay = MenuItem::with_id(app, "theme_clay", if zh { "主题:粘土" } else { "Theme: Clay" }, true, None::<&str>)?;
             let t_pixel = MenuItem::with_id(app, "theme_pixel", if zh { "主题:像素" } else { "Theme: Pixel" }, true, None::<&str>)?;
@@ -92,25 +110,31 @@ pub fn run() {
             let spd_fast = MenuItem::with_id(app, "spd_fast", if zh { "速度:快" } else { "Speed: Fast" }, true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", if zh { "退出" } else { "Quit" }, true, None::<&str>)?;
             let menu = Menu::with_items(app, &[
-                &call_over, &sing, &fish, &show, &repair,
+                &call_over, &sing, &fish, &perch, &peck, &show, &repair, &about,
+                &login,
                 &sound,
                 &act_low, &act_mid, &act_high,
                 &spd_slow, &spd_norm, &spd_fast,
                 &t_flat, &t_clay, &t_pixel, &t_neon, &t_ink, &t_water,
                 &quit,
             ])?;
-            let _ = TrayIconBuilder::new()
+            let _ = TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
                 .show_menu_on_left_click(true)   // 左键直接开菜单(Mac 端同款,别右键)
                 .on_menu_event(|app, event| match event.id.as_ref() {
-                    "quit" => app.exit(0),
-                    "show" => {
-                        if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.set_focus();
-                        }
+                    "about" => {
+                        let _ = open::that("https://github.com/hizml/KingfisherPet");
                     }
+                    "login" => {
+                        use tauri_plugin_autostart::ManagerExt;
+                        let m = app.autolaunch();
+                        let on = m.is_enabled().unwrap_or(false);
+                        let r = if on { m.disable() } else { m.enable() };
+                        let _ = app.emit("log", format!("autostart toggle {} -> {:?}", on, r));
+                    }
+                    "quit" => app.exit(0),
+                    "show" => { let _ = app.emit("menu", "show"); }   // 前端 toggle(fallAway/hatchIn);别在这抢焦点
                     "sound" => { let _ = app.emit("setting", "sound"); }
                     "act_low" | "act_mid" | "act_high" => {
                         let v = match event.id.as_ref() { "act_low" => 0.2, "act_high" => 0.9, _ => 0.5 };

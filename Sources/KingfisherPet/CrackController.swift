@@ -30,13 +30,15 @@ final class CrackController {
         overlay.contentView = v
     }
 
+    private var hasCracks = false
+
     func start() {
-        sizeToScreen()
-        overlay.orderFrontRegardless()
+        sizeToScreen()   // 布局先备好;没有裂纹不前置(空的全屏层不进合成器)
     }
 
     func setVisible(_ visible: Bool) {
-        if visible { overlay.orderFrontRegardless() } else { overlay.orderOut(nil) }
+        // 唤醒恢复:只有真的有裂纹才把覆盖层放回前面
+        if visible { if hasCracks { overlay.orderFrontRegardless() } } else { overlay.orderOut(nil) }
     }
 
     private func sizeToScreen() {
@@ -74,12 +76,19 @@ final class CrackController {
         let cr = Crack(center: c, radius: 44, max: maxRadius)
         layer.addSublayer(cr.container)
         cracks.append(cr)
+        if !hasCracks {
+            hasCracks = true
+            sizeToScreen()
+            overlay.orderFrontRegardless()   // 首条裂纹才显示覆盖层
+        }
     }
 
     /// 修复屏幕:清空所有裂纹
     func clear() {
         cracks.forEach { $0.container.removeFromSuperlayer() }
         cracks.removeAll()
+        hasCracks = false
+        overlay.orderOut(nil)   // 空了就撤层
     }
 }
 

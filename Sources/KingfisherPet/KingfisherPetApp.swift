@@ -156,7 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let pid = ProcessInfo.processInfo.processIdentifier
         var highCpuStreak = 0
         var watchdogBusy = false   // 防重入:上一个 ps 没完成不 fork 新的
-        Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        Timer.scheduledTimer(withTimeInterval: 15.0, repeats: true) { [weak self] _ in   // 15s:熔断需 3 连击=45s,5s 的 fork 唤醒太频(省电)
             guard let self = self else { return }
             guard !watchdogBusy else { return }   // 上一个 ps 还没完(系统高负载时 ps 会慢),跳过
             watchdogBusy = true
@@ -205,7 +205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     if cpu > 40 {
                         highCpuStreak += 1
                         if highCpuStreak >= 3 {
-                            kfLog("⚠️ CIRCUIT BREAKER: cpu=\(cpu)% 持续 \(highCpuStreak*5)s → 熔断重置")
+                            kfLog("⚠️ CIRCUIT BREAKER: cpu=\(cpu)% 持续 \(highCpuStreak*15)s → 熔断重置")
                             self.emergencyReset()
                             highCpuStreak = 0
                         }

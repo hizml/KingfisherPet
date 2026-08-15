@@ -15,19 +15,25 @@ let theme = localStorage.getItem("kf_theme") || "flat";
 listen<string>("theme", (e) => { theme = e.payload; });   // 主窗切主题(reload 不影响本窗),素材跟着换
 // 载荷已是逻辑像素(behavior 统一逻辑坐标),直接用
 
-// 屎下落
+// 屎下落(物理:落到 landingY 表面,坐 8-15s,淡出;时长随动画速度)
+let poopCount = 0;
 listen("poop-drop", (e) => {
-  const { x, y } = e.payload;
+  const { x, y, landingY, fallSec, spd } = e.payload;
+  if (poopCount >= 8) { const old = document.querySelector("img[data-poop]"); old?.remove(); }   // 上限 8
+  const sp = spd ?? 1;
   const img = document.createElement("img");
+  img.dataset.poop = "1";
   img.src = `${import.meta.env.BASE_URL}Sprites/${theme}/poop.png`;
   img.style.left = (x - 15) + "px";
   img.style.top = y + "px";
-  img.style.transition = "top 1s ease-in,opacity 0.5s";
+  img.style.transition = `top ${fallSec / sp}s ease-in,opacity 1.2s`;
   img.style.width = "30px"; img.style.height = "20px";
   document.body.appendChild(img);
-  requestAnimationFrame(() => { img.style.top = (y + 400) + "px"; });   // 下落
-  setTimeout(() => { img.style.opacity = "0"; }, 1100);                  // 淡出
-  setTimeout(() => img.remove(), 1700);
+  poopCount++;
+  requestAnimationFrame(() => { img.style.top = landingY + "px"; });     // 落到表面
+  const sit = (8000 + Math.random() * 7000) / sp;                         // 坐 8-15s
+  setTimeout(() => { img.style.opacity = "0"; }, fallSec / sp * 1000 + sit);
+  setTimeout(() => { img.remove(); poopCount--; }, fallSec / sp * 1000 + sit + 1400);
 });
 
 // 特效(屏幕坐标):水花/音符/zzz/太阳。搬自 effects.ts(原在鸟窗内被 160px 裁剪)
@@ -37,17 +43,31 @@ function imgEl(name, w, h) {
   img.style.width = w + "px"; img.style.height = h + "px";
   return img;
 }
+let fxSpd = 1;   // 动画速度(1=正常);时长 = 基准 / fxSpd(快→短)
 listen("fx", (e) => {
-  const { kind, x: px, y: py, dur } = e.payload;
+  const { kind, x: px, y: py, dur, spd } = e.payload;
+  fxSpd = spd ?? 1;
   const x = px, y = py;
   if (kind === "splash") {
+    const sp2 = 1 / fxSpd;
     const ring = imgEl("splash_ring", 30, 30);
     ring.style.left = (x - 15) + "px"; ring.style.top = (y - 15) + "px";
     ring.style.transform = "scale(0.3)"; ring.style.opacity = "0.9";
-    ring.style.transition = "transform 0.55s ease-out,opacity 0.55s ease-out";
+    ring.style.transition = `transform ${0.55 * sp2}s ease-out,opacity ${0.55 * sp2}s ease-out`;
     document.body.appendChild(ring);
     requestAnimationFrame(() => { ring.style.transform = "scale(3.2)"; ring.style.opacity = "0"; });
-    setTimeout(() => ring.remove(), 700);
+    setTimeout(() => ring.remove(), 700 * sp2);
+    // 9 滴水珠:向上扇形抛出再落(macOS 同款)
+    for (let i = 0; i < 9; i++) {
+      const ang = Math.PI * 0.15 + (i / 8) * Math.PI * 0.7;
+      const dx = Math.cos(ang) * 58, dy = -Math.sin(ang) * 46 + 22;
+      const d = imgEl("splash_drop", 6, 6);
+      d.style.left = x + "px"; d.style.top = y + "px";
+      d.style.transition = `transform ${0.6 * sp2}s cubic-bezier(0.2,0.8,0.6,1),opacity ${0.6 * sp2}s`;
+      document.body.appendChild(d);
+      requestAnimationFrame(() => { d.style.transform = `translate(${dx}px,${dy}px)`; d.style.opacity = "0"; });
+      setTimeout(() => d.remove(), 650 * sp2);
+    }
   } else if (kind === "notes") {
     for (let i = 0; i < 3; i++) {
       const n = imgEl("note", 32, 32);
@@ -69,7 +89,9 @@ listen("fx", (e) => {
     setTimeout(() => { z.style.opacity = "0"; }, 1200);
     setTimeout(() => z.remove(), 1900);
   } else if (kind === "sun") {
+    document.querySelector("div.fx-sun")?.remove();   // 单实例(防堆叠)
     const c = document.createElement("div");
+    c.classList.add("fx-sun");
     c.className = "fx";
     c.style.left = (x - 60) + "px"; c.style.top = (y - 60) + "px";
     c.style.width = "120px"; c.style.height = "120px";
@@ -106,7 +128,7 @@ document.body.appendChild(shadowImg);
 listen("shadow", (e) => {
   const { show, x, y, w, h, opacity, theme: th } = e.payload;
   if (!show) { shadowImg.style.display = "none"; return; }
-  if (th) shadowImg.src = `${import.meta.env.BASE_URL}Sprites/${th}/shadow.png`;
+  if (th && shadowImg.dataset.t !== th) { shadowImg.dataset.t = th; shadowImg.src = `${import.meta.env.BASE_URL}Sprites/${th}/shadow.png`; }   // 同主题不重设(重设会触发解码/布局)
   shadowImg.style.width = w + "px"; shadowImg.style.height = h + "px";
   shadowImg.style.left = (x - w / 2) + "px";
   shadowImg.style.top = (y - h / 2) + "px";
