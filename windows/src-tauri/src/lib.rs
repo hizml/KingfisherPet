@@ -26,13 +26,22 @@ fn window_rect_cmd(hwnd_val: isize) -> Option<(f64, f64, f64, f64)> {
 }
 
 /// 界面语言:系统首选语言 zh 开头 → 中文,否则英文。
-/// 托盘菜单/窗口标题在构建时按此选文案(任务:安装器+菜单按设备语言自动切换)。
+/// 用 reg.exe 查注册表(纯 std + CommandExt,不依赖 windows crate feature——
+/// Win32_Globalization 在 CI 上 feature 门控行为不稳,E0433)。
 fn is_zh() -> bool {
     #[cfg(windows)]
     {
-        // 用户 UI 语言:主语言 ID 0x04 = 中文(简/繁/港澳均覆盖)
-        use windows::Win32::Globalization::GetUserDefaultUILanguage;
-        (GetUserDefaultUILanguage() & 0x3FF) == 0x04
+        use std::os::windows::process::CommandExt;
+        use std::process::Command;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let out = Command::new("reg")
+            .args(["query", r"HKCU\Control Panel\International", "/v", "LocaleName"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+        if let Ok(o) = out {
+            return String::from_utf8_lossy(&o.stdout).to_lowercase().contains("zh-");
+        }
+        false
     }
     #[cfg(not(windows))]
     {
