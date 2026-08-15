@@ -10,7 +10,7 @@ import { setupCrack, clearCracks } from "./crack";
 import { setupBranch } from "./branch";
 import { setupTheme, setTheme } from "./theme";
 import { setupAudio, playPeep, setSoundOn } from "./audio";
-import { settings, setSound, setActivity } from "./settings";
+import { settings, setSound, setActivity, setSpeed } from "./settings";
 import * as behavior from "./behavior";
 
 const lib = new SpriteLibrary();
@@ -57,6 +57,8 @@ async function main() {
       if (id === "call") behavior.callOver();
       else if (id === "sing") behavior.doSing();
       else if (id === "eat") behavior.doEat();
+      else if (id === "fish") behavior.doFish();
+      else if (id === "show") { behavior.isVisible() ? behavior.fallAway() : behavior.hatchIn(); }   // 显示/隐藏 toggle
       else if (id === "repair") { clearCracks(); }   // 托盘"修复屏幕"
     });
     listen<string>("theme", (e) => setTheme(e.payload));   // 托盘主题菜单 → 切换 + reload
@@ -64,6 +66,7 @@ async function main() {
       const v = e.payload;
       if (v === "sound") { setSound(!settings.soundOn); setSoundOn(settings.soundOn); }
       else if (v.startsWith("activity:")) { setActivity(Number(v.split(":")[1])); }
+      else if (v.startsWith("speed:")) { setSpeed(Number(v.split(":")[1])); }
     });
     listen("sleep", () => behavior.sleepForUserAbsence());   // Rust 监听到睡眠 → 鸟睡
     listen("wake", () => behavior.wakeFromUserAbsence());     // 唤醒 → 赖床 2–4 秒
@@ -94,26 +97,43 @@ function tick(now: number) {
 // → 用窗口移动事件停息判定兜底(300ms 不动 = 拖拽结束)
 let dragWaiter: ReturnType<typeof setTimeout> | null = null;
 let dragging = false;
+let dragStartPos: { x: number; y: number } | null = null;   // 按下时窗口位置(判点击/拖拽)
 function setupDrag() {
   img.draggable = false;
-  img.addEventListener("mousedown", (e) => {
+  img.addEventListener("mousedown", async (e) => {
     if (e.button !== 0) return;
     e.preventDefault();
+    try { const p = await petWin.outerPosition(); dragStartPos = { x: p.x, y: p.y }; } catch { dragStartPos = null; }
     behavior.dragBegin();
     dragging = true;
     petWin.startDragging().catch((err: any) => emit("log", "startDragging err: " + err));
   });
   window.addEventListener("mouseup", () => { if (dragging) endDrag(); });
-  // 兜底:窗口移动事件停息 = 松手(mouseup 丢失也能恢复)
-  petWin.onMoved(() => {
+  // 兜底:窗口移动事件停息 = 松手(mouseup 丢失也能恢复);拖拽中也同步地面阴影
+  petWin.onMoved(async () => {
     if (!dragging) return;
     if (dragWaiter) clearTimeout(dragWaiter);
     dragWaiter = setTimeout(endDrag, 300);
+    try {
+      const p = await petWin.outerPosition();
+      const sc = await petWin.scaleFactor();
+      updateShadow(p.x / sc, p.y / sc);   // 原生拖拽没有 setOrigin,这里补阴影
+    } catch { /* */ }
   });
 }
-function endDrag() {
+async function endDrag() {
   dragging = false;
   if (dragWaiter) { clearTimeout(dragWaiter); dragWaiter = null; }
+  // 点击 vs 拖拽:位移 <5px(物理)视为点击 → 害羞+啾(macOS 同款)
+  try {
+    if (dragStartPos) {
+      const p = await petWin.outerPosition();
+      if (Math.hypot(p.x - dragStartPos.x, p.y - dragStartPos.y) < 5) {
+        behavior.happyAction();
+        return;
+      }
+    }
+  } catch { /* */ }
   behavior.dragDidEnd();
 }
 

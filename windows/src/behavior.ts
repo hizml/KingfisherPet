@@ -11,6 +11,7 @@ import * as effects from "./effects";
 import * as poop from "./poop";
 import * as crack from "./crack";
 import * as branch from "./branch";
+import { hideShadow } from "./shadow";
 import { invoke } from "@tauri-apps/api/core";
 import { settings } from "./settings";
 
@@ -66,8 +67,15 @@ async function setOrigin(x: number, y: number) {
   try {
     await win.setPosition(new LogicalPosition(Math.round(x), Math.round(y)));
     onMoved(x, y);
+    // 位置记忆(节流 1s 存一次,防高频移动刷 localStorage)
+    if (!savePosAt) savePosAt = setTimeout(() => {
+      savePosAt = null;
+      localStorage.setItem("kf_x", String(Math.round(x)));
+      localStorage.setItem("kf_y", String(Math.round(y)));
+    }, 1000);
   } catch (e) { emit("log", "setOrigin err x=" + x + " y=" + y + ": " + e); }
 }
+let savePosAt: ReturnType<typeof setTimeout> | null = null;
 
 function clampX(o: { x: number; y: number }, a: { minX: number; maxX: number; minY: number; maxY: number }) {
   return {
@@ -150,6 +158,7 @@ async function think() {
 
 // MARK: 走(线性)。门控:只在"地面"走——任务栏顶,或栖着的窗口上沿(macOS 同款);
 // 空中/半空不走路,改飞。沿当前表面高度走,不瞬移 Y。
+// 走完检查:栖窗行走时若走出窗口横向范围(脚悬空)→ 飞走(macOS"走到边就飞")。
 async function startWalk() {
   const perched = perchedHwnd;   // 先记下(beginAction→stopPerchCheck 会清)
   beginAction();
@@ -164,7 +173,21 @@ async function startWalk() {
     const tx = Math.min(Math.max(o.x + dir * dist, a.minX), a.maxX - SIZE);
     if (Math.abs(tx - o.x) < 20) { finish(); return; }
     setFacing(tx > o.x);
-    animateMove({ x: tx, y: o.y }, Math.max(0.6, Math.abs(tx - o.x) / 70), () => finish());
+    animateMove({ x: tx, y: o.y }, Math.max(0.6, Math.abs(tx - o.x) / 70), async () => {
+      // 走完:在窗口上走到边(脚不在窗口横向范围)→ 飞远
+      if (perched != null && !(o.y + FEET_OFFSET >= a.maxY - 40)) {
+        try {
+          await scale();
+          const r = await invoke<[number, number, number, number] | null>("window_rect_cmd", { hwndVal: perched });
+          if (r) {
+            const wx0 = toLog(r[0]), wx1 = toLog(r[0] + r[2]);
+            const midX = tx + SIZE / 2;
+            if (midX < wx0 - 10 || midX > wx1 + 10) { startFly(300); return; }   // 走出窗口边
+          }
+        } catch { /* 查不到就正常留下 */ }
+      }
+      finish();
+    });
   } catch (e) { console.error("walk", e); finish(); }
 }
 
@@ -271,12 +294,26 @@ async function startFish() {
           animateFlight({ x: perchX, y: a.maxY - FEET_OFFSET }, 1.0, () => {  // 飞回地面
             enter("eat");
             playPeep();
-            hold(1.1, () => finish());
+            hold(1.1, () => {
+              finish();
+              schedulePoopAfter(4 + Math.random() * 3);   // 吃完过会儿拉一坨(macOS 同款)
+            });
           });
         });
       });
     });
   } catch (e) { emit("log", "fish " + e); finish(); }
+}
+
+/// 吃完拉屎的延时排程(gen 守卫,新动作自动取消)
+let poopAfterTimer: ReturnType<typeof setTimeout> | null = null;
+function schedulePoopAfter(sec: number) {
+  if (poopAfterTimer) clearTimeout(poopAfterTimer);
+  const g = gen;
+  poopAfterTimer = setTimeout(() => {
+    if (gen !== g) return;
+    startPoop();
+  }, sec * 1000);
 }
 
 // MARK: 移动(线性;代际取消:新动作/拖拽 beginAction 后,旧动画 RAF 循环自动停)
@@ -387,6 +424,7 @@ export async function callOver() {
 }
 export function doSing() { if (!busy) startSing(); }
 export function doEat() { if (!busy) startEat(); }
+export function doFish() { if (!busy) startFish(); }
 
 export function setup(ops: {
   lib: SpriteLibrary;
@@ -406,8 +444,57 @@ export function setup(ops: {
 export async function start() {
   try {
     const a = await area();
-    await setOrigin(a.maxX - SIZE - 30, a.maxY - FEET_OFFSET);   // 脚贴任务栏顶
+    // 位置记忆:有存过位置就恢复,否则右下角脚贴任务栏(macOS 同款)
+    const sx = Number(localStorage.getItem("kf_x")), sy = Number(localStorage.getItem("kf_y"));
+    if (localStorage.getItem("kf_x") && sx >= a.minX && sx <= a.maxX - SIZE && sy >= a.minY && sy <= a.maxY - SIZE) {
+      await setOrigin(sx, sy);
+    } else {
+      await setOrigin(a.maxX - SIZE - 30, a.maxY - FEET_OFFSET);
+    }
   } catch (e) { console.error("start", e); }
-  enter("idle");
-  scheduleThink();
+  // 破壳登场:整蛋→裂纹→探头(macOS hatchIn 同款)再开始活动
+  enter("egg");
+  hold(1.4, () => { enter("idle"); scheduleThink(); });
+}
+
+/// 点击(非拖拽)→ 啾一声 + 心眼害羞 0.8s(macOS petViewWasClicked)
+export function happyAction() {
+  beginAction();
+  playPeep();
+  enter("happy");
+  hold(0.8, () => finish());
+}
+
+// 显示/隐藏 toggle(macOS:隐藏=死掉掉出屏幕,显示=破壳而出)
+let onScreen = true;
+export function isVisible() { return onScreen; }
+export async function fallAway() {
+  if (!onScreen) return;
+  onScreen = false;
+  beginAction();
+  enter("dead");
+  try {
+    const o = await getOrigin();
+    branch.hideBranch();
+    const a = await area();
+    // 掉出屏幕底(线性下坠)后隐藏窗口
+    animateMove({ x: o.x, y: a.maxY + SIZE + 40 }, 0.85, async () => {
+      try { await (win as any).hide(); } catch { /* */ }
+      hideShadow();
+      enter("idle");
+      busy = false;
+    });
+  } catch { onScreen = true; finish(); }
+}
+export async function hatchIn() {
+  if (onScreen) return;
+  onScreen = true;
+  beginAction();
+  try {
+    const a = await area();
+    await setOrigin(a.maxX - SIZE - 30, a.maxY - FEET_OFFSET);
+    await (win as any).show();
+  } catch { /* */ }
+  enter("egg");
+  hold(1.4, () => { enter("idle"); scheduleThink(); });
 }
