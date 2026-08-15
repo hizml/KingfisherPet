@@ -15,7 +15,8 @@ async function setIgnore(b: boolean) {
   try { await petWin.setIgnoreCursorEvents(b); } catch { /* */ }
 }
 
-export function setupHitTest(lib: SpriteLibrary, getCurrentFrame: () => string, size = 160) {
+export function setupHitTest(lib: SpriteLibrary, getCurrentFrame: () => string, size = 160,
+                              isDragging: () => boolean = () => false) {
   setIgnore(true);   // 初始穿透,轮询命中实体再切回
   const POLL_MS = 33;   // ~30fps,足够跟手
   let polling = false;
@@ -23,6 +24,7 @@ export function setupHitTest(lib: SpriteLibrary, getCurrentFrame: () => string, 
     if (polling) return;
     polling = true;
     try {
+      if (isDragging()) { setIgnore(false); return; }   // 拖拽中必须接收鼠标:一旦穿透,Win32 模态移动循环立即终止
       const cur = await invoke<[number, number]>("cursor_pos_cmd");
       if (!cur) { setIgnore(true); return; }
       const pos = await petWin.outerPosition();      // 物理像素

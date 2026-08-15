@@ -77,13 +77,6 @@ async function setOrigin(x: number, y: number) {
 }
 let savePosAt: ReturnType<typeof setTimeout> | null = null;
 
-function clampX(o: { x: number; y: number }, a: { minX: number; maxX: number; minY: number; maxY: number }) {
-  return {
-    x: Math.min(Math.max(o.x, a.minX), a.maxX - SIZE),
-    y: Math.min(Math.max(o.y, a.minY), a.maxY - SIZE),
-  };
-}
-
 function beginAction() {
   gen++;
   busy = true;
@@ -140,20 +133,22 @@ function scheduleThink() {
 
 async function think() {
   if (busy) { scheduleThink(); return; }
+  // 权重对齐 macOS think():idle 22 / walk 20 / fish 8 / fly 7 / sing 7 / dart 7 /
+  // watch 7 / sun 5 / peck 5 / perch 4 / poop 5 / 其余 sleep。
+  // (原版 peck 只有 0.1% 几乎看不到裂纹;eat 凭空吃 Mac 没有,删)
   const r = Math.random();
-  if (r < 0.25) { enter("idle"); scheduleThink(); }
-  else if (r < 0.45) startWalk();
-  else if (r < 0.60) startFly();
-  else if (r < 0.70) startSing();
-  else if (r < 0.78) startSleep();
-  else if (r < 0.85) startEat();
-  else if (r < 0.92) startSun();
-  else if (r < 0.95) startWatch();
-  else if (r < 0.975) startPerchWindow();
-  else if (r < 0.99) startFish();
-  else if (r < 0.997) startPoop();
-  else if (r < 0.999) startDart();
-  else startPeck();
+  if (r < 0.22) { enter("idle"); scheduleThink(); }
+  else if (r < 0.42) startWalk();
+  else if (r < 0.50) startFish();
+  else if (r < 0.57) startFly();
+  else if (r < 0.64) startSing();
+  else if (r < 0.71) startDart();
+  else if (r < 0.78) startWatch();
+  else if (r < 0.83) startSun();
+  else if (r < 0.88) startPeck();
+  else if (r < 0.92) startPoop();
+  else if (r < 0.96) startPerchWindow();
+  else startSleep();
 }
 
 // MARK: 走(线性)。门控:只在"地面"走——任务栏顶,或栖着的窗口上沿(macOS 同款);
@@ -218,8 +213,20 @@ async function startFly(minDist = 0) {
 
 // MARK: 静态动作
 let facingRight = false;   // 朝向(effects/poop/crack 出口随朝向偏移,macOS 同款)
-function startSing() { beginAction(); enter("sing"); playPeep(); effects.notes(80, 50); hold(1.2 + Math.random() * 0.4, () => finish()); }
-function startSleep() { beginAction(); enter("sleep"); startZzzInterval(); hold(5 + Math.random() * 4, () => finish()); }   // 打盹持续飘 zzz(macOS 每 0.9s)
+function startSing() {
+  beginAction(); enter("sing"); playPeep();
+  effects.notes(facingRight ? 110 : 50, 50);   // 音符从头侧上方出(macOS 同款)
+  hold(1.2 + Math.random() * 0.4, () => finish());
+}
+function startSleep() {   // 打盹持续飘 zzz(macOS 每 0.9s,从头上方出)
+  beginAction(); enter("sleep");
+  const zx = facingRight ? 110 : 50;
+  const emitZzz = () => effects.zzz(zx, 50);
+  emitZzz();
+  if (zzzTimer) clearInterval(zzzTimer);
+  zzzTimer = setInterval(emitZzz, 900);
+  hold(5 + Math.random() * 4, () => finish());
+}
 function startEat() { beginAction(); enter("eat"); playPeep(); hold(1.1, () => finish()); }
 function startSun() { beginAction(); enter("sun"); effects.sun(80, 30, 3 + Math.random() * 2); hold(3 + Math.random() * 2, () => finish()); }
 function startPeck() {

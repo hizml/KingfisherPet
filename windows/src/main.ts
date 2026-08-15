@@ -43,7 +43,7 @@ async function main() {
       playPeep: playPeep,
       onMoved: (x: number, y: number) => updateShadow(x, y),
     });
-    setupHitTest(lib, () => currentFrame, 160);
+    setupHitTest(lib, () => currentFrame, 160, () => dragging);
     setupShadow(lib);
     setupPoop();
     setupCrack();
@@ -97,6 +97,7 @@ function tick(now: number) {
 // → 用窗口移动事件停息判定兜底(300ms 不动 = 拖拽结束)
 let dragWaiter: ReturnType<typeof setTimeout> | null = null;
 let dragging = false;
+let movedDuringDrag = false;                                 // 拖拽中是否真的移动过(判点击)
 let dragStartPos: { x: number; y: number } | null = null;   // 按下时窗口位置(判点击/拖拽)
 function setupDrag() {
   img.draggable = false;
@@ -106,12 +107,17 @@ function setupDrag() {
     try { const p = await petWin.outerPosition(); dragStartPos = { x: p.x, y: p.y }; } catch { dragStartPos = null; }
     behavior.dragBegin();
     dragging = true;
+    movedDuringDrag = false;
     petWin.startDragging().catch((err: any) => emit("log", "startDragging err: " + err));
+    // 兜底 1:纯点击(无移动)时 startDragging 模态可能吃掉 mouseup 且 onMoved 不触发
+    // → 400ms 后仍未结束且没动过,按点击收尾,防 busy=true 永久卡死
+    setTimeout(() => { if (dragging && !movedDuringDrag) endDrag(); }, 400);
   });
   window.addEventListener("mouseup", () => { if (dragging) endDrag(); });
-  // 兜底:窗口移动事件停息 = 松手(mouseup 丢失也能恢复);拖拽中也同步地面阴影
+  // 兜底 2:窗口移动事件停息 = 松手(mouseup 丢失也能恢复);拖拽中也同步地面阴影
   petWin.onMoved(async () => {
     if (!dragging) return;
+    movedDuringDrag = true;
     if (dragWaiter) clearTimeout(dragWaiter);
     dragWaiter = setTimeout(endDrag, 300);
     try {
@@ -124,9 +130,9 @@ function setupDrag() {
 async function endDrag() {
   dragging = false;
   if (dragWaiter) { clearTimeout(dragWaiter); dragWaiter = null; }
-  // 点击 vs 拖拽:位移 <5px(物理)视为点击 → 害羞+啾(macOS 同款)
+  // 点击 vs 拖拽:没移动过 或 位移 <5px(物理)→ 害羞+啾(macOS 同款)
   try {
-    if (dragStartPos) {
+    if (!movedDuringDrag && dragStartPos) {
       const p = await petWin.outerPosition();
       if (Math.hypot(p.x - dragStartPos.x, p.y - dragStartPos.y) < 5) {
         behavior.happyAction();
