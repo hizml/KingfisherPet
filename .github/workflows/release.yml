@@ -1,6 +1,6 @@
 name: release
 
-# push tag(v* )或手动 → mac(universal)+ Windows 出包发 release
+# push tag(v* )或手动 → 原生 Mac(Swift)+ Tauri(mac universal / Windows)出包发 release
 on:
   push:
     tags:
@@ -11,6 +11,70 @@ permissions:
   contents: write
 
 jobs:
+  # 原生 Mac 版(Swift + AppKit):build.sh 的打包步骤(去掉启动)
+  native-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: SwiftPM 编译(release)
+        run: swift build -c release
+
+      - name: 组装 .app(与 build.sh 一致)
+        run: |
+          APP="build/KingfisherPet.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/Sprites"
+          cp .build/release/KingfisherPet "$APP/Contents/MacOS/"
+          for d in Resources/Sprites/*/; do
+            t=$(basename "$d"); mkdir -p "$APP/Contents/Resources/Sprites/$t"
+            cp "$d"*.png "$d"sprites.json "$d"colors.json "$APP/Contents/Resources/Sprites/$t/" 2>/dev/null || true
+            rm -f "$APP/Contents/Resources/Sprites/$t/contact.png"
+          done
+          cp Resources/peep_*.wav "$APP/Contents/Resources/"
+          for loc in zh-Hans en; do
+            mkdir -p "$APP/Contents/Resources/$loc.lproj"
+            cp Resources/$loc.lproj/*.strings "$APP/Contents/Resources/$loc.lproj/"
+          done
+          ICONSET="$(mktemp -d)/AppIcon.iconset"; mkdir -p "$ICONSET"
+          SRC="Resources/Sprites/flat/idle_0.png"
+          for spec in "16" "32 16@2x" "32" "64 32@2x" "128" "256 128@2x" "256" "512 256@2x" "512" "1024 512@2x" "1024"; do
+            set -- $spec
+            if [[ $# -eq 1 ]]; then sips -z "$1" "$1" "$SRC" --out "$ICONSET/icon_${1}x${1}.png" >/dev/null
+            else sips -z "$1" "$1" "$SRC" --out "$ICONSET/icon_${2}.png" >/dev/null; fi
+          done
+          iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
+          cat > "$APP/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+          <key>CFBundleName</key><string>翡 · KingfisherPet</string>
+          <key>CFBundleDisplayName</key><string>翡</string>
+          <key>CFBundleIdentifier</key><string>com.hizml.kingfisher-pet</string>
+          <key>CFBundleVersion</key><string>1</string>
+          <key>CFBundleShortVersionString</key><string>1.3.0</string>
+          <key>CFBundlePackageType</key><string>APPL</string>
+          <key>CFBundleExecutable</key><string>KingfisherPet</string>
+          <key>CFBundleInfoDictionaryVersion</key><string>6.0</key>
+          <key>LSMinimumSystemVersion</key><string>13.0</string>
+          <key>LSUIElement</key><true/>
+          <key>NSHighResolutionCapable</key><true/>
+          <key>NSPrincipalClass</key><string>NSApplication</string>
+          <key>CFBundleDevelopmentRegion</key><string>zh-Hans</string>
+          <key>CFBundleLocalizations</key><array><string>zh-Hans</string><string>en</string></array>
+          <key>CFBundleIconFile</key><string>AppIcon</string>
+          </dict></plist>
+          PLIST
+          codesign -s - --force --deep "$APP"
+          cd build && zip -qry KingfisherPet-mac-native.zip KingfisherPet.app
+
+      - name: 传到 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "翡 KingfisherPet ${{ github.ref_name }}"
+          tag_name: ${{ github.ref_name }}
+          draft: true
+          files: build/KingfisherPet-mac-native.zip
+
   build:
     strategy:
       fail-fast: false
