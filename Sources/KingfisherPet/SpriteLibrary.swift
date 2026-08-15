@@ -106,8 +106,9 @@ final class SpriteLibrary {
                 print("[KingfisherPet] 警告:缺少帧 \(name).png(主题 \(theme))")
                 continue
             }
-            let (alpha, w, h) = alphaBuffer(for: cg)
-            newFrames[name] = PetFrame(image: img, cgImage: cg, alpha: alpha, w: w, h: h)
+            let (alpha, w, h, cleaned) = alphaBuffer(for: cg)
+            // 用清理后的位图渲染(窗口形状精确到可见像素),显示效果不变(alpha<16 本就不可见)
+            newFrames[name] = PetFrame(image: img, cgImage: cleaned ?? cg, alpha: alpha, w: w, h: h)
         }
         // 若整主题加载失败(newFrames 空),保留旧帧避免崩
         if !newFrames.isEmpty {
@@ -124,16 +125,16 @@ final class SpriteLibrary {
     }
 
     /// 把 cgImage 渲染到 RGBA 缓冲,提取 alpha 通道(顶行在前)
-    private func alphaBuffer(for cg: CGImage) -> ([UInt8], Int, Int) {
+    private func alphaBuffer(for cg: CGImage) -> ([UInt8], Int, Int, CGImage?) {
         let w = cg.width, h = cg.height
-        guard w > 0, h > 0 else { return ([], 0, 0) }
+        guard w > 0, h > 0 else { return ([], 0, 0, nil) }
         var bytes = [UInt8](repeating: 0, count: w * h * 4)
         let cs = CGColorSpaceCreateDeviceRGB()
         guard let ctx = CGContext(data: &bytes, width: w, height: h,
                                   bitsPerComponent: 8, bytesPerRow: w * 4,
                                   space: cs,
                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
-            return ([], 0, 0)
+            return ([], 0, 0, nil)
         }
         ctx.clear(CGRect(x: 0, y: 0, width: w, height: h))
         // 翻转,使缓冲顶行 == 图像顶行
@@ -141,9 +142,20 @@ final class SpriteLibrary {
         ctx.scaleBy(x: 1, y: -1)
         ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
 
+        // 清理低 alpha 光晕:抗锯齿边缘 alpha 1..15 的像素让窗口服务器把该点
+        // 算作鸟窗(点击发给鸟)而 hitTest(阈值16)返回 nil 无人接 → 点击被吞
+        // (hover 穿透但点不动的 bug)。清零后:窗口形状 == 可见像素 == 命中判定。
         var a = [UInt8](repeating: 0, count: w * h)
-        for i in 0..<(w * h) { a[i] = bytes[i * 4 + 3] }
-        return (a, w, h)
+        for i in 0..<(w * h) {
+            let alpha = bytes[i * 4 + 3]
+            if alpha < 16 {
+                bytes[i * 4] = 0; bytes[i * 4 + 1] = 0; bytes[i * 4 + 2] = 0; bytes[i * 4 + 3] = 0
+            } else {
+                a[i] = alpha
+            }
+        }
+        let cleaned = ctx.makeImage()   // 清理后的位图
+        return (a, w, h, cleaned)
     }
 
     // MARK: - 音效(多种叫声,随机选)
