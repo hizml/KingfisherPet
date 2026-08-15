@@ -64,9 +64,13 @@ jobs:
           <key>CFBundleIconFile</key><string>AppIcon</string>
           </dict></plist>
           PLIST
+          # 版本号:tag 构建用 tag 号,dispatch 构建读 tauri.conf.json(不再硬编码)
           if [[ "$GITHUB_REF_NAME" == v* ]]; then
-            sed -i '' "s/<string>1.3.0<\/string>/<string>${GITHUB_REF_NAME#v}<\/string>/" "$APP/Contents/Info.plist"
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION=$(python3 -c "import json;print(json.load(open('windows/src-tauri/tauri.conf.json'))['version'])")
           fi
+          sed -i '' "s/<string>1\.3\.0<\/string>/<string>${VERSION}<\/string>/" "$APP/Contents/Info.plist" 
           codesign -s - --force --deep "$APP"
           cd build && zip -qry KingfisherPet-mac-native.zip KingfisherPet.app
 

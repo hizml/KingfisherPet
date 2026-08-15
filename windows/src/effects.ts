@@ -5,6 +5,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { emit } from "@tauri-apps/api/event";
 import { ensurePoopStage } from "./poop";
+import { settings } from "./settings";
 
 const petWin = getCurrentWindow();
 
@@ -14,7 +15,7 @@ async function fx(kind: string, x: number, y: number, dur = 0) {
     const p = await petWin.outerPosition();   // 物理
     const sc = await petWin.scaleFactor();
     // 屏幕逻辑 = 窗口物理原点/scale + 窗口内逻辑偏移(x/y 是 local 逻辑)
-    await emit("fx", { kind, x: p.x / sc + x, y: p.y / sc + y, dur });
+    await emit("fx", { kind, x: p.x / sc + x, y: p.y / sc + y, dur, spd: settings.speed });
   } catch { /* */ }
 }
 

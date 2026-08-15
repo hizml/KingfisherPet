@@ -6,7 +6,7 @@ import { SpriteLibrary } from "./sprite";
 import { setupHitTest } from "./hittest";
 import { setupShadow, updateShadow } from "./shadow";
 import { setupPoop } from "./poop";
-import { setupCrack, clearCracks } from "./crack";
+import { clearCracks } from "./crack";   // crack 窗懒创建:首次 crackAt 才建(省一个常驻全屏层)
 import { setupBranch } from "./branch";
 import { setupTheme, setTheme } from "./theme";
 import { setupAudio, playPeep, setSoundOn } from "./audio";
@@ -46,7 +46,6 @@ async function main() {
     setupHitTest(lib, () => currentFrame, 160, () => dragging);
     setupShadow(lib);
     setupPoop();
-    setupCrack();
     setupBranch(lib);
     setupTheme(lib);
     setupAudio();
@@ -58,6 +57,8 @@ async function main() {
       else if (id === "sing") behavior.doSing();
       else if (id === "eat") behavior.doEat();
       else if (id === "fish") behavior.doFish();
+      else if (id === "perch") behavior.doPerch();
+      else if (id === "peck") behavior.doPeck();
       else if (id === "show") { behavior.isVisible() ? behavior.fallAway() : behavior.hatchIn(); }   // 显示/隐藏 toggle
       else if (id === "repair") { clearCracks(); }   // 托盘"修复屏幕"
     });
@@ -114,16 +115,19 @@ function setupDrag() {
     setTimeout(() => { if (dragging && !movedDuringDrag) endDrag(); }, 400);
   });
   window.addEventListener("mouseup", () => { if (dragging) endDrag(); });
-  // 兜底 2:窗口移动事件停息 = 松手(mouseup 丢失也能恢复);拖拽中也同步地面阴影
-  petWin.onMoved(async () => {
+  // 兜底 2:窗口移动事件停息 = 松手(mouseup 丢失也能恢复);拖拽中同步地面阴影 + 边界钳制
+  let dragScale = 1;
+  petWin.onMoved(async (ev) => {
     if (!dragging) return;
     movedDuringDrag = true;
     if (dragWaiter) clearTimeout(dragWaiter);
     dragWaiter = setTimeout(endDrag, 300);
     try {
-      const p = await petWin.outerPosition();
-      const sc = await petWin.scaleFactor();
-      updateShadow(p.x / sc, p.y / sc);   // 原生拖拽没有 setOrigin,这里补阴影
+      const p = ev.payload as { x: number; y: number };   // 事件自带物理坐标(免一次 IPC)
+      dragScale = await petWin.scaleFactor();
+      updateShadow(p.x / dragScale, p.y / dragScale);      // 原生拖拽没有 setOrigin,这里补阴影
+      // 钳制:脚不进任务栏下面、头不彻底出屏顶、横向不出屏(macOS 拖拽 clamp 同款)
+      behavior.clampDragFrame(p.x / dragScale, p.y / dragScale);
     } catch { /* */ }
   });
 }

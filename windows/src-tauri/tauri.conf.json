@@ -23,7 +23,8 @@
         "resizable": false,
         "skipTaskbar": true,
         "visibleOnAllWorkspaces": true,
-        "shadow": false
+        "shadow": false,
+        "focus": false
       }
     ],
     "security": {

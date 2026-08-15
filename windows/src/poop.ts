@@ -1,7 +1,9 @@
 // 屎:独立全屏透明窗(WebviewWindow "poop"),物理下落(屏幕坐标,不跟鸟窗)。
 // 对应 macOS PoopController(独立窗 + 物理)。避免 macOS 踩过的「屎跟窗走」坑。
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { emit, listen } from "@tauri-apps/api/event";
+import { settings } from "./settings";
 
 let win: WebviewWindow | null = null;
 let ready: Promise<void> | null = null;
@@ -11,11 +13,16 @@ async function ensure() {
       // 主窗 location.reload()(切主题)后模块重置,但 poop 窗是 app 级、不会被销毁
       // → 同 label 再 new 会 reject,ready 永远失败(切主题后特效/屎全废)。先查再建。
       const existing = await WebviewWindow.getByLabel("poop");
+      // 按主显示器逻辑尺寸建(固定 3000x2000 会分配超屏表面,150% 缩放下 ≈54MB/层)
+      const mon = await (getCurrentWindow() as any).currentMonitor().catch(() => null);
+      const sc0 = mon?.scaleFactor ?? 1;
       const w0 = existing ?? new WebviewWindow("poop", {
         url: "poop.html",
         transparent: true, decorations: false, alwaysOnTop: true,
         resizable: false, skipTaskbar: true, focus: false,
-        width: 3000, height: 2000, x: 0, y: 0,
+        width: Math.ceil((mon?.size.width ?? 1920) / sc0),
+        height: Math.ceil((mon?.size.height ?? 1080) / sc0),
+        x: 0, y: 0,
       });
       win = w0;
       if (!existing) {
@@ -42,7 +49,7 @@ export function setupPoop() { ensure().catch(() => {}); }
 /// 特效舞台也用这个全屏窗(effects.ts 调):确保 ready 后返回
 export function ensurePoopStage() { return ensure(); }
 
-export async function dropPoop(x: number, y: number) {
+export async function dropPoop(x: number, y: number, landingY: number, fallSec: number) {
   await ensure();
-  await emit("poop-drop", { x, y });
+  await emit("poop-drop", { x, y, landingY, fallSec, spd: settings.speed });
 }

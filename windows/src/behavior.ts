@@ -94,22 +94,25 @@ function stopPerchCheck() {
 // (不往窗口中间凑、alt-tab 换前台不拽走鸟;窗口没了 → 飞走)。对应 macOS checkPerch。
 let perchedHwnd: number | null = null;
 let lastPerchRect: { x: number; y: number } | null = null;
+let perchMoving = false, lastPerchMove = 0;
 function startPerchCheck() {
   stopPerchCheck();
   if (perchedHwnd == null) return;
   const hwnd = perchedHwnd;
   perchTimer = setInterval(async () => {
     try {
-      await scale();
       const r = await invoke<[number, number, number, number] | null>("window_rect_cmd", { hwndVal: hwnd });
       if (!r) { stopPerchCheck(); startFly(300); return; }   // 窗口没了 → 飞远
       const wx = toLog(r[0]), wy = toLog(r[1]);   // 物理 → 逻辑
       if (!lastPerchRect) { lastPerchRect = { x: wx, y: wy }; return; }
       const dx = wx - lastPerchRect.x, dy = wy - lastPerchRect.y;
       if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+        perchMoving = true; lastPerchMove = performance.now();   // 用户拖栖窗 → think 推迟(macOS 同款)
         const o = await getOrigin();
         await setOrigin(o.x + dx, o.y + dy);   // 增量跟随,保持相对位置(不往窗口中间凑)
         lastPerchRect = { x: wx, y: wy };
+      } else if (perchMoving && performance.now() - lastPerchMove > 600) {
+        perchMoving = false;   // 停 0.6s → 恢复思考
       }
     } catch (e) { /* */ }
   }, 50);
@@ -132,22 +135,24 @@ function scheduleThink() {
 }
 
 async function think() {
-  if (busy) { scheduleThink(); return; }
-  // 权重对齐 macOS think():idle 22 / walk 20 / fish 8 / fly 7 / sing 7 / dart 7 /
-  // watch 7 / sun 5 / peck 5 / perch 4 / poop 5 / 其余 sleep。
-  // (原版 peck 只有 0.1% 几乎看不到裂纹;eat 凭空吃 Mac 没有,删)
+  if (busy || perchMoving) { scheduleThink(); return; }   // 栖窗被用户拖动中:推迟预设动作
+  // 权重对齐 macOS think():idle/walk 带随活跃度伸缩(高活跃→少待机多走动),
+  // 其余固定:fish 8 / fly 7 / sing 7 / dart 7 / watch 7 / sun 5 / peck 5 / poop 5 / perch 4
+  const a = settings.activity;
+  const idleBand = Math.round((1 - a) * 22);            // 0→22, 1→0
+  const walkEnd = idleBand + Math.max(1, Math.round((1 - a) * 20));   // idle+walk 带
   const r = Math.random();
-  if (r < 0.22) { enter("idle"); scheduleThink(); }
-  else if (r < 0.42) startWalk();
-  else if (r < 0.50) startFish();
-  else if (r < 0.57) startFly();
-  else if (r < 0.64) startSing();
-  else if (r < 0.71) startDart();
-  else if (r < 0.78) startWatch();
-  else if (r < 0.83) startSun();
-  else if (r < 0.88) startPeck();
-  else if (r < 0.92) startPoop();
-  else if (r < 0.96) startPerchWindow();
+  if (r < idleBand) { enter("idle"); scheduleThink(); }
+  else if (r < walkEnd) startWalk();
+  else if (r < walkEnd + 8) startFish();
+  else if (r < walkEnd + 15) startFly();
+  else if (r < walkEnd + 22) startSing();
+  else if (r < walkEnd + 29) startDart();
+  else if (r < walkEnd + 36) startWatch();
+  else if (r < walkEnd + 41) startSun();
+  else if (r < walkEnd + 46) startPeck();
+  else if (r < walkEnd + 51) startPoop();
+  else if (r < walkEnd + 55) startPerchWindow();
   else startSleep();
 }
 
@@ -162,7 +167,7 @@ async function startWalk() {
     const a = await area();
     const o = await getOrigin();
     const onGround = o.y + FEET_OFFSET >= a.maxY - 40;      // 脚贴近任务栏顶
-    if (!onGround && perched == null) { startFly(); return; }   // 空中/半空 → 不走,飞
+    if (!onGround && perched == null) { finish(); return; }   // 空中/半空 → 不走,回 idle(macOS 同款)
     const dir = Math.random() < 0.5 ? 1 : -1;
     const dist = 80 + Math.random() * 120;
     const tx = Math.min(Math.max(o.x + dir * dist, a.minX), a.maxX - SIZE);
@@ -177,7 +182,16 @@ async function startWalk() {
           if (r) {
             const wx0 = toLog(r[0]), wx1 = toLog(r[0] + r[2]);
             const midX = tx + SIZE / 2;
-            if (midX < wx0 - 10 || midX > wx1 + 10) { startFly(300); return; }   // 走出窗口边
+            // 还在窗口横向范围内 → 走完恢复栖窗跟随(macOS afterWalk)
+            if (midX >= wx0 - 10 && midX <= wx1 + 10) {
+              perchedHwnd = perched; lastPerchRect = null; startPerchCheck();
+              finish(); return;
+            }
+            if (midX < wx0 - 10 || midX > wx1 + 10) {
+              if (Math.random() < 0.5) { perchedHwnd = perched; lastPerchRect = null; startPerchCheck(); finish(); }   // 50% 换个窗口
+              else { startFly(300); }   // 否则飞远
+              return;
+            }
           }
         } catch { /* 查不到就正常留下 */ }
       }
@@ -204,6 +218,11 @@ async function startFly(minDist = 0) {
     // 落点悬空(脚高于任务栏区)→ 树枝先到(屏幕坐标预显,对应 macOS perchBranchIfNeeded)
     const feetY = ty + FEET_OFFSET;
     if (feetY < a.maxY - 40) branch.showBranchAt(tx + SIZE / 2, feetY);
+    // 35% 空中拉屎(macOS 同款):飞行途中从屁股掉一坨
+    if (Math.random() < 0.35) {
+      const g = gen, ax = o.x + 80 + (tx > o.x ? -50 : 50);
+      setTimeout(() => { if (gen === g) dropPoopAt(ax, o.y + 40); }, sp(0.3 + Math.random() * 0.4) * 1000);
+    }
     animateFlight({ x: tx, y: ty }, 1.3, () => {
       if (feetY >= a.maxY - 40) branch.hideBranch();   // 落地(任务栏)→ 确保无枝
       finish();
@@ -228,25 +247,63 @@ function startSleep() {   // 打盹持续飘 zzz(macOS 每 0.9s,从头上方出)
   hold(5 + Math.random() * 4, () => finish());
 }
 function startEat() { beginAction(); enter("eat"); playPeep(); hold(1.1, () => finish()); }
-function startSun() { beginAction(); enter("sun"); effects.sun(80, 30, 3 + Math.random() * 2); hold(3 + Math.random() * 2, () => finish()); }
+function startSun() {
+  beginAction(); enter("sun");
+  // 太阳在鸟斜上方、偏向空的一侧(macOS ±92);local y=-64(鸟头顶上方 64px)
+  const sx = facingRight ? -12 : 172;   // 80±92
+  effects.sun(sx, -64, 3 + Math.random() * 2);
+  hold(3 + Math.random() * 2, () => finish());
+}
 function startPeck() {
-  beginAction(); playPeep(); enter("peck");
-  getOrigin().then(o => {
-    // 鸟嘴屏幕坐标:嘴尖在朝向一侧(macOS: minX + facingRight ? 156 : 4)
-    const bx = o.x + (facingRight ? 156 : 4);
-    crack.crackAt(bx, o.y + 72);
-  }).catch(() => {});
-  hold(0.5, () => finish());
+  beginAction(); playPeep();   // 先叫一声再啄(macOS:啄时不叫)
+  const count = 3 + Math.floor(Math.random() * 3);        // 连啄 3-5 次
+  const willCrack = Math.random() < 0.12;                  // 12% 啄裂(macOS 同款)
+  peckBurst(count, willCrack);
+}
+function peckBurst(remaining: number, willCrack: boolean) {
+  enter("peck");
+  if (willCrack) {
+    getOrigin().then(o => {
+      // 鸟嘴屏幕坐标:嘴尖在朝向一侧(macOS: minX + facingRight ? 156 : 4)
+      const bx = o.x + (facingRight ? 156 : 4);
+      crack.crackAt(bx, o.y + 72);   // crackAt 自带 55px 合并生长
+    }).catch(() => {});
+  }
+  hold(0.3, () => {
+    if (remaining > 1) peckBurst(remaining - 1, willCrack);
+    else finish();
+  });
 }
 function startWatch() { beginAction(); enter("watch"); hold(1.4 + Math.random() * 0.8, () => finish()); }
 function startPoop() {
   beginAction(); enter("poop");
-  getOrigin().then(o => {
+  getOrigin().then(async o => {
     // 屁股在朝向反侧(macOS: midX + facingRight ? -50 : 50)
     const buttX = o.x + 80 + (facingRight ? -50 : 50);
-    poop.dropPoop(buttX, o.y + 58);
+    await dropPoopAt(buttX, o.y + 58);
   }).catch(() => {});
   hold(0.8, () => finish());
+}
+
+/// 拉屎(含物理):找 (x, y) 正下方最近落点(窗口上沿/任务栏顶),交给舞台窗下落-落定-淡出
+async function dropPoopAt(x: number, y: number) {
+  let landingY = y + 400;   // 兜底
+  try {
+    const sc = await scale();
+    const a = await area();
+    let best = a.maxY;   // 任务栏顶
+    try {
+      const list = await invoke<[number, number, number, number][]>("surfaces_below_cmd", { x: x * sc });
+      for (const s of list) {
+        const top = toLog(s[1]);
+        if (top < y - 6 && top > best) best = top;   // 在屎下方且更高的表面
+      }
+    } catch { /* */ }
+    landingY = best;
+  } catch { /* */ }
+  const dist = Math.max(0, landingY - y);
+  const fallSec = dist / 220;   // 220px/s(macOS 同款)
+  try { await poop.dropPoop(x, y, landingY, fallSec); } catch { /* */ }
 }
 
 // 栖窗:飞到最前窗口的上沿歇脚(Win32 front_perch;mac stub 返回 null → finish)
@@ -257,6 +314,7 @@ async function startPerchWindow() {
     const perch = await invoke<[number, number, number] | null>("front_perch_cmd", { birdW: SIZE * sc });   // Rust 收物理
     if (!perch) { finish(); return; }
     const px = toLog(perch[0]), py = toLog(perch[1]);   // 物理 → 逻辑
+    if (py - FEET_OFFSET < (await area()).minY) { startFly(300); return; }   // 窗台太高,头会出屏 → 不停
     const o = await getOrigin();
     setFacing(px > o.x);
     animateFlight({ x: px, y: py - FEET_OFFSET }, 1.1, () => {   // 脚踩窗口上沿
@@ -289,21 +347,28 @@ async function startFish() {
   try {
     const a = await area();
     const o = await getOrigin();
-    const targetX = Math.max(a.minX, Math.min(o.x, a.maxX - SIZE));
-    setFacing(targetX > o.x);
-    animateFlight({ x: targetX, y: a.minY }, 1.0, () => {       // 飞到屏顶
-      enter("dive");
-      animateMove({ x: targetX, y: a.maxY - FEET_OFFSET }, 0.5, () => {  // 俯冲到地面(脚贴任务栏顶)
-        enter("fly_fish");
-        effects.splash(80, 140);                                   // 水花(鸟嘴 local)
-        hold(0.5, () => {
-          const perchX = a.minX + 30 + Math.random() * (a.maxX - a.minX - SIZE - 60);
-          animateFlight({ x: perchX, y: a.maxY - FEET_OFFSET }, 1.0, () => {  // 飞回地面
-            enter("eat");
-            playPeep();
-            hold(1.1, () => {
-              finish();
-              schedulePoopAfter(4 + Math.random() * 3);   // 吃完过会儿拉一坨(macOS 同款)
+    const half = SIZE / 2;
+    const targetX = Math.min(Math.max(a.minX + half + 40 + Math.random() * (a.maxX - a.minX - SIZE - 80), a.minX), a.maxX - SIZE);   // 随机俯冲列
+    setFacing(targetX + half > o.x + 80);
+    animateFlight({ x: targetX, y: a.minY }, 1.0, () => {
+      enter("hover");                                   // 悬停瞄准(macOS 同款)
+      hold(0.7, () => {
+        enter("dive");
+        animateMove({ x: targetX, y: a.maxY - FEET_OFFSET }, 0.5, () => {  // 俯冲到地面
+          enter("fly_fish");
+          effects.splash(80, 140);                        // 水花(鸟嘴 local)
+          hold(0.5, () => {
+            const perchX = a.minX + 30 + Math.random() * (a.maxX - a.minX - SIZE - 60);
+            const high = Math.random() < 0.5;
+            const perchY = high ? a.minY : (a.maxY - FEET_OFFSET);   // 随机高度歇脚
+            if (high) branch.showBranchAt(perchX + half, perchY + FEET_OFFSET);   // 高处 → 树枝先到
+            animateFlight({ x: perchX, y: perchY }, 1.0, () => {
+              enter("eat");
+              playPeep();
+              hold(1.1, () => {
+                finish();
+                schedulePoopAfter(4 + Math.random() * 3);   // 吃完过会儿拉一坨
+              });
             });
           });
         });
@@ -353,8 +418,10 @@ function animateFlight(end: { x: number; y: number }, duration: number, done: ()
       if (gen !== g) return;
       const t = Math.min(1, (performance.now() - t0) / dur);
       const mt = 1 - t;
-      const x = mt*mt*mt*start.x + 3*mt*mt*t*c1.x + 3*mt*t*t*c2.x + t*t*t*end.x;
-      const y = mt*mt*mt*start.y + 3*mt*mt*t*c1.y + 3*mt*t*t*c2.y + t*t*t*end.y;
+      let x = mt*mt*mt*start.x + 3*mt*mt*t*c1.x + 3*mt*t*t*c2.x + t*t*t*end.x;
+      let y = mt*mt*mt*start.y + 3*mt*mt*t*c1.y + 3*mt*t*t*c2.y + t*t*t*end.y;
+      const bob = Math.sin(t * Math.PI * 6);   // 拍翅起伏(macOS 同款)
+      y += bob * 4; x += bob * 1.5;
       setOrigin(x, y);
       if (t < 1) requestAnimationFrame(step); else done();
     };
@@ -393,6 +460,23 @@ export function wakeFromUserAbsence() {
 }
 
 export function dragBegin() { beginAction(); branch.hideBranch(); enter("idle"); }   // 拖拽收枝(macOS 同款)
+
+/// 原生拖拽中的边界钳制(逻辑坐标):脚不进任务栏下、头不出屏顶、横向不出屏。
+/// 节流 100ms——和 Win32 模态移动循环互 setPosition 打架会抖。
+let lastClamp = 0;
+export async function clampDragFrame(x: number, y: number) {
+  const now = performance.now();
+  if (now - lastClamp < 100) return;
+  lastClamp = now;
+  try {
+    const a = await area();
+    const cx = Math.min(Math.max(x, a.minX), a.maxX - SIZE);
+    const cy = Math.min(Math.max(y, a.minY), a.maxY - FEET_OFFSET);   // 脚最低到任务栏顶
+    if (Math.abs(cx - x) > 1 || Math.abs(cy - y) > 1) {
+      await setOrigin(cx, cy);
+    }
+  } catch { /* */ }
+}
 export async function dragDidEnd() {
   try {
     const sc = await scale();
@@ -408,6 +492,7 @@ export async function dragDidEnd() {
     } catch { /* 枚举失败只试任务栏 */ }
     let best: Surf | null = null, bestD = 1e9;
     for (const c of cands) {
+      if (c.y - FEET_OFFSET < a.minY) continue;   // 太高:踩上去鸟头出屏(macOS wouldOvershootTop)
       const d = Math.abs(c.y - feetY);
       if (d < bestD) { bestD = d; best = c; }
     }
@@ -443,15 +528,15 @@ export async function callOver() {
     const o = await getOrigin();
     setFacing(target.x > o.x);
     branch.hideBranch();
-    animateFlight(target, 1.0, () => {
-      branch.showBranchAt(target.x + SIZE / 2, target.y + FEET_OFFSET);   // 落点悬空 → 树枝接脚
-      finish();
-    });
+    branch.showBranchAt(target.x + SIZE / 2, target.y + FEET_OFFSET);   // 树枝先到
+    animateFlight(target, 1.0, () => finish());
   } catch (e) { startFly(); }
 }
 export function doSing() { if (!busy) startSing(); }
 export function doEat() { if (!busy) startEat(); }
 export function doFish() { if (!busy) startFish(); }
+export function doPerch() { startPerchWindow(); }   // 菜单指定动作打断当前(macOS 同款不判 busy)
+export function doPeck() { startPeck(); }
 
 export function setup(ops: {
   lib: SpriteLibrary;
@@ -520,7 +605,7 @@ export async function hatchIn() {
   try {
     const a = await area();
     await setOrigin(a.maxX - SIZE - 30, a.maxY - FEET_OFFSET);
-    await (win as any).show();
+    await invoke("show_no_activate");   // 显示但不抢前台焦点
   } catch { /* */ }
   enter("egg");
   hold(1.4, () => { enter("idle"); scheduleThink(); });
