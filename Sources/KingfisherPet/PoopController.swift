@@ -22,9 +22,13 @@ final class PoopController {
 
     /// 系统睡眠前停屎物理 timer(防唤醒补发堆积);唤醒后 resume。
     func suspend() { timer?.invalidate(); timer = nil; kfLog("Poop suspend") }
+    /// 唤醒宽限:此刻前 sitting 屎不做承载检查(窗口层级未稳,否则满屏屎同时重新下落)
+    private var graceUntil: CFTimeInterval = 0
+
     func resume() {
         guard timer == nil else { return }
         lastTime = CACurrentMediaTime()
+        graceUntil = CACurrentMediaTime() + 3.0
         // 30fps:内容 8-14fps 足够,省一半常驻唤醒
         let t = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in self?.update() }
         RunLoop.main.add(t, forMode: .common)
@@ -102,7 +106,8 @@ final class PoopController {
         guard let scr = screen else { return }
         let ground = scr.visibleFrame.minY
         let sh = scr.frame.height
-        for p in poops { p.update(dt: dt, ground: ground, screenH: sh) }
+        let inGrace = CACurrentMediaTime() < graceUntil
+        for p in poops { p.update(dt: dt, ground: ground, screenH: sh, inGrace: inGrace) }
         let gone = poops.filter { $0.dead }
         // close() 真正释放窗口(orderOut 只隐藏,窗口对象+WindowServer 资源永远累积 → 泄漏)
         gone.forEach { $0.window.close() }
@@ -120,6 +125,7 @@ private final class Poop {
     var landedID: CGWindowID?
     var state: State = .falling
     var sitRemain: TimeInterval = 0
+    var badStreak = 0   // 承载检查坏判定连击(迟滞)
     var opacity: CGFloat = 1
     var dead = false
     private var occludeFrame = 0   // 遮挡检测降频计数(frontWindowAt 全窗口枚举,贵)
@@ -165,7 +171,7 @@ private final class Poop {
         blob.contentsGravity = .resize
     }
 
-    func update(dt: TimeInterval, ground: CGFloat, screenH: CGFloat) {
+    func update(dt: TimeInterval, ground: CGFloat, screenH: CGFloat, inGrace: Bool) {
         switch state {
         case .falling:
             // 下落速度受全局动画速度影响
@@ -182,6 +188,7 @@ private final class Poop {
             // 承载窗口查询(frameOfWindow = WindowServer 往返)降到 3fps(每 10 物理帧):
             // 窗口不会在 160ms 内消失,60fps 查纯属烧 CPU
             if let id = landedID {
+                if inGrace { sitRemain -= dt; if sitRemain <= 0 { state = .fading }; return }   // 唤醒宽限:只倒计时
                 occludeFrame += 1
                 if occludeFrame % 10 != 0 { sitRemain -= dt; if sitRemain <= 0 { state = .fading }; return }
                 if let b = WindowTracker.frameOfWindow(id: id) {

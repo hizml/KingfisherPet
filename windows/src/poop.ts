@@ -60,6 +60,12 @@ async function ensure() {
 
 export function setupPoop() { ensure().catch(() => {}); }
 
+/// 唤醒宽限:告诉舞台窗 3s 内屎不做承载判定(唤醒瞬间层级混乱)
+export async function wakeGrace() {
+  await ensure();
+  await emit("poop-grace", null);
+}
+
 /// 特效舞台也用这个全屏窗(effects.ts 调):确保 ready 后返回
 export function ensurePoopStage() { return ensure(); }
 
