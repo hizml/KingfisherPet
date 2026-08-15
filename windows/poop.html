@@ -96,6 +96,23 @@ listen("branch", (e) => {
   branchImg.style.display = "block";
 });
 
+// 地面阴影(逻辑坐标):锚定地面、鸟正下方,飞高变大变淡
+const shadowImg = document.createElement("img");
+shadowImg.style.position = "fixed";
+shadowImg.style.width = "150px"; shadowImg.style.height = "40px";
+shadowImg.style.pointerEvents = "none"; shadowImg.style.display = "none";
+document.body.appendChild(shadowImg);
+listen("shadow", (e) => {
+  const { show, x, y, w, h, opacity, theme: th } = e.payload;
+  if (!show) { shadowImg.style.display = "none"; return; }
+  if (th) shadowImg.src = `${import.meta.env.BASE_URL}Sprites/${th}/shadow.png`;
+  shadowImg.style.width = w + "px"; shadowImg.style.height = h + "px";
+  shadowImg.style.left = (x - w / 2) + "px";
+  shadowImg.style.top = (y - h / 2) + "px";
+  shadowImg.style.opacity = String(opacity);
+  shadowImg.style.display = "block";
+});
+
 emit("child-ready", "poop");   // 告诉主窗 listener 已注册(防首次 emit 丢失)
 </script>
 </body></html>

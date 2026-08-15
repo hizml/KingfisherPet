@@ -69,8 +69,8 @@ pub fn run() {
             let zh = is_zh();
             let call_over = MenuItem::with_id(app, "call", if zh { "召唤过来" } else { "Call Over" }, true, None::<&str>)?;
             let sing = MenuItem::with_id(app, "sing", if zh { "唱一个" } else { "Sing" }, true, None::<&str>)?;
-            let eat = MenuItem::with_id(app, "eat", if zh { "吃一口" } else { "Eat" }, true, None::<&str>)?;
-            let show = MenuItem::with_id(app, "show", if zh { "显示" } else { "Show" }, true, None::<&str>)?;
+            let fish = MenuItem::with_id(app, "fish", if zh { "去抓条鱼" } else { "Catch a Fish" }, true, None::<&str>)?;
+            let show = MenuItem::with_id(app, "show", if zh { "显示 / 隐藏" } else { "Show / Hide" }, true, None::<&str>)?;
             let repair = MenuItem::with_id(app, "repair", if zh { "修复屏幕" } else { "Repair Screen" }, true, None::<&str>)?;
             let t_flat = MenuItem::with_id(app, "theme_flat", if zh { "主题:扁平" } else { "Theme: Flat" }, true, None::<&str>)?;
             let t_clay = MenuItem::with_id(app, "theme_clay", if zh { "主题:粘土" } else { "Theme: Clay" }, true, None::<&str>)?;
@@ -82,11 +82,15 @@ pub fn run() {
             let act_low = MenuItem::with_id(app, "act_low", if zh { "活跃度:低" } else { "Activity: Low" }, true, None::<&str>)?;
             let act_mid = MenuItem::with_id(app, "act_mid", if zh { "活跃度:中" } else { "Activity: Med" }, true, None::<&str>)?;
             let act_high = MenuItem::with_id(app, "act_high", if zh { "活跃度:高" } else { "Activity: High" }, true, None::<&str>)?;
+            let spd_slow = MenuItem::with_id(app, "spd_slow", if zh { "速度:慢" } else { "Speed: Slow" }, true, None::<&str>)?;
+            let spd_norm = MenuItem::with_id(app, "spd_norm", if zh { "速度:正常" } else { "Speed: Normal" }, true, None::<&str>)?;
+            let spd_fast = MenuItem::with_id(app, "spd_fast", if zh { "速度:快" } else { "Speed: Fast" }, true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", if zh { "退出" } else { "Quit" }, true, None::<&str>)?;
             let menu = Menu::with_items(app, &[
-                &call_over, &sing, &eat, &show, &repair,
+                &call_over, &sing, &fish, &show, &repair,
                 &sound,
                 &act_low, &act_mid, &act_high,
+                &spd_slow, &spd_norm, &spd_fast,
                 &t_flat, &t_clay, &t_pixel, &t_neon, &t_ink, &t_water,
                 &quit,
             ])?;
@@ -106,6 +110,10 @@ pub fn run() {
                     "act_low" | "act_mid" | "act_high" => {
                         let v = match event.id.as_ref() { "act_low" => 0.2, "act_high" => 0.9, _ => 0.5 };
                         let _ = app.emit("setting", format!("activity:{}", v));
+                    }
+                    "spd_slow" | "spd_norm" | "spd_fast" => {
+                        let v = match event.id.as_ref() { "spd_slow" => 0.7, "spd_fast" => 1.3, _ => 1.0 };
+                        let _ = app.emit("setting", format!("speed:{}", v));
                     }
                     id if id.starts_with("theme_") => {
                         let t = id.strip_prefix("theme_").unwrap_or("flat");
