@@ -81,6 +81,21 @@ listen("fx", (e) => {
     setTimeout(() => c.remove(), dur * 1000);
   }
 });
+// 树枝(屏幕坐标):悬空落脚的预显树枝——鸟到之前树枝先到
+const branchImg = document.createElement("img");
+branchImg.style.position = "fixed";
+branchImg.style.width = "160px"; branchImg.style.height = "60px";
+branchImg.style.pointerEvents = "none"; branchImg.style.display = "none";
+document.body.appendChild(branchImg);
+listen("branch", (e) => {
+  const { show, x, y, theme } = e.payload;
+  if (!show) { branchImg.style.display = "none"; return; }
+  branchImg.src = `${import.meta.env.BASE_URL}Sprites/${theme}/branch.png`;
+  branchImg.style.left = (x / dpr - 80) + "px";     // 居中于脚点
+  branchImg.style.top = (y / dpr - 54) + "px";      // 枝面在脚点略下方
+  branchImg.style.display = "block";
+});
+
 emit("child-ready", "poop");   // 告诉主窗 listener 已注册(防首次 emit 丢失)
 </script>
 </body></html>
