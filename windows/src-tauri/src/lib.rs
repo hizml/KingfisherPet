@@ -25,6 +25,25 @@ fn window_rect_cmd(hwnd_val: isize) -> Option<(f64, f64, f64, f64)> {
     crate::windows::window_rect(hwnd_val)
 }
 
+/// 界面语言:系统首选语言 zh 开头 → 中文,否则英文。
+/// 托盘菜单/窗口标题在构建时按此选文案(任务:安装器+菜单按设备语言自动切换)。
+fn is_zh() -> bool {
+    #[cfg(windows)]
+    {
+        // 用户 UI 语言:主语言 ID 0x04 = 中文(简/繁/港澳均覆盖)
+        use windows::Win32::Globalization::GetUserDefaultUILanguage;
+        (GetUserDefaultUILanguage() & 0x3FF) == 0x04
+    }
+    #[cfg(not(windows))]
+    {
+        // dev(mac/linux):看 LANG/LC_ALL
+        std::env::var("LANG")
+            .or_else(|_| std::env::var("LC_ALL"))
+            .map(|v| v.to_lowercase().starts_with("zh"))
+            .unwrap_or(false)
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -37,23 +56,24 @@ pub fn run() {
             crate::system::setup_power(app.handle().clone());   // Windows 睡眠/唤醒监听 → emit sleep/wake
             // 前端 log 事件 → 终端(调试 webview 错)
             app.listen("log", |event| { println!("[webview] {}", event.payload()); });
-            // 托盘菜单:召唤/唱/吃/显示/退出(对应 macOS AppDelegate 菜单栏)
-            let call_over = MenuItem::with_id(app, "call", "召唤过来", true, None::<&str>)?;
-            let sing = MenuItem::with_id(app, "sing", "唱一个", true, None::<&str>)?;
-            let eat = MenuItem::with_id(app, "eat", "吃一口", true, None::<&str>)?;
-            let show = MenuItem::with_id(app, "show", "显示", true, None::<&str>)?;
-            let repair = MenuItem::with_id(app, "repair", "修复屏幕", true, None::<&str>)?;
-            let t_flat = MenuItem::with_id(app, "theme_flat", "主题:扁平", true, None::<&str>)?;
-            let t_clay = MenuItem::with_id(app, "theme_clay", "主题:粘土", true, None::<&str>)?;
-            let t_pixel = MenuItem::with_id(app, "theme_pixel", "主题:像素", true, None::<&str>)?;
-            let t_neon = MenuItem::with_id(app, "theme_neon", "主题:霓虹", true, None::<&str>)?;
-            let t_ink = MenuItem::with_id(app, "theme_ink", "主题:水墨", true, None::<&str>)?;
-            let t_water = MenuItem::with_id(app, "theme_watercolor", "主题:水彩", true, None::<&str>)?;
-            let sound = MenuItem::with_id(app, "sound", "声音开关", true, None::<&str>)?;
-            let act_low = MenuItem::with_id(app, "act_low", "活跃度:低", true, None::<&str>)?;
-            let act_mid = MenuItem::with_id(app, "act_mid", "活跃度:中", true, None::<&str>)?;
-            let act_high = MenuItem::with_id(app, "act_high", "活跃度:高", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+            // 托盘菜单:按系统语言选文案(中文系统→中文,否则英文)
+            let zh = is_zh();
+            let call_over = MenuItem::with_id(app, "call", if zh { "召唤过来" } else { "Call Over" }, true, None::<&str>)?;
+            let sing = MenuItem::with_id(app, "sing", if zh { "唱一个" } else { "Sing" }, true, None::<&str>)?;
+            let eat = MenuItem::with_id(app, "eat", if zh { "吃一口" } else { "Eat" }, true, None::<&str>)?;
+            let show = MenuItem::with_id(app, "show", if zh { "显示" } else { "Show" }, true, None::<&str>)?;
+            let repair = MenuItem::with_id(app, "repair", if zh { "修复屏幕" } else { "Repair Screen" }, true, None::<&str>)?;
+            let t_flat = MenuItem::with_id(app, "theme_flat", if zh { "主题:扁平" } else { "Theme: Flat" }, true, None::<&str>)?;
+            let t_clay = MenuItem::with_id(app, "theme_clay", if zh { "主题:粘土" } else { "Theme: Clay" }, true, None::<&str>)?;
+            let t_pixel = MenuItem::with_id(app, "theme_pixel", if zh { "主题:像素" } else { "Theme: Pixel" }, true, None::<&str>)?;
+            let t_neon = MenuItem::with_id(app, "theme_neon", if zh { "主题:霓虹" } else { "Theme: Neon" }, true, None::<&str>)?;
+            let t_ink = MenuItem::with_id(app, "theme_ink", if zh { "主题:水墨" } else { "Theme: Ink" }, true, None::<&str>)?;
+            let t_water = MenuItem::with_id(app, "theme_watercolor", if zh { "主题:水彩" } else { "Theme: Watercolor" }, true, None::<&str>)?;
+            let sound = MenuItem::with_id(app, "sound", if zh { "声音开关" } else { "Sound" }, true, None::<&str>)?;
+            let act_low = MenuItem::with_id(app, "act_low", if zh { "活跃度:低" } else { "Activity: Low" }, true, None::<&str>)?;
+            let act_mid = MenuItem::with_id(app, "act_mid", if zh { "活跃度:中" } else { "Activity: Med" }, true, None::<&str>)?;
+            let act_high = MenuItem::with_id(app, "act_high", if zh { "活跃度:高" } else { "Activity: High" }, true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", if zh { "退出" } else { "Quit" }, true, None::<&str>)?;
             let menu = Menu::with_items(app, &[
                 &call_over, &sing, &eat, &show, &repair,
                 &sound,
