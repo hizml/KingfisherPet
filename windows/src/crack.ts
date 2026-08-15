@@ -9,15 +9,22 @@ let ready: Promise<void> | null = null;
 async function ensure() {
   if (!ready) {
     ready = (async () => {
-      win = new WebviewWindow("crack", {
+      // 主窗 location.reload()(切主题)后模块重置,但 poop 窗是 app 级、不会被销毁
+      // → 同 label 再 new 会 reject,ready 永远失败(切主题后特效/屎全废)。先查再建。
+      const existing = await WebviewWindow.getByLabel("crack");
+      const w0 = existing ?? new WebviewWindow("crack", {
         url: "crack.html",
         transparent: true, decorations: false, alwaysOnTop: true,
         resizable: false, skipTaskbar: true, focus: false,
         width: 3000, height: 2000, x: 0, y: 0,
       });
-      await win.once("tauri://created", () => {});
-      await win.setIgnoreCursorEvents(true).catch(() => {});   // 点击穿透,别挡屏幕内容区
-      // 等 child 页注册完 listener(防首次 emit 丢失)
+      win = w0;
+      if (!existing) {
+        await w0.once("tauri://created", () => {});
+        await w0.setIgnoreCursorEvents(true).catch(() => {});   // 穿透,别挡屏幕
+      }
+      // 等 child 页注册完 listener(否则首次 emit 子窗还没监听,事件丢失)。
+      // reload 后子窗 listener 已在,此握手立即满足/超时放行,均安全。
       await Promise.race([
         new Promise<void>(res => {
           const un = listen("child-ready", (e) => {

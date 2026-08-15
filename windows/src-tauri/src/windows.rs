@@ -61,3 +61,42 @@ pub fn window_rect(hwnd_val: isize) -> Option<(f64, f64, f64, f64)> {
 pub fn window_rect(_hwnd_val: isize) -> Option<(f64, f64, f64, f64)> {
     None
 }
+
+/// 枚举水平覆盖 x 的普通可见窗口,返回 (left, top, width, hwnd) 物理坐标。
+/// 拖拽松手"吸附最近表面(窗口上沿/任务栏)"用。对应 macOS nearestSurface。
+#[cfg(windows)]
+pub fn surfaces_below(x: f64) -> Vec<(f64, f64, f64, isize)> {
+    use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowRect, IsWindowVisible, GetWindowThreadProcessId};
+    use windows::Win32::Foundation::{HWND, LPARAM, RECT};
+    use windows::Win32::System::Threading::GetCurrentProcessId;
+    use std::cell::RefCell;
+    thread_local! {
+        static OUT: RefCell<Vec<(f64, f64, f64, isize)>> = RefCell::new(Vec::new());
+    }
+    unsafe extern "system" fn proc(hwnd: HWND, _lparam: LPARAM) -> windows::core::BOOL {
+        let mut pid: u32 = 0;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if pid == GetCurrentProcessId() { return windows::core::BOOL(1); }   // 排除自己
+        if !IsWindowVisible(hwnd).as_bool() { return windows::core::BOOL(1); }
+        let mut r = RECT::default();
+        if GetWindowRect(hwnd, &mut r).is_err() { return windows::core::BOOL(1); }
+        let (w, h) = (r.right - r.left, r.bottom - r.top);
+        if w < 200 || h < 120 { return windows::core::BOOL(1); }   // 只要普通尺寸窗口
+        // WS_EX_TOOLWINDOW(9?) 不查了:用可见+尺寸过滤已够
+        OUT.with(|o| o.borrow_mut().push((r.left as f64, r.top as f64, w as f64, hwnd.0 as isize)));
+        windows::core::BOOL(1)
+    }
+    unsafe {
+        OUT.with(|o| o.borrow_mut().clear());
+        let _ = EnumWindows(Some(proc), LPARAM(0));
+        let mut v: Vec<(f64, f64, f64, isize)> = OUT.with(|o| o.borrow().clone());
+        // 水平覆盖 x 的才留
+        v.retain(|s| x >= s.0 && x <= s.0 + s.2);
+        v
+    }
+}
+
+#[cfg(not(windows))]
+pub fn surfaces_below(_x: f64) -> Vec<(f64, f64, f64, isize)> {
+    Vec::new()
+}
