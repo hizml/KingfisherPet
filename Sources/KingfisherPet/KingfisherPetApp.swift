@@ -402,9 +402,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         kfLog("didWake effects=\(Effect.active.count)")
         Effects.clearAll()
         crackCtl?.setVisible(true)
-        petController?.petView.resumeAnimation()
-        poopCtl?.resume()
-        branchCtl?.resume()
+        // 鸟隐藏着(fallAway 挂起了 60fps)不恢复定时器——否则锁屏一晚空转 CPU
+        if petController?.behavior.isVisible == true {
+            petController?.petView.resumeAnimation()
+            poopCtl?.resume()
+            branchCtl?.resume()
+        }
         petController?.behavior.wakeFromUserAbsence()
         kfLog("didWake done effects=\(Effect.active.count)")
     }
@@ -423,9 +426,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 解锁:鸟赖床 2–4 秒后醒来。
     @objc private func screenUnlocked() {
         kfLog("screenUnlocked effects=\(Effect.active.count)")
-        petController?.petView.resumeAnimation()
-        poopCtl?.resume()
-        branchCtl?.resume()
+        if petController?.behavior.isVisible == true {   // 隐藏鸟不空转
+            petController?.petView.resumeAnimation()
+            poopCtl?.resume()
+            branchCtl?.resume()
+        }
         petController?.behavior.wakeFromUserAbsence()
     }
 

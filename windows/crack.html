@@ -9,15 +9,30 @@ const cv = document.getElementById("c");
 const ctx = cv.getContext("2d");
 function resize() { cv.width = window.innerWidth; cv.height = window.innerHeight; }
 resize(); window.addEventListener("resize", resize);
-const MAX_CRACKS = 8;                        // 上限(macOS maxCracks=8,防无限累积)
+
+// 主题色(colors.json 的 crack_dark/light;切主题即时换)
+let theme = localStorage.getItem("kf_theme") || "flat";
+let crackDark = "rgba(13,13,13,0.6)", crackLight = "rgba(255,255,255,0.7)";
+async function loadThemeColors(t) {
+  try {
+    const c = await (await fetch(`${import.meta.env.BASE_URL}Sprites/${t}/colors.json`)).json();
+    const rgb = a => `rgba(${a[0]},${a[1]},${a[2]},${(a[3] ?? 255) / 255})`;
+    if (c.crack_dark) crackDark = rgb(c.crack_dark);
+    if (c.crack_light) crackLight = rgb(c.crack_light);
+  } catch { /* */ }
+}
+loadThemeColors(theme);
+listen<string>("theme", (e) => { theme = e.payload; loadThemeColors(theme); });
+
+const MAX_CRACKS = 8;                        // 上限(macOS maxCracks=8)
 let cracks = [];                             // {x,y,r}
 listen("crack-at", (e) => {
   const { x, y } = e.payload;
-  // 55px 内已有裂纹 → 扩大它;否则新建(到上限不建)。对应 macOS peck 合并/生长
-  let near = null;   // 从最新往旧找(不 reverse 原数组)
-for (let i = cracks.length - 1; i >= 0; i--) {
-  if (Math.hypot(cracks[i].x - x, cracks[i].y - y) < 55) { near = cracks[i]; break; }
-}
+  // 55px 内已有裂纹 → 扩大;否则新建(到上限不建)。macOS peck 合并/生长
+  let near = null;
+  for (let i = cracks.length - 1; i >= 0; i--) {
+    if (Math.hypot(cracks[i].x - x, cracks[i].y - y) < 55) { near = cracks[i]; break; }
+  }
   if (near) {
     near.r = Math.min(180, near.r + 18);
     drawC(near);
@@ -29,16 +44,24 @@ for (let i = cracks.length - 1; i >= 0; i--) {
   drawC(c);
 });
 function drawC(c) {
-  ctx.strokeStyle = crackDark;
-  ctx.lineWidth = 2; ctx.lineCap = "round";
-  for (let i = 0; i < 7; i++) {
-    const a = i / 7 * Math.PI * 2 + Math.random() * 0.3;
-    ctx.beginPath(); ctx.moveTo(c.x, c.y);
-    ctx.lineTo(c.x + Math.cos(a) * (c.r * (0.7 + Math.random() * 0.3)), c.y + Math.sin(a) * (c.r * (0.7 + Math.random() * 0.3)));
-    ctx.stroke();
+  // 双描边:暗粗 + 亮细(macOS dark 2.2 / light 0.8)
+  for (const [style, w] of [[crackDark, 2.2], [crackLight, 0.8]]) {
+    ctx.strokeStyle = style;
+    ctx.lineWidth = w; ctx.lineCap = "round";
+    for (let i = 0; i < 7; i++) {
+      const a = i / 7 * Math.PI * 2 + Math.random() * 0.3;
+      ctx.beginPath(); ctx.moveTo(c.x, c.y);
+      ctx.lineTo(c.x + Math.cos(a) * (c.r * (0.7 + Math.random() * 0.3)),
+                 c.y + Math.sin(a) * (c.r * (0.7 + Math.random() * 0.3)));
+      ctx.stroke();
+    }
   }
 }
 listen("crack-clear", () => { cracks = []; ctx.clearRect(0, 0, cv.width, cv.height); });
+listen("stage-origin", (e) => {   // 舞台建在虚拟桌面原点,body 平移回 (0,0) 语义
+  const { x, y } = e.payload;
+  document.body.style.transform = `translate(${-x}px, ${-y}px)`;
+});
 emit("child-ready", "crack");   // listener 已注册
 </script>
 </body></html>

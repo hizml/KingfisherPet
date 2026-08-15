@@ -13,18 +13,31 @@ async function ensure() {
       // 主窗 location.reload()(切主题)后模块重置,但 poop 窗是 app 级、不会被销毁
       // → 同 label 再 new 会 reject,ready 永远失败(切主题后特效/屎全废)。先查再建。
       const existing = await WebviewWindow.getByLabel("crack");
-      // 按主显示器逻辑尺寸建(固定 3000x2000 会分配超屏表面,150% 缩放下 ≈54MB/层)
-      const mon = await (getCurrentWindow() as any).currentMonitor().catch(() => null);
-      const sc0 = mon?.scaleFactor ?? 1;
+      // 虚拟桌面 bounding box(多屏覆盖;不再单屏 0,0)
+      const mons = await (getCurrentWindow() as any).availableMonitors().catch(() => []) ?? [];
+      const sc0 = mons[0]?.scaleFactor ?? 1;
+      let ox = 0, oy = 0, rw = 1920, rh = 1080;
+      if (mons.length) {
+        let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+        for (const m of mons) {
+          x0 = Math.min(x0, m.position.x); y0 = Math.min(y0, m.position.y);
+          x1 = Math.max(x1, m.position.x + m.size.width); y1 = Math.max(y1, m.position.y + m.size.height);
+        }
+        ox = x0 / sc0; oy = y0 / sc0; rw = (x1 - x0) / sc0; rh = (y1 - y0) / sc0;
+      }
       const w0 = existing ?? new WebviewWindow("crack", {
         url: "crack.html",
         transparent: true, decorations: false, alwaysOnTop: true,
         resizable: false, skipTaskbar: true, focus: false,
-        width: Math.ceil((mon?.size.width ?? 1920) / sc0),
-        height: Math.ceil((mon?.size.height ?? 1080) / sc0),
-        x: 0, y: 0,
+        width: Math.ceil(rw), height: Math.ceil(rh),
+        x: Math.round(ox), y: Math.round(oy),
       });
       win = w0;
+      // 告诉子窗舞台原点:body 平移回 (0,0) 语义,事件里的全局逻辑坐标直接可用
+      const emitOrigin = async () => {
+        try { await emit("stage-origin", { x: ox, y: oy }); } catch { /* */ }
+      };
+      await emitOrigin();
       if (!existing) {
         await w0.once("tauri://created", () => {});
         await w0.setIgnoreCursorEvents(true).catch(() => {});   // 穿透,别挡屏幕
