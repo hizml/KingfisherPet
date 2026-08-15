@@ -735,27 +735,31 @@ def _effect_palette(theme, pal):
 
 
 def draw_sun_rays(W, H, ep):
-    """太阳光芒:8 片圆润花瓣(宽底、外端圆收)。像儿童插画太阳,可爱不扎。
-    花瓣 = 底部两点 + 外端圆弧(椭圆),叠在圆盘后面读作一朵小太阳花。"""
+    """太阳光芒:8 根水滴形——根部圆宽(融进圆盘)、向尖端平滑收细。
+    尖但不是流星锤那种硬三角,也不是圆头花瓣。"""
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     s = W / 256.0
     cx, cy = W / 2, H / 2
     n_rays = 8
-    base_r = 52 * s       # 花瓣根部(贴圆盘)
-    tip_r = 84 * s        # 花瓣外端中心
-    petal_w = 13 * s      # 花瓣半宽(圆头粗细)
+    base_r = 50 * s       # 根部(贴圆盘)
+    tip_r = 86 * s        # 尖端
+    base_half = 14 * s    # 根部半宽(粗)
     for i in range(n_rays):
         a = i / n_rays * 2 * math.pi
         ca, sa = math.cos(a), math.sin(a)
         px, py = -sa, ca   # 垂直方向
-        # 花瓣外端圆心
-        tx, ty = cx + ca * tip_r, cy + sa * tip_r
-        # 外端圆头
-        d.ellipse([tx - petal_w, ty - petal_w, tx + petal_w, ty + petal_w], fill=ep["sun_ray"])
-        # 根部到圆头的连接(粗线,整体读作圆头花瓣)
-        bx, by = cx + ca * base_r, cy + sa * base_r
-        d.line([(bx, by), (tx, ty)], fill=ep["sun_ray"], width=int(petal_w * 2))
+        # 水滴轮廓:根部两点(宽),沿长度按 (1-t)^1.5 收窄到尖点。
+        pts = []
+        for t, side in [(0.0, -1), (0.3, -1), (0.6, -1), (0.85, -1),
+                        (1.0, 0),
+                        (0.85, 1), (0.6, 1), (0.3, 1), (0.0, 1)]:
+            r = base_r + (tip_r - base_r) * t
+            w = base_half * ((1.0 - t) ** 1.5) + 1.5 * s   # 收窄曲线,尖处留 1.5s 半宽(钝尖)
+            x = cx + ca * r + px * w * side
+            y = cy + sa * r + py * w * side
+            pts.append((x, y))
+        d.polygon(pts, fill=ep["sun_ray"])
     return img
 
 
@@ -831,14 +835,15 @@ def draw_poop(W, H, ep):
 
     # 地面软影(极淡,压住贴地感)
     d.ellipse([cx - 78*s, base_y - 3*s, cx + 78*s, base_y + 6*s], fill=shadow)
-    # 主体一坨:大圆(身体)+ 底部左右两个小圆摊开,union 成一坨带裙边
-    d.ellipse([cx - 52*s, base_y - 40*s, cx + 52*s, base_y + 4*s], fill=white)
+    # 底部摊边:左右两块扁椭圆(裙边)
     d.ellipse([cx - 74*s, base_y - 14*s, cx - 18*s, base_y + 4*s], fill=white)
     d.ellipse([cx + 16*s, base_y - 12*s, cx + 70*s, base_y + 4*s], fill=white)
-    # 顶部小圆(堆得略高一点,偏左,不对称)
-    d.ellipse([cx - 30*s, base_y - 50*s, cx + 22*s, base_y - 16*s], fill=white)
-    # 内层阴影色(同族略暗,做体积,不用描边)
-    d.ellipse([cx - 26*s, base_y - 34*s, cx + 18*s, base_y - 12*s], fill=off)
+    # 中间堆:三块不等高的「扁」椭圆拼成疙瘩堆(土豆泥感,不是一颗圆球)
+    d.ellipse([cx - 44*s, base_y - 34*s, cx + 10*s, base_y + 2*s], fill=white)    # 左块(最矮)
+    d.ellipse([cx - 14*s, base_y - 42*s, cx + 40*s, base_y + 2*s], fill=white)    # 中块(最高)
+    d.ellipse([cx + 26*s, base_y - 28*s, cx + 58*s, base_y + 2*s], fill=white)    # 右块(矮)
+    # 内阴影:宽扁条(贴在堆下半,做体积;不用圆——圆会读成球)
+    d.ellipse([cx - 30*s, base_y - 20*s, cx + 30*s, base_y - 4*s], fill=off)
     # 深色粪便:一小点,偏右上
     d.ellipse([cx + 8*s, base_y - 30*s, cx + 24*s, base_y - 20*s], fill=dark)
     # 一滴小飞溅(只留一滴,多了碎)
