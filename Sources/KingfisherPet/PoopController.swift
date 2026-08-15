@@ -220,6 +220,7 @@ private final class Poop {
 
     /// 重新下落(窗口移走/消失):重新计算落点(Dock / 下一窗口)
     private func resumeFall(ground: CGFloat) {
+        kfLog("POOP refall y=\(Int(y))")   // 测试断言用:唤醒宽限期内不应出现
         state = .falling
         let (ly, nid) = WindowTracker.landingSpot(belowX: x, fromY: y, groundY: ground)
         landingY = ly
