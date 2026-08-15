@@ -67,6 +67,9 @@ fn is_zh() -> bool {
     }
 }
 
+// login 菜单勾选句柄(toggle 后实时更新勾)
+static LOGIN_ITEM: std::sync::Mutex<Option<tauri::menu::CheckMenuItem<tauri::Wry>>> = std::sync::Mutex::new(None);
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -95,6 +98,7 @@ pub fn run() {
             };
             let login = tauri::menu::CheckMenuItem::with_id(app, "login",
                 if zh { "开机自启" } else { "Launch at Login" }, true, auto_on, None::<&str>)?;
+            *LOGIN_ITEM.lock().unwrap() = Some(login.clone());
             let t_flat = MenuItem::with_id(app, "theme_flat", if zh { "主题:扁平" } else { "Theme: Flat" }, true, None::<&str>)?;
             let t_clay = MenuItem::with_id(app, "theme_clay", if zh { "主题:粘土" } else { "Theme: Clay" }, true, None::<&str>)?;
             let t_pixel = MenuItem::with_id(app, "theme_pixel", if zh { "主题:像素" } else { "Theme: Pixel" }, true, None::<&str>)?;
@@ -131,6 +135,11 @@ pub fn run() {
                         let m = app.autolaunch();
                         let on = m.is_enabled().unwrap_or(false);
                         let r = if on { m.disable() } else { m.enable() };
+                        if r.is_ok() {
+                            if let Some(item) = LOGIN_ITEM.lock().unwrap().as_ref() {
+                                let _ = item.set_checked(!on);   // 勾选实时反映(macOS 同款)
+                            }
+                        }
                         let _ = app.emit("log", format!("autostart toggle {} -> {:?}", on, r));
                     }
                     "quit" => app.exit(0),

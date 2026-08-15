@@ -195,7 +195,11 @@ final class Behavior: PetViewDelegate {
     private static let restingStates: Set<String> =
         ["idle", "eat", "sing", "watch", "sun", "sleep", "happy", "poop", "peck"]
     func isResting() -> Bool { Self.restingStates.contains(current) }
-    private func finish() { busy = false; enter("idle"); scheduleThink() }
+    private func finish() {
+        busy = false; enter("idle"); scheduleThink()
+        // 栖着但跟随器没在跑(静态动作/赖床被打断)→ 恢复跟随,否则鸟悬在原地不跟窗
+        if onWindow, perchedID != nil, perchChecker == nil { startPerchCheck() }
+    }
 
     /// 延时回调;捕获当前代际,bump 后自动作废(避免被取消的动作继续推进)。
     /// 受全局动画速度影响(快=更短)。

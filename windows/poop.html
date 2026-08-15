@@ -15,25 +15,85 @@ let theme = localStorage.getItem("kf_theme") || "flat";
 listen<string>("theme", (e) => { theme = e.payload; });   // 主窗切主题(reload 不影响本窗),素材跟着换
 // 载荷已是逻辑像素(behavior 统一逻辑坐标),直接用
 
+// 屎贴图 alpha 裁剪:poop.png 是 256 画布、内容只占中间一坨;
+// 直接缩到 30x20 会挤成 ~18x4 的细线。按主题裁出内容 dataURL(macOS cropToAlpha 同款)
+const poopSpriteCache = {};
+async function poopSprite(t) {
+  if (poopSpriteCache[t]) return poopSpriteCache[t];
+  const img = new Image();
+  img.src = `${import.meta.env.BASE_URL}Sprites/${t}/poop.png`;
+  await img.decode().catch(() => {});
+  try {
+    const cv = document.createElement("canvas");
+    cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+    const c2 = cv.getContext("2d");
+    c2.drawImage(img, 0, 0);
+    const d = c2.getImageData(0, 0, cv.width, cv.height).data;
+    let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
+    for (let yy = 0; yy < cv.height; yy++) for (let xx = 0; xx < cv.width; xx++) {
+      if (d[(yy * cv.width + xx) * 4 + 3] > 20) {
+        if (xx < x0) x0 = xx; if (xx > x1) x1 = xx;
+        if (yy < y0) y0 = yy; if (yy > y1) y1 = yy;
+      }
+    }
+    if (x1 < 0) throw 0;
+    const cw = x1 - x0 + 1, chh = y1 - y0 + 1;
+    const c3 = document.createElement("canvas");
+    c3.width = 30 * 2; c3.height = Math.round(30 * 2 * chh / cw);   // 宽 30 逻辑(2x 清晰),高按内容比
+    c3.getContext("2d").drawImage(cv, x0, y0, cw, chh, 0, 0, c3.width, c3.height);
+    poopSpriteCache[t] = { url: c3.toDataURL(), w: 30, h: c3.height / 2 };
+  } catch {
+    poopSpriteCache[t] = { url: img.src, w: 30, h: 20 };
+  }
+  return poopSpriteCache[t];
+}
+
 // 屎下落(物理:落到 landingY 表面,坐 8-15s,淡出;时长随动画速度)
 let poopCount = 0;
-listen("poop-drop", (e) => {
-  const { x, y, landingY, fallSec, spd } = e.payload;
+listen("poop-drop", async (e) => {
+  const { x, y, landingY, fallSec, spd, hwnd, scale } = e.payload;
+  const spr = await poopSprite(theme);
   if (poopCount >= 8) { const old = document.querySelector("img[data-poop]"); old?.remove(); }   // 上限 8
   const sp = spd ?? 1;
   const img = document.createElement("img");
   img.dataset.poop = "1";
-  img.src = `${import.meta.env.BASE_URL}Sprites/${theme}/poop.png`;
-  img.style.left = (x - 15) + "px";
+  img.src = spr.url;
+  img.style.left = (x - spr.w / 2) + "px";
   img.style.top = y + "px";
+  img.style.width = spr.w + "px"; img.style.height = spr.h + "px";
   img.style.transition = `top ${fallSec / sp}s ease-in,opacity 1.2s`;
-  img.style.width = "30px"; img.style.height = "20px";
   document.body.appendChild(img);
   poopCount++;
-  requestAnimationFrame(() => { img.style.top = landingY + "px"; });     // 落到表面
-  const sit = (8000 + Math.random() * 7000) / sp;                         // 坐 8-15s
-  setTimeout(() => { img.style.opacity = "0"; }, fallSec / sp * 1000 + sit);
-  setTimeout(() => { img.remove(); poopCount--; }, fallSec / sp * 1000 + sit + 1400);
+  requestAnimationFrame(() => { img.style.top = (landingY - spr.h) + "px"; });   // 落到表面(底边贴地)
+  const sit = (8000 + Math.random() * 7000) / sp;
+  const fadeAt = fallSec / sp * 1000 + sit;
+  setTimeout(() => { img.style.opacity = "0"; }, fadeAt);
+  setTimeout(() => { img.remove(); poopCount--; }, fadeAt + 1400);
+  // 承载面监测(3fps):窗口移走/消失 → 重新下落到下一表面(macOS resumeFall)
+  if (hwnd) {
+    const sc = scale ?? 1;
+    const poll = setInterval(async () => {
+      if (!img.isConnected) { clearInterval(poll); return; }
+      if (performance.now() < fadeAt - 500) return;   // 落定前不查
+      try {
+        const r = await (await import("@tauri-apps/api/core")).invoke("window_rect_cmd", { hwndVal: hwnd });
+        const gone = !r || (x * sc < r[0] || x * sc > r[0] + r[2]);
+        if (gone) {
+          clearInterval(poll);
+          // 找新落点:该 x 下方最近表面(简化:直接掉到传入的地面兜底 = landingY 下方一屏)
+          let nl = landingY + 600;
+          try {
+            const list = await (await import("@tauri-apps/api/core")).invoke("surfaces_below_cmd", { x: x * sc });
+            let best = -1e9;
+            for (const s2 of list) { const top = s2[1] / sc; if (top < landingY - 6 && top > best) best = top; }
+            if (best > -1e9) nl = best;
+          } catch { /* */ }
+          img.style.transition = `top ${Math.max(0.2, (nl - landingY) / 220 / sp)}s ease-in`;
+          requestAnimationFrame(() => { img.style.top = (nl - spr.h) + "px"; });
+        }
+      } catch { clearInterval(poll); }
+    }, 350);
+  }
 });
 
 // 特效(屏幕坐标):水花/音符/zzz/太阳。搬自 effects.ts(原在鸟窗内被 160px 裁剪)
@@ -91,8 +151,7 @@ listen("fx", (e) => {
   } else if (kind === "sun") {
     document.querySelector("div.fx-sun")?.remove();   // 单实例(防堆叠)
     const c = document.createElement("div");
-    c.classList.add("fx-sun");
-    c.className = "fx";
+    c.className = "fx fx-sun";   // 一行写全(classList 先加会被 className 覆盖 → 去重失效)
     c.style.left = (x - 60) + "px"; c.style.top = (y - 60) + "px";
     c.style.width = "120px"; c.style.height = "120px";
     const rays = imgEl("sun_rays", 120, 120); rays.classList.add("kf-sun-rot");
@@ -136,6 +195,10 @@ listen("shadow", (e) => {
   shadowImg.style.display = "block";
 });
 
+listen("stage-origin", (e) => {   // 舞台建在虚拟桌面原点,body 平移回 (0,0) 语义
+  const { x, y } = e.payload;
+  document.body.style.transform = `translate(${-x}px, ${-y}px)`;
+});
 emit("child-ready", "poop");   // 告诉主窗 listener 已注册(防首次 emit 丢失)
 </script>
 </body></html>
