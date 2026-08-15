@@ -221,7 +221,7 @@ async function startFly(minDist = 0) {
     // 35% 空中拉屎(macOS 同款):飞行途中从屁股掉一坨
     if (Math.random() < 0.35) {
       const g = gen, ax = o.x + 80 + (tx > o.x ? -50 : 50);
-      setTimeout(() => { if (gen === g) dropPoopAt(ax, o.y + 40); }, sp(0.3 + Math.random() * 0.4) * 1000);
+      setTimeout(() => { if (gen === g) dropPoopAt(ax, o.y + (SIZE - 40)); }, sp(0.3 + Math.random() * 0.4) * 1000);
     }
     animateFlight({ x: tx, y: ty }, 1.3, () => {
       if (feetY >= a.maxY - 40) branch.hideBranch();   // 落地(任务栏)→ 确保无枝
@@ -280,7 +280,7 @@ function startPoop() {
   getOrigin().then(async o => {
     // 屁股在朝向反侧(macOS: midX + facingRight ? -50 : 50)
     const buttX = o.x + 80 + (facingRight ? -50 : 50);
-    await dropPoopAt(buttX, o.y + 58);
+    await dropPoopAt(buttX, o.y + (SIZE - 58));   // 屁股距窗底 58(macOS 同款;顶左原点要翻)
   }).catch(() => {});
   hold(0.8, () => finish());
 }
