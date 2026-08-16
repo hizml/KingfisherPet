@@ -460,7 +460,7 @@ export function sleepForUserAbsence() {
   userSleeping = true;
   setSleepMuted(true);   // 睡眠期间不叫(macOS 同款);正在播的也停
   enter("sleep");
-  startZzzInterval();
+  // 不 startZzz:锁屏后是安全桌面看不见,整天 0.9s/次的 DOM churn 纯耗电;解锁赖床时再飘
 }
 
 export async function wakeFromUserAbsence() {
