@@ -217,6 +217,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         winCount = infos.filter { ($0[kCGWindowOwnerPID as String] as? Int32) == myPID }.count
                     }
                     kfLog("WATCHDOG cpu=\(String(format: "%.1f", cpu))% rss=\(String(format: "%.0f", rss))MB effects=\(Effect.active.count) windows=\(winCount) state=\(state) onWindow=\(onWin)")
+                    // 窗口数熔断:正常常驻 ≤10(鸟/影/枝/裂纹/屎≤8/池);超 30 = 出现未知泄漏
+                    // → 熔断重置;超 50(重置无效)→ 自我重启,宁可闪一下也不拖死机器
+                    if winCount > 30 {
+                        kfLog("⚠️ WINDOW LEAK: windows=\(winCount) > 30 → 熔断重置")
+                        self.emergencyReset()
+                    }
+                    if winCount > 50 {
+                        kfLog("🚨 WINDOW LEAK CRITICAL: windows=\(winCount) > 50 → 自我重启")
+                        Self.relaunchLeakGuard()
+                    }
                     if cpu > 40 {
                         highCpuStreak += 1
                         if highCpuStreak >= 3 {
@@ -237,6 +247,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func stopWatchdog() {
         watchdogTimer?.invalidate()
         watchdogTimer = nil
+    }
+
+    /// 泄漏终极兜底:重启进程(窗口对象全清,泄漏清零)。带冷却,防重启风暴。
+    private static var lastRelaunchAt: CFTimeInterval = 0
+    private static func relaunchLeakGuard() {
+        guard CACurrentMediaTime() - lastRelaunchAt > 300 else { return }   // 5 分钟冷却
+        lastRelaunchAt = CACurrentMediaTime()
+        let url = Bundle.main.bundleURL
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            kfLog("relaunching (leak guard)")
+            let proc = Process()
+            proc.launchPath = "/usr/bin/open"
+            proc.arguments = ["-n", url.path]
+            try? proc.run()
+            NSApp.terminate(nil)
+        }
     }
 
     /// 熔断重置:停一切 + 清一切 + 干净重启。不管根因是什么,保证不卡死系统。
