@@ -57,6 +57,7 @@ async function main() {
       else if (id === "sing") behavior.doSing();
       else if (id === "eat") behavior.doEat();
       else if (id === "fish") behavior.doFish();
+      else if (id === "recall") behavior.recallToScreen();   // 找回小鸟(坐标自愈逃生口)
       else if (id === "perch") behavior.doPerch();
       else if (id === "peck") behavior.doPeck();
       else if (id === "show") { behavior.isVisible() ? behavior.fallAway() : behavior.hatchIn(); }   // 显示/隐藏 toggle
@@ -65,10 +66,13 @@ async function main() {
     listen<string>("theme", (e) => setTheme(e.payload));   // 托盘主题菜单 → 切换 + reload
     listen<string>("setting", (e) => {
       const v = e.payload;
-      if (v === "sound") { setSound(!settings.soundOn); setSoundOn(settings.soundOn); }
+      if (v.startsWith("sound:")) { const on = v.split(":")[1] === "true"; setSound(on); setSoundOn(on); }
       else if (v.startsWith("activity:")) { setActivity(Number(v.split(":")[1])); }
       else if (v.startsWith("speed:")) { setSpeed(Number(v.split(":")[1])); }
     });
+    // 启动上报状态 → Rust 菜单勾选反映真实值
+    emit("ui-state", { theme: localStorage.getItem("kf_theme") || "flat",
+                      activity: settings.activity, speed: settings.speed, sound: settings.soundOn });
     listen("sleep", () => behavior.sleepForUserAbsence());   // Rust 监听到睡眠 → 鸟睡
     listen("wake", () => behavior.wakeFromUserAbsence());     // 唤醒 → 赖床 2–4 秒
     await behavior.start();
