@@ -678,8 +678,9 @@ final class Behavior: PetViewDelegate {
         view?.applyNow()
         shadow?.setVisible(true)
         window?.makeKeyAndOrderFront(nil)
-        view?.resumeAnimation()    // 重新显示:恢复逐帧 timer(fallAway 隐藏时 suspend 过)
+        view?.resumeAnimation()    // 重新显示:恢复全部常驻 timer(fallAway 挂起过的)
         branch?.resume()
+        poopCtl?.resume()
         hold(1.4) { [weak self] in
             guard let self = self else { return }
             self.finish()
@@ -704,9 +705,10 @@ final class Behavior: PetViewDelegate {
                 self.view?.state = "egg"
                 self.view?.applyNow()
                 self.busy = false
-                // 鸟隐藏:停逐帧/树枝 timer,避免 60fps 空转(hatchIn 重新显示时 resume)
+                // 鸟隐藏:停全部常驻 timer(逐帧/树枝/屎),零空转(hatchIn 时 resume)
                 self.view?.suspendAnimation()
                 self.branch?.suspend()
+                self.poopCtl?.suspend()
             }
         }
     }

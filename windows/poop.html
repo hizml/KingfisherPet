@@ -80,6 +80,7 @@ listen("poop-drop", async (e) => {
     let bad = 0;
     const poll = setInterval(async () => {
       if (!img.isConnected) { clearInterval(poll); return; }
+      if (stageDormant) return;                        // 睡眠:不轮询(夜里 IPC 零)
       if (performance.now() < fadeAt - 500) return;   // 落定前不查
       if (performance.now() < graceState.until) return;   // 唤醒宽限
       try {
@@ -208,6 +209,11 @@ listen("stage-origin", (e) => {   // 舞台建在虚拟桌面原点,body 平移�
   const { x, y } = e.payload;
   document.body.style.transform = `translate(${-x}px, ${-y}px)`;
 });
+// 睡眠/唤醒:暂停/恢复坐屎轮询(Rust 广播到所有窗口)
+let stageDormant = false;
+listen("sleep", () => { stageDormant = true; });
+listen("wake", () => { stageDormant = false; graceState.until = performance.now() + 3000; });
+
 emit("child-ready", "poop");   // 告诉主窗 listener 已注册(防首次 emit 丢失)
 </script>
 </body></html>
