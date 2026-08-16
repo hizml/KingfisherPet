@@ -147,7 +147,7 @@ private final class Poop {
         window.hasShadow = false
         window.level = NSWindow.Level(rawValue: 21)      // 高于 Dock、低于鸟
         window.ignoresMouseEvents = true
-        window.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        window.collectionBehavior = [.canJoinAllSpaces]   // 去 stationary:屎 close 后残留列表(夜间堆积)
         window.isReleasedWhenClosed = false   // Poop 持有引用;close() 已断开 WindowServer,对象随 Poop 释放
 
         let v = NSView(frame: NSRect(x: 0, y: 0, width: w, height: h))
