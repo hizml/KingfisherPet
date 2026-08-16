@@ -555,6 +555,21 @@ export async function callOver() {
 export function doSing() { if (!busy) startSing(); }
 export function doEat() { if (!busy) startEat(); }
 export function doFish() { if (!busy) startFish(); }
+
+/// 找回小鸟:无论现在在哪/什么状态,主屏右下角安全位重置(坐标 bug 逃生口)
+export async function recallToScreen() {
+  beginAction();
+  leavePerchWin();
+  branch.hideBranch();
+  try {
+    const a = await area();
+    if (!onScreen) { onScreen = true; await invoke("show_no_activate"); }
+    await setOrigin(a.maxX - SIZE - 30, a.maxY - FEET_FROM_TOP);
+  } catch (e) { emit("log", "recall " + e); }
+  enter("idle");
+  busy = false;
+  scheduleThink();
+}
 export function doPerch() { startPerchWindow(); }   // 菜单指定动作打断当前(macOS 同款不判 busy)
 export function doPeck() { startPeck(); }
 
@@ -583,6 +598,19 @@ export async function start() {
     } else {
       await setOrigin(a.maxX - SIZE - 30, a.maxY - FEET_FROM_TOP);
     }
+    // 坐标自愈:校验窗口(物理)确实落在某台显示器内;不在 → 回当前显示器安全位。
+    // 防 DPI/多屏换算错位把鸟丢屏外("没在屏幕里"的逃生口,启动即自愈)
+    try {
+      const p = await win.outerPosition();
+      const mons = await (win as any).availableMonitors();
+      const inside = (mons as any[]).some(m =>
+        p.x >= m.position.x - 20 && p.x <= m.position.x + m.size.width + 20 &&
+        p.y >= m.position.y - 20 && p.y <= m.position.y + m.size.height + 20);
+      if (!inside) {
+        emit("log", "start: 窗口在所有显示器外,自愈回安全位");
+        await setOrigin(a.maxX - SIZE - 30, a.maxY - FEET_FROM_TOP);
+      }
+    } catch { /* 校验失败不阻塞 */ }
   } catch (e) { console.error("start", e); }
   // 破壳登场:整蛋→裂纹→探头(macOS hatchIn 同款)再开始活动
   enter("egg");
