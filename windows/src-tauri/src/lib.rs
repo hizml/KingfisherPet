@@ -29,6 +29,15 @@ fn surfaces_below_cmd(x: f64) -> Vec<(f64, f64, f64, isize)> {
     crate::windows::surfaces_below(x)
 }
 
+#[tauri::command]
+fn stage_visibility(app: tauri::AppHandle, label: String, show: bool) {
+    // 舞台窗(poop/crack)隐藏/显示:睡眠时隐藏 → WebView2 停合成/挂起(省电);
+    // 显示走 NOACTIVATE 防抢前台焦点
+    if let Some(w) = app.get_webview_window(&label) {
+        if show { crate::windows::show_no_activate(&w); } else { let _ = w.hide(); }
+    }
+}
+
 /// 显示主窗但不激活(不抢用户前台焦点)。Windows 走 SetWindowPos(NOACTIVATE),
 /// 其他平台退化为普通 show。
 #[tauri::command]
@@ -186,7 +195,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate])
+        .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility])
         .setup(|app| {
             crate::system::setup_power(app.handle().clone());   // 睡眠/锁屏/唤醒 → emit sleep/wake
             // 前端 log 事件 → 终端(调试 webview 错)

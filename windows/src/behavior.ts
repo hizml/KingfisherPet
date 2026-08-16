@@ -459,6 +459,9 @@ export function sleepForUserAbsence() {
   beginAction();
   userSleeping = true;
   setSleepMuted(true);   // 睡眠期间不叫(macOS 同款);正在播的也停
+  // 节能:舞台窗隐藏 → WebView2 挂起(全屏透明层不合成);唤醒时恢复
+  invoke("stage_visibility", { label: "poop", show: false }).catch(() => {});
+  invoke("stage_visibility", { label: "crack", show: false }).catch(() => {});
   enter("sleep");
   // 不 startZzz:锁屏后是安全桌面看不见,整天 0.9s/次的 DOM churn 纯耗电;解锁赖床时再飘
 }
@@ -468,6 +471,8 @@ export async function wakeFromUserAbsence() {
   if (!onScreen) { userSleeping = false; return; }   // 隐藏鸟不复活(macOS 同款守卫)
   wakeGraceUntil = performance.now() + 2000;   // 唤醒宽限:窗口层级未稳,先别急着动作
   setSleepMuted(false);
+  invoke("stage_visibility", { label: "poop", show: true }).catch(() => {});   // 舞台恢复(鸟要阴影/特效)
+  invoke("stage_visibility", { label: "crack", show: true }).catch(() => {});
   try { await poop.wakeGrace(); } catch { /* */ }   // 坐着的屎 3s 内不误判重落
   enter("sleep");
   startZzzInterval();
@@ -642,6 +647,8 @@ export async function fallAway() {
     animateMove({ x: o.x, y: a.maxY + SIZE + 40 }, 0.85, async () => {
       try { await (win as any).hide(); } catch { /* */ }
       hideShadow();
+      invoke("stage_visibility", { label: "poop", show: false }).catch(() => {});   // 隐藏鸟:舞台也挂起(零耗)
+      invoke("stage_visibility", { label: "crack", show: false }).catch(() => {});
       enter("idle");
       busy = false;
     });
@@ -655,6 +662,8 @@ export async function hatchIn() {
     const a = await area();
     await setOrigin(a.maxX - SIZE - 30, a.maxY - FEET_FROM_TOP);
     await invoke("show_no_activate");   // 显示但不抢前台焦点
+    invoke("stage_visibility", { label: "poop", show: true }).catch(() => {});
+    invoke("stage_visibility", { label: "crack", show: true }).catch(() => {});
   } catch { /* */ }
   enter("egg");
   hold(1.4, () => { enter("idle"); scheduleThink(); });
