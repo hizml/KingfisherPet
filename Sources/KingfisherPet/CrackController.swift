@@ -22,7 +22,7 @@ final class CrackController {
         overlay.hasShadow = false
         overlay.level = .statusBar
         overlay.ignoresMouseEvents = true
-        overlay.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        overlay.collectionBehavior = [.canJoinAllSpaces]   // 去 stationary(隐藏后残留列表)
         overlay.isReleasedWhenClosed = false
         let v = NSView()
         v.wantsLayer = true

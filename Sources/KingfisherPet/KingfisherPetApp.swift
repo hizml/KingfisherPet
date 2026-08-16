@@ -164,11 +164,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// 看门狗:定期记录资源占用。卡死时日志里有铁证。
+    private var watchdogTimer: Timer?
+
     private func startWatchdog() {
+        guard watchdogTimer == nil else { return }
         let pid = ProcessInfo.processInfo.processIdentifier
         var highCpuStreak = 0
         var watchdogBusy = false   // 防重入:上一个 ps 没完成不 fork 新的
-        Timer.scheduledTimer(withTimeInterval: 15.0, repeats: true) { [weak self] _ in   // 15s:熔断需 3 连击=45s,5s 的 fork 唤醒太频(省电)
+        let timer = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: true) { [weak self] _ in   // 15s:熔断需 3 连击=45s,5s 的 fork 唤醒太频(省电)
             guard let self = self else { return }
             guard !watchdogBusy else { return }   // 上一个 ps 还没完(系统高负载时 ps 会慢),跳过
             watchdogBusy = true
@@ -227,6 +230,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        watchdogTimer = timer
+    }
+
+    /// 睡眠/锁屏时停 watchdog(夜里每 15s fork ps + 全窗口枚举,纯耗电)
+    private func stopWatchdog() {
+        watchdogTimer?.invalidate()
+        watchdogTimer = nil
     }
 
     /// 熔断重置:停一切 + 清一切 + 干净重启。不管根因是什么,保证不卡死系统。
@@ -273,7 +283,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     let myPID = ProcessInfo.processInfo.processIdentifier
                     winCount = infos.filter { ($0[kCGWindowOwnerPID as String] as? Int32) == myPID }.count
                 }
-                let ok = okStates.contains(st) && winCount >= 3 && winCount <= 6
+                let ok = okStates.contains(st) && winCount >= 2 && winCount <= 8   // 去 stationary 后隐藏的覆盖层真正离列表,常驻 2-8
                 done(ok, "state=\(st) windows=\(winCount)")
             }
         case "sleepwake":
@@ -486,6 +496,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 系统睡眠前:鸟入睡 + 停所有常驻 timer(逐帧/屎/树枝,防唤醒补发堆积卡死)+ 清场 + 隐藏裂纹。
     @objc private func systemWillSleep() {
         kfLog("willSleep effects=\(Effect.active.count)")
+        stopWatchdog()
         petController?.behavior.sleepForUserAbsence(systemSleep: true)
         petController?.petView.suspendAnimation()
         poopCtl?.suspend()
@@ -502,7 +513,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         crackCtl?.setVisible(true)
         // 恢复延迟 3s:等系统唤醒完(重建窗口/网络),鸟再醒(叠加 2-4s 赖床)
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
-            guard let self = self else { return }
+            guard let self = self, !self.displayAsleep else { return }   // DarkWake:不恢复
             // 鸟隐藏着(fallAway 挂起了 60fps)不恢复——否则锁屏一晚空转 CPU
             if self.petController?.behavior.isVisible == true {
                 self.petController?.petView.resumeAnimation()
@@ -517,6 +528,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 锁屏:鸟入睡(进程不挂起,自然 sleep + zzz + 禁声)。不清场,特效自然到期。
     @objc private func screenLocked() {
         kfLog("screenLocked effects=\(Effect.active.count)")
+        stopWatchdog()
         petController?.behavior.sleepForUserAbsence(systemSleep: false)
         petController?.petView.suspendAnimation()   // 锁屏屏幕黑:停所有常驻 timer,防长时间高 CPU 发烫卡死
         poopCtl?.suspend()
@@ -534,6 +546,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 黑屏入睡(合盖只熄屏场景):鸟睡 + 停常驻定时器(跟锁屏同一条路)
     @objc private func screenDidSleep() {
         kfLog("screensDidSleep")
+        stopWatchdog()
         petController?.behavior.sleepForUserAbsence(systemSleep: false)
         petController?.petView.suspendAnimation()
         poopCtl?.suspend()
@@ -546,14 +559,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         resumeAfterWake()
     }
 
-    /// 唤醒/解锁/亮屏统一恢复入口:1.5s 宽限 + 幂等(多个信号连发只生效一次)
+    /// 显示器是否还睡着(DarkWake:系统醒着维护但屏幕没亮)。
+    /// 夜里 UURemote 等会引发 DarkWake↔Sleep 每分钟震荡——真唤醒处理会让鸟
+    /// 通宵反复满血活动(实测窗口泄漏+电量狂掉)。DarkWake 一律无视。
+    private var displayAsleep: Bool {
+        CGDisplayIsAsleep(CGMainDisplayID()) != 0
+    }
+
+    /// 唤醒/解锁/亮屏统一恢复入口:3s 宽限 + 幂等(多个信号连发只生效一次)
     private var wakeResumeScheduled = false
     private func resumeAfterWake() {
         guard !wakeResumeScheduled else { return }
+        if displayAsleep {
+            kfLog("wake skipped: display asleep (DarkWake)")   // 屏还黑:不恢复,维持睡眠态
+            return
+        }
         wakeResumeScheduled = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
             guard let self = self else { return }
             self.wakeResumeScheduled = false
+            self.startWatchdog()
             if self.petController?.behavior.isVisible == true {   // 隐藏鸟不空转
                 self.petController?.petView.resumeAnimation()
                 self.poopCtl?.resume()

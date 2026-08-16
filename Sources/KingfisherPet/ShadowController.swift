@@ -23,7 +23,7 @@ final class ShadowController {
         overlay.hasShadow = false
         overlay.level = .floating
         overlay.ignoresMouseEvents = true
-        overlay.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        overlay.collectionBehavior = [.canJoinAllSpaces]   // 去 stationary
         overlay.isReleasedWhenClosed = false
 
         let v = NSView()

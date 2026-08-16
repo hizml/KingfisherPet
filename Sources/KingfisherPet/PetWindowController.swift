@@ -20,7 +20,7 @@ final class PetWindowController: NSWindowController, NSWindowDelegate {
         window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
         window.isMovable = false
         window.isMovableByWindowBackground = false
-        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]   // 去 stationary(close 后残留窗列表;鸟常驻无影响,统一清掉)
         window.animationBehavior = .none
         window.ignoresMouseEvents = false
         window.isReleasedWhenClosed = false

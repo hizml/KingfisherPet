@@ -21,7 +21,7 @@ final class Effect {
         w.hasShadow = false
         w.level = level
         w.ignoresMouseEvents = true
-        w.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        w.collectionBehavior = [.canJoinAllSpaces]   // 去 stationary:短命特效必须能真正销毁
         // ARC 下必须 false:true 会让 AppKit 在 close() 时额外 release → 过度释放,
         // 下一次 CA 提交摸到野指针直接段错误(_NSWindowTransformAnimation dealloc 崩溃)
         w.isReleasedWhenClosed = false
@@ -180,36 +180,77 @@ enum Effects {
         e.close(after: sp(1.6))
     }
 
-    /// 睡眠 zzz:在 point(鸟头上方)放一个主题 z 贴图,上浮 + 漂移 + 淡出
-    static func zzz(at point: CGPoint, on screen: NSScreen?) {
-        let size = CGSize(width: 90, height: 130)
-        // 让窗口底部对齐 point(鸟头),z 从这里往上飞
-        let center = CGPoint(x: point.x, y: point.y + size.height / 2)
-        let e = Effect(centeredAt: center, size: size, on: screen, level: .statusBar) { v in
-            guard let layer = v.layer else { return }
-            let sz = CGFloat.random(in: 28...40)
-            let z = CALayer()
-            z.bounds = CGRect(x: 0, y: 0, width: sz, height: sz)
-            z.contents = effectImage("zzz")
-            z.contentsGravity = .resize
-            let startX = size.width / 2 + CGFloat.random(in: -12...12)
-            let startY: CGFloat = 14                        // 窗口底部 ≈ 鸟头
-            z.position = CGPoint(x: startX, y: startY)
+    /// 睡眠 zzz(池化窗口):打盹每 0.9s 一个 z,原来每 tick 新建 NSWindow——
+    /// 夜间 DarkWake 高频活动时窗口泄漏堆积几十个(实测 3 分钟 7→98),把机器拖死。
+    /// 改为一个常驻复用窗口:每次只重建动画层,空闲 3s 自动 orderOut(窗口保留复用)。
+    private static let zzzSize = CGSize(width: 90, height: 130)
+    private static var zzzWin: NSWindow?
+    private static var zzzLastAt: CFTimeInterval = 0
+    private static var zzzIdleTimer: Timer?
 
-            let pos = CABasicAnimation(keyPath: "position")
-            pos.fromValue = NSValue(point: CGPoint(x: startX, y: startY))
-            pos.toValue = NSValue(point: CGPoint(x: startX + CGFloat.random(in: -18...18),
-                                                 y: size.height - 14))
-            pos.duration = sp(1.8)
-            let op = CAKeyframeAnimation(keyPath: "opacity")
-            op.values = [0, 1, 1, 0]
-            op.keyTimes = [0, 0.12, 0.7, 1]
-            op.duration = sp(1.8)
-            z.opacity = 0
-            z.add(pos, forKey: "p"); z.add(op, forKey: "o")
-            layer.addSublayer(z)
+    static func zzz(at point: CGPoint, on screen: NSScreen?) {
+        let size = zzzSize
+        let w: NSWindow
+        if let existing = zzzWin {
+            w = existing
+            w.setFrameOrigin(CGPoint(x: point.x - size.width / 2, y: point.y))
+        } else {
+            w = NSWindow(contentRect: NSRect(x: point.x - size.width / 2, y: point.y,
+                                             width: size.width, height: size.height),
+                         styleMask: .borderless, backing: .buffered, defer: false, screen: screen)
+            w.isOpaque = false
+            w.backgroundColor = .clear
+            w.hasShadow = false
+            w.level = .statusBar
+            w.ignoresMouseEvents = true
+            w.collectionBehavior = [.canJoinAllSpaces]   // 去 stationary(池化 zzz 窗也要能收干净)
+            w.isReleasedWhenClosed = false
+            let v = NSView(frame: NSRect(origin: .zero, size: size))
+            v.wantsLayer = true
+            v.layer = CALayer()
+            w.contentView = v
+            zzzWin = w
         }
-        e.close(after: sp(1.9))
+        guard let layer = w.contentView?.layer else { return }
+        w.orderFrontRegardless()
+
+        // 重建动画层(旧的丢弃)
+        layer.sublayers?.forEach { $0.removeFromSuperlayer() }
+        let sz = CGFloat.random(in: 28...40)
+        let z = CALayer()
+        z.bounds = CGRect(x: 0, y: 0, width: sz, height: sz)
+        z.contents = effectImage("zzz")
+        z.contentsGravity = .resize
+        let startX = size.width / 2 + CGFloat.random(in: -12...12)
+        let startY: CGFloat = 14                        // 窗口底部 ≈ 鸟头
+        z.position = CGPoint(x: startX, y: startY)
+
+        let pos = CABasicAnimation(keyPath: "position")
+        pos.fromValue = NSValue(point: CGPoint(x: startX, y: startY))
+        pos.toValue = NSValue(point: CGPoint(x: startX + CGFloat.random(in: -18...18),
+                                             y: size.height - 14))
+        pos.duration = sp(1.8)
+        let op = CAKeyframeAnimation(keyPath: "opacity")
+        op.values = [0, 1, 1, 0]
+        op.keyTimes = [0, 0.12, 0.7, 1]
+        op.duration = sp(1.8)
+        z.opacity = 0
+        z.add(pos, forKey: "p"); z.add(op, forKey: "o")
+        layer.addSublayer(z)
+
+        // 空闲 3s(打盹结束)→ 收窗口(隐藏,保留复用)
+        zzzLastAt = CACurrentMediaTime()
+        if zzzIdleTimer == nil {
+            let t = Timer(timeInterval: 1.0, repeats: true) { _ in
+                if CACurrentMediaTime() - Effects.zzzLastAt > 3.0 {
+                    Effects.zzzWin?.orderOut(nil)
+                    Effects.zzzIdleTimer?.invalidate()
+                    Effects.zzzIdleTimer = nil
+                }
+            }
+            RunLoop.main.add(t, forMode: .common)
+            zzzIdleTimer = t
+        }
     }
 
     /// 日光浴的太阳:在 point 处一个旋转光芒 + 脉冲的太阳盘,持续 duration 秒

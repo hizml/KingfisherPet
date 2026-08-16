@@ -30,7 +30,7 @@ final class BranchController {
         overlay.hasShadow = false
         overlay.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)  // 和鸟同层
         overlay.ignoresMouseEvents = true
-        overlay.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        overlay.collectionBehavior = [.canJoinAllSpaces]   // 去 stationary:close/orderOut 后才会真正离窗列表
         overlay.isReleasedWhenClosed = false
 
         let v = NSView(frame: NSRect(origin: .zero, size: overlaySize))
