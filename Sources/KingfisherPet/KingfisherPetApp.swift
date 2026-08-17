@@ -649,7 +649,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert.icon = img
         }
         if alert.runModal() == .alertFirstButtonReturn {
-            NSWorkspace.shared.open(URL(string: "https://github.com/hizml")!)
+            NSWorkspace.shared.open(URL(string: "https://github.com/hizml/KingfisherPet")!)   // 仓库地址
         }
     }
 
