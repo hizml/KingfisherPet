@@ -324,7 +324,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self = self else { return }
                 let beh = self.petController?.behavior
                 let st = beh?.currentStateForLog() ?? "?"
-                let ok = (beh?.isVisible ?? false) && ["idle","sleep"].contains(st) && Effect.active.count <= 3
+                let okStates: Set<String> = ["idle","walk","fly","sing","watch","sun","sleep","eat","peck","poop","happy"]
+                let ok = (beh?.isVisible ?? false) && okStates.contains(st) && Effect.active.count <= 3   // 苏醒后 think 已开跑,任意合法状态
                 done(ok, "state=\(st) effects=\(Effect.active.count) visible=\(beh?.isVisible ?? false)")
                 // 注:唤醒后 refall=0(屎不重落)由 runner 在日志段内 grep 断言
             }
