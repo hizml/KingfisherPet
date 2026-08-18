@@ -594,6 +594,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
             guard let self = self else { return }
             self.wakeResumeScheduled = false
+            // 竞态守卫:3 秒窗口内又合盖/黑屏(开盖看了眼就合)→ 屏已灭,不复活任何东西。
+            // 之前 v1.4.10 重构丢了这个复查:黑屏上重启 watchdog+30fps timer,状态污染到下次开盖
+            if self.displayAsleep {
+                kfLog("wake resume cancelled: display asleep in 3s window")
+                return
+            }
             self.startWatchdog()
             if self.petController?.behavior.isVisible == true {   // 隐藏鸟不空转
                 self.petController?.petView.resumeAnimation()

@@ -38,8 +38,9 @@ run_one() {
   echo "$result" | grep -q " FAIL " && rc=1   # 结果行本身 FAIL 也计入
   case "$name" in
     sleepwake)
-      # 唤醒段(didWake 之后)不应有屎重落(屎雨回归)——段内 refall 计数为 0
-      local refalls=$(awk '/didWake effects=/{f=1} /TEST sleepwake/{f=0} f' "$LOG" | grep -c "POOP refall" || true)
+      # 唤醒段(didWake 后)不应有屎重落——只统计【本次运行】日志段
+      # (全文件扫描会把上次真实唤醒后的正常白天屎重落计入,误报)
+      local refalls=$(tail -n +"$((before+1))" "$LOG" | awk '/didWake effects=/{f=1} /TEST sleepwave/{f=0} f' | grep -c "POOP refall" || true)
       if [ "$refalls" -gt 0 ]; then echo "  ❌ 唤醒后屎重落 x$refalls(屎雨回归!)"; rc=1
       else echo "  ✅ 唤醒后 0 重落"; fi
       # 入睡段必须有 suspend(定时器全停)
