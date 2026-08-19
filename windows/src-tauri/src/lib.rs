@@ -59,6 +59,31 @@ fn show_no_activate(app: tauri::AppHandle) {
     }
 }
 
+/// 找回小鸟(Rust 直操,不依赖前端):鸟窗移到光标所在屏工作区右下角并显示,
+/// 舞台窗(阴影/树枝/屎)一并恢复——之前前端 recall 只救鸟窗不救舞台,
+/// 找回后永远没树枝/阴影。最后延迟 emit 让前端复位状态(鸟窗刚恢复时事件会丢)。
+fn recall_internal(app: &tauri::AppHandle) {
+    use tauri::Emitter;
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = crate::windows::recall_show(&w);
+    }
+    for label in ["poop", "crack"] {
+        if let Some(w) = app.get_webview_window(label) {
+            crate::windows::show_no_activate(&w);
+        }
+    }
+    let h = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        let _ = h.emit("menu", "recall");
+    });
+}
+
+#[tauri::command]
+fn recall_cmd(app: tauri::AppHandle) {
+    recall_internal(&app);
+}
+
 /// 界面语言:系统首选语言 zh 开头 → 中文,否则英文。
 /// 用 reg.exe 查注册表(纯 std + CommandExt,不依赖 windows crate feature——
 /// Win32_Globalization 在 CI 上 feature 门控行为不稳,E0433)。
@@ -207,7 +232,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd])
+        .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, recall_cmd])
         .setup(|app| {
             crate::system::setup_power(app.handle().clone());   // 睡眠/锁屏/唤醒 → emit sleep/wake
             // 前端 log 事件 → 终端(调试 webview 错)
@@ -254,7 +279,16 @@ pub fn run() {
                             drop(ui);
                             refresh_menu(&handle);
                         }
-                        "recall" => { let _ = app.emit("menu", "recall"); }
+                        "recall" => { recall_internal(&handle); }   // Rust 直操(前端状态废掉也能救回)
+                        "show" => {
+                            // 鸟窗隐藏时前端收不到事件(或不可靠):先 Rust 侧救回,
+                            // 走 recall 链路(移安全位+恢复舞台+延迟复位);可见时正常走前端 toggle
+                            let hidden = app.get_webview_window("main")
+                                .map(|w| !w.is_visible().unwrap_or(true))
+                                .unwrap_or(false);
+                            if hidden { recall_internal(&handle); }
+                            else { let _ = app.emit("menu", "show"); }
+                        }
                         _ if id.starts_with("theme_") => {
                             let t = id.trim_start_matches("theme_").to_string();
                             UI.lock().unwrap().theme = Box::leak(t.into_boxed_str());

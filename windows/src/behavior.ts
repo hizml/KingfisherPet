@@ -562,14 +562,21 @@ export function doSing() { if (!busy) startSing(); }
 export function doEat() { if (!busy) startEat(); }
 export function doFish() { if (!busy) startFish(); }
 
-/// 找回小鸟:无论现在在哪/什么状态,主屏右下角安全位重置(坐标 bug 逃生口)
+/// 找回小鸟:光标所在屏右下角安全位重置(坐标 bug 逃生口)。
+/// 主链路在 Rust(recall_cmd,Win32 直操不依赖前端);这里处理延迟发来的状态复位。
 export async function recallToScreen() {
   beginAction();
   leavePerchWin();
   branch.hideBranch();
   try {
     const a = await area();
-    if (!onScreen) { onScreen = true; await invoke("show_no_activate"); }
+    if (!onScreen) {
+      onScreen = true;
+      await invoke("show_no_activate");
+      // 舞台窗一并恢复(之前漏了:找回后没阴影/没树枝/不拉屎的根源)
+      invoke("stage_visibility", { label: "poop", show: true }).catch(() => {});
+      invoke("stage_visibility", { label: "crack", show: true }).catch(() => {});
+    }
     await setOrigin(a.maxX - SIZE_P() - 30 * _scale, a.maxY - FEET_BOT_P());
   } catch (e) { emit("log", "recall " + e); }
   enter("idle");
