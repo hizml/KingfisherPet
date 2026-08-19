@@ -26,8 +26,10 @@ listen<string>("theme", (e) => { theme = e.payload; loadThemeColors(theme); });
 
 const MAX_CRACKS = 8;                        // 上限(macOS maxCracks=8)
 let cracks = [];                             // {x,y,r}
+const DPR = window.devicePixelRatio || 1;
 listen("crack-at", (e) => {
-  const { x, y } = e.payload;
+  const { x: cx0, y: cy0 } = e.payload;
+  const x = cx0 / DPR, y = cy0 / DPR;   // 物理 → CSS
   // 55px 内已有裂纹 → 扩大;否则新建(到上限不建)。macOS peck 合并/生长
   let near = null;
   for (let i = cracks.length - 1; i >= 0; i--) {

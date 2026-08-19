@@ -12,10 +12,10 @@ const petWin = getCurrentWindow();
 async function fx(kind: string, x: number, y: number, dur = 0) {
   try {
     await ensurePoopStage();   // 特效舞台 = 屎全屏窗(已建好,幂等)
-    const p = await petWin.outerPosition();   // 物理
+    const p = await petWin.outerPosition();   // 窗口物理原点
     const sc = await petWin.scaleFactor();
-    // 屏幕逻辑 = 窗口物理原点/scale + 窗口内逻辑偏移(x/y 是 local 逻辑)
-    await emit("fx", { kind, x: p.x / sc + x, y: p.y / sc + y, dur, spd: settings.speed });
+    // 屏幕物理 = 窗口原点 + 本地逻辑偏移×sc(全链物理,接收侧舞台自会 /dpr)
+    await emit("fx", { kind, x: p.x + x * sc, y: p.y + y * sc, dur, spd: settings.speed });
   } catch { /* */ }
 }
 

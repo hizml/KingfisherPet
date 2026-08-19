@@ -3,7 +3,7 @@
 // 窗口定位用 LogicalPosition。之前物理/逻辑混用,在 125%/150% 缩放下
 // 脚位、树枝、地面全部错位(鸟落不到树枝上的根源之一)。
 
-import { getCurrentWindow, LogicalPosition } from "@tauri-apps/api/window";
+import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
 import type { Window as TauriWindow } from "@tauri-apps/api/window";
 import { emit } from "@tauri-apps/api/event";
 import type { SpriteLibrary } from "./sprite";
@@ -17,9 +17,14 @@ import { settings } from "./settings";
 import { setSleepMuted } from "./audio";
 
 const win: TauriWindow = getCurrentWindow();
-const SIZE = 160;      // 窗口逻辑宽高
-const FEET_OFFSET = 26;                       // 脚距窗口底(Mac 底左原点语义)
-const FEET_FROM_TOP = SIZE - FEET_OFFSET;    // Windows 顶左原点:脚距窗口顶 = 134
+const SIZE = 160;      // 窗口逻辑宽高(sprite 内部逻辑像素)
+const FEET_OFFSET = 26;                       // 脚距窗口底(逻辑)
+const FEET_FROM_TOP = SIZE - FEET_OFFSET;    // 顶左原点:脚距窗口顶(逻辑)
+/// 屏幕坐标全部【物理像素】(Win32 原生、Rust 命令一致);
+/// 逻辑→物理换算的唯一出口,杜绝 LogicalPosition 按窗口 DPI 漂移的整类 bug:
+const SIZE_P = () => SIZE * _scale;           // 窗口物理宽
+const FEET_TOP_P = () => FEET_FROM_TOP * _scale;   // 窗口顶到脚(物理)
+const FEET_BOT_P = () => FEET_OFFSET * _scale;     // 窗口底到脚(物理)
 
 let lib: SpriteLibrary;
 let setState: (s: string) => void;
@@ -43,36 +48,31 @@ async function scale(): Promise<number> {
   } catch { /* */ }
   return _scale;
 }
-const toLog = (v: number) => v / _scale;   // 物理 → 逻辑(先 await scale() 过)
 
 async function area(): Promise<{ minX: number; minY: number; maxX: number; maxY: number }> {
+  // 物理像素。Rust 直查鸟所在显示器的工作区(MonitorFromWindow + rcWork):
+  // 任务栏已真实扣除(任意边),不再猜 70px,DPI 无关
   try {
-    const sc = await scale();
-    const m = await (win as any).currentMonitor();   // Tauri Window.currentMonitor(TS lib DOM Window 类型冲突,局部 cast)
-    // 多屏:monitor.position 是全局物理原点(副屏可能为负),转逻辑后 clamp
-    if (m) return {
-      minX: toLog(m.position.x), minY: toLog(m.position.y),
-      maxX: toLog(m.position.x + m.size.width),
-      maxY: toLog(m.position.y + m.size.height) - 70 / sc,   // -70 物理预留任务栏 → 逻辑
-    };
+    await scale();   // 顺带刷新 _scale(供 SIZE_P 等用)
+    const wa = await invoke<[number, number, number, number] | null>("work_area_cmd");
+    if (wa) return { minX: wa[0], minY: wa[1], maxX: wa[0] + wa[2], maxY: wa[1] + wa[3] };
   } catch (e) { emit("log", "area " + e); }
-  return { minX: 0, minY: 0, maxX: 1280, maxY: 730 };
+  return { minX: 0, minY: 0, maxX: 1920, maxY: 1040 };   // 兜底
 }
 
 async function getOrigin(): Promise<{ x: number; y: number }> {
-  await scale();                 // 刷新 _scale(物理→逻辑换算用)
-  const p = await win.outerPosition();
-  return { x: toLog(p.x), y: toLog(p.y) };
+  const p = await win.outerPosition();   // 物理像素,直用
+  return { x: p.x, y: p.y };
 }
 
 async function setOrigin(x: number, y: number) {
   try {
-    await win.setPosition(new LogicalPosition(Math.round(x), Math.round(y)));
+    await win.setPosition(new PhysicalPosition(Math.round(x), Math.round(y)));   // 物理,免 DPI 漂移
     onMoved(x, y);
     // 位置记忆(节流 1s 存一次,防高频移动刷 localStorage)
     if (!savePosAt) savePosAt = setTimeout(() => {
       savePosAt = null;
-      localStorage.setItem("kf_x", String(Math.round(x)));
+      localStorage.setItem("kf_x", String(Math.round(x)));   // 物理
       localStorage.setItem("kf_y", String(Math.round(y)));
     }, 1000);
   } catch (e) { emit("log", "setOrigin err x=" + x + " y=" + y + ": " + e); }
@@ -108,7 +108,7 @@ function startPerchCheck() {
     try {
       const r = await invoke<[number, number, number, number] | null>("window_rect_cmd", { hwndVal: hwnd });
       if (!r) { stopPerchCheck(); startFly(300); return; }   // 窗口没了 → 飞远
-      const wx = toLog(r[0]), wy = toLog(r[1]);   // 物理 → 逻辑
+      const wx = r[0], wy = r[1];   // 物理直用
       if (!lastPerchRect) { lastPerchRect = { x: wx, y: wy }; return; }
       const dx = wx - lastPerchRect.x, dy = wy - lastPerchRect.y;
       if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
@@ -176,22 +176,22 @@ async function startWalk() {
   try {
     const a = await area();
     const o = await getOrigin();
-    const onGround = o.y + FEET_FROM_TOP >= a.maxY - 40;      // 脚贴近任务栏顶
+    const onGround = o.y + FEET_TOP_P() >= a.maxY - 40 * _scale;      // 脚贴近任务栏顶
     if (!onGround && perched == null) { finish(); return; }   // 空中/半空 → 不走,回 idle(macOS 同款)
     const dir = Math.random() < 0.5 ? 1 : -1;
     const dist = 80 + Math.random() * 120;
-    const tx = Math.min(Math.max(o.x + dir * dist, a.minX), a.maxX - SIZE);
+    const tx = Math.min(Math.max(o.x + dir * dist, a.minX), a.maxX - SIZE_P());
     if (Math.abs(tx - o.x) < 20) { finish(); return; }
     setFacing(tx > o.x);
     animateMove({ x: tx, y: o.y }, Math.max(0.6, Math.abs(tx - o.x) / 70), async () => {
       // 走完:在窗口上走到边(脚不在窗口横向范围)→ 飞远
-      if (perched != null && !(o.y + FEET_FROM_TOP >= a.maxY - 40)) {
+      if (perched != null && !(o.y + FEET_TOP_P() >= a.maxY - 40 * _scale)) {
         try {
           await scale();
           const r = await invoke<[number, number, number, number] | null>("window_rect_cmd", { hwndVal: perched });
           if (r) {
-            const wx0 = toLog(r[0]), wx1 = toLog(r[0] + r[2]);
-            const midX = tx + SIZE / 2;
+            const wx0 = r[0], wx1 = r[0] + r[2];
+            const midX = tx + SIZE_P() / 2;
             // 还在窗口横向范围内 → 走完恢复栖窗跟随(macOS afterWalk)
             if (midX >= wx0 - 10 && midX <= wx1 + 10) {
               perchedHwnd = perched; lastPerchRect = null; startPerchCheck();
@@ -220,22 +220,22 @@ async function startFly(minDist = 0) {
     const o = await getOrigin();
     let tx = o.x, ty = o.y;
     for (let i = 0; i < 8; i++) {   // 重选直到够远(或用完次数)
-      tx = a.minX + Math.random() * (a.maxX - a.minX - SIZE);
-      ty = Math.random() < 0.5 ? (a.maxY - FEET_FROM_TOP) : a.minY;
+      tx = a.minX + Math.random() * (a.maxX - a.minX - SIZE_P());
+      ty = Math.random() < 0.5 ? (a.maxY - FEET_BOT_P()) : a.minY;
       if (Math.hypot(tx - o.x, ty - o.y) >= minDist) break;
     }
     setFacing(tx > o.x);
     branch.hideBranch();   // 起飞 → 先收当前树枝
     // 落点悬空(脚高于任务栏区)→ 树枝先到(屏幕坐标预显,对应 macOS perchBranchIfNeeded)
-    const feetY = ty + FEET_FROM_TOP;
-    if (feetY < a.maxY - 40) branch.showBranchAt(tx + SIZE / 2, feetY);
+    const feetY = ty + FEET_TOP_P();
+    if (feetY < a.maxY - 40 * _scale) branch.showBranchAt(tx + SIZE_P() / 2, feetY);
     // 35% 空中拉屎(macOS 同款):飞行途中从屁股掉一坨
     if (Math.random() < 0.35) {
       const g = gen, ax = o.x + 80 + (tx > o.x ? -50 : 50);
-      setTimeout(() => { if (gen === g) dropPoopAt(ax, o.y + (SIZE - 40)); }, sp(0.3 + Math.random() * 0.4) * 1000);
+      setTimeout(() => { if (gen === g) dropPoopAt(ax, o.y + (SIZE - 40) * _scale); }, sp(0.3 + Math.random() * 0.4) * 1000);
     }
     animateFlight({ x: tx, y: ty }, 1.3, () => {
-      if (feetY >= a.maxY - 40) branch.hideBranch();   // 落地(任务栏)→ 确保无枝
+      if (feetY >= a.maxY - 40 * _scale) branch.hideBranch();   // 落地(任务栏)→ 确保无枝
       finish();
     });
   } catch (e) { console.error("fly", e); finish(); }
@@ -277,8 +277,8 @@ function peckBurst(remaining: number, willCrack: boolean) {
   if (willCrack) {
     getOrigin().then(o => {
       // 鸟嘴屏幕坐标:嘴尖在朝向一侧(macOS: minX + facingRight ? 156 : 4)
-      const bx = o.x + (facingRight ? 156 : 4);
-      crack.crackAt(bx, o.y + (SIZE - 72));   // Mac 距底 72 → 顶 88
+      const bx = o.x + (facingRight ? 156 : 4) * _scale;
+      crack.crackAt(bx, o.y + (SIZE - 72) * _scale);   // Mac 距底 72 → 顶 88
     }).catch(() => {});
   }
   hold(0.3, () => {
@@ -291,8 +291,8 @@ function startPoop() {
   beginAction(); enter("poop");
   getOrigin().then(async o => {
     // 屁股在朝向反侧(macOS: midX + facingRight ? -50 : 50)
-    const buttX = o.x + 80 + (facingRight ? -50 : 50);
-    await dropPoopAt(buttX, o.y + (SIZE - 58));   // 屁股距窗底 58(macOS 同款;顶左原点要翻)
+    const buttX = o.x + (80 + (facingRight ? -50 : 50)) * _scale;
+    await dropPoopAt(buttX, o.y + (SIZE - 58) * _scale);   // 屁股距窗底 58(macOS 同款;顶左原点要翻)
   }).catch(() => {});
   hold(0.8, () => finish());
 }
@@ -307,7 +307,7 @@ async function dropPoopAt(x: number, y: number) {
     try {
       const list = await invoke<[number, number, number, number][]>("surfaces_below_cmd", { x: x * sc });
       for (const s of list) {
-        const top = toLog(s[1]);
+        const top = s[1];
         if (top < y - 6 && top > best) { best = top; landHwnd = s[3]; }   // 在屎下方且更高的表面
       }
     } catch { /* */ }
@@ -325,11 +325,11 @@ async function startPerchWindow() {
     const sc = await scale();
     const perch = await invoke<[number, number, number] | null>("front_perch_cmd", { birdW: SIZE * sc });   // Rust 收物理
     if (!perch) { finish(); return; }
-    const px = toLog(perch[0]), py = toLog(perch[1]);   // 物理 → 逻辑
-    if (py - FEET_FROM_TOP < (await area()).minY) { startFly(300); return; }   // 窗台太高,头会出屏 → 不停
+    const px = perch[0], py = perch[1];   // 物理直用
+    if (py - FEET_TOP_P() < (await area()).minY) { startFly(300); return; }   // 窗台太高,头会出屏 → 不停
     const o = await getOrigin();
     setFacing(px > o.x);
-    animateFlight({ x: px, y: py - FEET_FROM_TOP }, 1.1, () => {   // 脚踩窗口上沿
+    animateFlight({ x: px, y: py - FEET_BOT_P() }, 1.1, () => {   // 脚踩窗口上沿
       // 记住栖的窗口(HWND+矩形),增量跟随
       perchedHwnd = perch[2];
       lastPerchRect = null;
@@ -346,7 +346,7 @@ async function startDart() {
     const a = await area();
     const o = await getOrigin();
     const toLeft = Math.random() < 0.5;
-    const tx = toLeft ? a.minX + 20 : a.maxX - SIZE - 20;
+    const tx = toLeft ? a.minX + 20 : a.maxX - SIZE_P() - 20;
     setFacing(!toLeft);
     animateMove({ x: tx, y: o.y }, 0.55, () => finish());
   } catch (e) { finish(); }
@@ -360,21 +360,21 @@ async function startFish() {
   try {
     const a = await area();
     const o = await getOrigin();
-    const half = SIZE / 2;
+    const half = SIZE_P() / 2;
     const targetX = Math.min(Math.max(a.minX + half + 40 + Math.random() * (a.maxX - a.minX - SIZE - 80), a.minX), a.maxX - SIZE);   // 随机俯冲列
     setFacing(targetX + half > o.x + 80);
     animateFlight({ x: targetX, y: a.minY }, 1.0, () => {
       enter("hover");                                   // 悬停瞄准(macOS 同款)
       hold(0.7, () => {
         enter("dive");
-        animateMove({ x: targetX, y: a.maxY - FEET_FROM_TOP }, 0.5, () => {  // 俯冲到地面
+        animateMove({ x: targetX, y: a.maxY - FEET_BOT_P() }, 0.5, () => {  // 俯冲到地面
           enter("fly_fish");
           effects.splash(80, 140);                        // 水花(鸟嘴 local)
           hold(0.5, () => {
-            const perchX = a.minX + 30 + Math.random() * (a.maxX - a.minX - SIZE - 60);
+            const perchX = a.minX + 30 + Math.random() * (a.maxX - a.minX - SIZE_P() - 60);
             const high = Math.random() < 0.5;
-            const perchY = high ? a.minY : (a.maxY - FEET_FROM_TOP);   // 随机高度歇脚
-            if (high) branch.showBranchAt(perchX + half, perchY + FEET_FROM_TOP);   // 高处 → 树枝先到
+            const perchY = high ? a.minY : (a.maxY - FEET_BOT_P());   // 随机高度歇脚
+            if (high) branch.showBranchAt(perchX + half, perchY + FEET_TOP_P());   // 高处 → 树枝先到
             animateFlight({ x: perchX, y: perchY }, 1.0, () => {
               enter("eat");
               playPeep();
@@ -494,8 +494,8 @@ export async function clampDragFrame(x: number, y: number) {
   lastClamp = now;
   try {
     const a = await area();
-    const cx = Math.min(Math.max(x, a.minX), a.maxX - SIZE);
-    const cy = Math.min(Math.max(y, a.minY), a.maxY - FEET_FROM_TOP);   // 脚最低到任务栏顶
+    const cx = Math.min(Math.max(x, a.minX), a.maxX - SIZE_P());
+    const cy = Math.min(Math.max(y, a.minY), a.maxY - FEET_BOT_P());   // 脚最低到任务栏顶
     if (Math.abs(cx - x) > 1 || Math.abs(cy - y) > 1) {
       await setOrigin(cx, cy);
     }
@@ -506,26 +506,26 @@ export async function dragDidEnd() {
     const sc = await scale();
     const o = await getOrigin();
     const a = await area();
-    const feetY = o.y + FEET_FROM_TOP;
+    const feetY = o.y + FEET_TOP_P();
     // 吸附候选:任务栏顶 + 水平覆盖鸟的所有窗口上沿(macOS nearestSurface)
     type Surf = { y: number; hwnd: number | null; left: number; topPhys: number };
     const cands: Surf[] = [{ y: a.maxY, hwnd: null, left: 0, topPhys: 0 }];
     try {
-      const list = await invoke<[number, number, number, number][]>("surfaces_below_cmd", { x: (o.x + SIZE / 2) * sc });
-      for (const s of list) cands.push({ y: toLog(s[1]), hwnd: s[3], left: toLog(s[0]), topPhys: s[1] });
+      const list = await invoke<[number, number, number, number][]>("surfaces_below_cmd", { x: o.x + SIZE_P() / 2 });   // 物理直传
+      for (const s of list) cands.push({ y: s[1], hwnd: s[3], left: s[0], topPhys: s[1] });
     } catch { /* 枚举失败只试任务栏 */ }
     let best: Surf | null = null, bestD = 1e9;
     for (const c of cands) {
-      if (c.y - FEET_FROM_TOP < a.minY) continue;   // 太高:踩上去鸟头出屏(macOS wouldOvershootTop)
+      if (c.y - FEET_TOP_P() < a.minY) continue;   // 太高:踩上去鸟头出屏(macOS wouldOvershootTop)
       const d = Math.abs(c.y - feetY);
       if (d < bestD) { bestD = d; best = c; }
     }
     if (best && bestD <= 70) {
-      await setOrigin(o.x, best.y - FEET_FROM_TOP);   // 脚精确踩表面(x 保持松手位置)
+      await setOrigin(o.x, best.y - FEET_BOT_P());   // 脚精确踩表面(x 保持松手位置)
       if (best.hwnd != null) {
         // 吸到窗口上沿:接管栖窗增量跟随(不居中)
         perchedHwnd = best.hwnd;
-        lastPerchRect = { x: best.left, y: toLog(best.topPhys) };
+        lastPerchRect = { x: best.left, y: best.topPhys };
         startPerchCheck();
       }
       finish();
@@ -545,9 +545,9 @@ export async function callOver() {
     const sc = await scale();
     const a = await area();
     const cur = await invoke<[number, number] | null>("cursor_pos_cmd");
-    const mx = cur ? toLog(cur[0]) : (a.minX + a.maxX) / 2;   // 拿不到鼠标就屏中
+    const mx = cur ? cur[0] : (a.minX + a.maxX) / 2;   // 物理直用
     const target = {
-      x: Math.min(Math.max(mx - SIZE / 2, a.minX), a.maxX - SIZE),
+      x: Math.min(Math.max(mx - SIZE_P() / 2, a.minX), a.maxX - SIZE_P()),
       y: a.minY + (a.maxY - a.minY) * 0.45,
     };
     const o = await getOrigin();
@@ -569,7 +569,7 @@ export async function recallToScreen() {
   try {
     const a = await area();
     if (!onScreen) { onScreen = true; await invoke("show_no_activate"); }
-    await setOrigin(a.maxX - SIZE - 30, a.maxY - FEET_FROM_TOP);
+    await setOrigin(a.maxX - SIZE_P() - 30 * _scale, a.maxY - FEET_BOT_P());
   } catch (e) { emit("log", "recall " + e); }
   enter("idle");
   busy = false;
@@ -598,10 +598,10 @@ export async function start() {
     const a = await area();
     // 位置记忆:有存过位置就恢复,否则右下角脚贴任务栏(macOS 同款)
     const sx = Number(localStorage.getItem("kf_x")), sy = Number(localStorage.getItem("kf_y"));
-    if (localStorage.getItem("kf_x") && sx >= a.minX && sx <= a.maxX - SIZE && sy >= a.minY && sy <= a.maxY - FEET_FROM_TOP) {   // 脚(非窗底)在地面之上即可
+    if (localStorage.getItem("kf_x") && sx >= a.minX && sx <= a.maxX - SIZE_P() && sy >= a.minY && sy <= a.maxY - FEET_BOT_P()) {   // 脚(非窗底)在地面之上即可
       await setOrigin(sx, sy);
     } else {
-      await setOrigin(a.maxX - SIZE - 30, a.maxY - FEET_FROM_TOP);
+      await setOrigin(a.maxX - SIZE_P() - 30 * _scale, a.maxY - FEET_BOT_P());
     }
     // 坐标自愈:校验窗口(物理)确实落在某台显示器内;不在 → 回当前显示器安全位。
     // 防 DPI/多屏换算错位把鸟丢屏外("没在屏幕里"的逃生口,启动即自愈)
@@ -613,7 +613,7 @@ export async function start() {
         p.y >= m.position.y - 20 && p.y <= m.position.y + m.size.height + 20);
       if (!inside) {
         emit("log", "start: 窗口在所有显示器外,自愈回安全位");
-        await setOrigin(a.maxX - SIZE - 30, a.maxY - FEET_FROM_TOP);
+        await setOrigin(a.maxX - SIZE_P() - 30 * _scale, a.maxY - FEET_BOT_P());
       }
     } catch { /* 校验失败不阻塞 */ }
   } catch (e) { console.error("start", e); }
@@ -644,7 +644,7 @@ export async function fallAway() {
     branch.hideBranch();
     const a = await area();
     // 掉出屏幕底(线性下坠)后隐藏窗口
-    animateMove({ x: o.x, y: a.maxY + SIZE + 40 }, 0.85, async () => {
+    animateMove({ x: o.x, y: a.maxY + SIZE_P() + 40 * _scale }, 0.85, async () => {
       try { await (win as any).hide(); } catch { /* */ }
       hideShadow();
       invoke("stage_visibility", { label: "poop", show: false }).catch(() => {});   // 隐藏鸟:舞台也挂起(零耗)
@@ -660,7 +660,7 @@ export async function hatchIn() {
   beginAction();
   try {
     const a = await area();
-    await setOrigin(a.maxX - SIZE - 30, a.maxY - FEET_FROM_TOP);
+    await setOrigin(a.maxX - SIZE_P() - 30 * _scale, a.maxY - FEET_BOT_P());
     await invoke("show_no_activate");   // 显示但不抢前台焦点
     invoke("stage_visibility", { label: "poop", show: true }).catch(() => {});
     invoke("stage_visibility", { label: "crack", show: true }).catch(() => {});

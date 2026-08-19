@@ -55,7 +55,8 @@ async function poopSprite(t) {
 // 屎下落(物理:落到 landingY 表面,坐 8-15s,淡出;时长随动画速度)
 let poopCount = 0;
 listen("poop-drop", async (e) => {
-  const { x, y, landingY, fallSec, spd, hwnd, scale } = e.payload;
+  const { x: px0, y: py0, landingY: pl, fallSec, spd, hwnd } = e.payload;
+  const x = px0 / DPR, y = py0 / DPR, landingY = pl / DPR;
   const spr = await poopSprite(theme);
   if (poopCount >= 8) { const old = document.querySelector("img[data-poop]"); old?.remove(); }   // 上限 8
   const sp = spd ?? 1;
@@ -76,7 +77,6 @@ listen("poop-drop", async (e) => {
   // 承载面监测(3fps):窗口移走/消失 → 重新下落到下一表面(macOS resumeFall)
   // 迟滞:连续 3 次坏判定(≈1s)才重落;唤醒宽限 3s 内不判
   if (hwnd) {
-    const sc = scale ?? 1;
     let bad = 0;
     const poll = setInterval(async () => {
       if (!img.isConnected) { clearInterval(poll); return; }
@@ -85,21 +85,22 @@ listen("poop-drop", async (e) => {
       if (performance.now() < graceState.until) return;   // 唤醒宽限
       try {
         const r = await (await import("@tauri-apps/api/core")).invoke("window_rect_cmd", { hwndVal: hwnd });
-        const gone = !r || (x * sc < r[0] || x * sc > r[0] + r[2]);
+        const gone = !r || (px0 < r[0] || px0 > r[0] + r[2]);   // 物理比较
         if (gone) {
           bad++;
           if (bad < 3) return;   // 迟滞
           clearInterval(poll);
           // 找新落点:该 x 下方最近表面(简化:直接掉到传入的地面兜底 = landingY 下方一屏)
-          let nl = landingY + 600;
+          let nl = pl + 600;
           try {
-            const list = await (await import("@tauri-apps/api/core")).invoke("surfaces_below_cmd", { x: x * sc });
+            const list = await (await import("@tauri-apps/api/core")).invoke("surfaces_below_cmd", { x: px0 });
             let best = -1e9;
-            for (const s2 of list) { const top = s2[1] / sc; if (top < landingY - 6 && top > best) best = top; }
+            for (const s2 of list) { const top = s2[1]; if (top < pl - 6 && top > best) best = top; }
             if (best > -1e9) nl = best;
           } catch { /* */ }
-          img.style.transition = `top ${Math.max(0.2, (nl - landingY) / 220 / sp)}s ease-in`;
-          requestAnimationFrame(() => { img.style.top = (nl - spr.h) + "px"; });
+          const nlL = nl / DPR;
+          img.style.transition = `top ${Math.max(0.2, (nlL - landingY) / 220 / sp)}s ease-in`;
+          requestAnimationFrame(() => { img.style.top = (nlL - spr.h) + "px"; });
         }
       } catch { clearInterval(poll); }
     }, 350);
@@ -117,7 +118,7 @@ let fxSpd = 1;   // 动画速度(1=正常);时长 = 基准 / fxSpd(快→短)
 listen("fx", (e) => {
   const { kind, x: px, y: py, dur, spd } = e.payload;
   fxSpd = spd ?? 1;
-  const x = px, y = py;
+  const x = px / DPR, y = py / DPR;   // 物理 → CSS 逻辑
   if (kind === "splash") {
     const sp2 = 1 / fxSpd;
     const ring = imgEl("splash_ring", 30, 30);
@@ -180,7 +181,8 @@ branchImg.style.width = "160px"; branchImg.style.height = "60px";
 branchImg.style.pointerEvents = "none"; branchImg.style.display = "none";
 document.body.appendChild(branchImg);
 listen("branch", (e) => {
-  const { show, x, y, theme } = e.payload;
+  const { show, x: bx, y: by, theme } = e.payload;
+  const x = bx / DPR, y = by / DPR;   // 物理 → CSS
   if (!show) { branchImg.style.display = "none"; return; }
   branchImg.src = `${import.meta.env.BASE_URL}Sprites/${theme}/branch.png`;
   branchImg.style.left = (x - 80) + "px";     // 居中于脚点
@@ -195,7 +197,8 @@ shadowImg.style.width = "150px"; shadowImg.style.height = "40px";
 shadowImg.style.pointerEvents = "none"; shadowImg.style.display = "none";
 document.body.appendChild(shadowImg);
 listen("shadow", (e) => {
-  const { show, x, y, w, h, opacity, theme: th } = e.payload;
+  const { show, x: sx, y: sy, w: sw2, h: sh2, opacity, theme: th } = e.payload;
+  const x = sx / DPR, y = sy / DPR, w = sw2, h = sh2;   // 物理 → CSS(尺寸已是逻辑量)
   if (!show) { shadowImg.style.display = "none"; return; }
   if (th && shadowImg.dataset.t !== th) { shadowImg.dataset.t = th; shadowImg.src = `${import.meta.env.BASE_URL}Sprites/${th}/shadow.png`; }   // 同主题不重设(重设会触发解码/布局)
   shadowImg.style.width = w + "px"; shadowImg.style.height = h + "px";
