@@ -128,7 +128,7 @@ pub fn work_area(hwnd_val: isize) -> Option<(i32, i32, i32, i32)> {
     use windows::Win32::Foundation::{HWND, RECT};
     unsafe {
         let hwnd = HWND(hwnd_val as *mut _);
-        let mon = MonitorFromWindow(Some(hwnd), MONITOR_DEFAULTTONEAREST);
+        let mon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
         if mon.is_invalid() { return None; }
         let mut mi = MONITORINFO {
             cbSize: std::mem::size_of::<MONITORINFO>() as u32,
