@@ -3,7 +3,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen, emit } from "@tauri-apps/api/event";
 import { SpriteLibrary } from "./sprite";
-import { setupHitTest } from "./hittest";
+import { setupHitTest, updateHitOrigin } from "./hittest";
 import { setupShadow, updateShadow } from "./shadow";
 import { setupPoop } from "./poop";
 import { clearCracks } from "./crack";   // crack 窗懒创建:首次 crackAt 才建(省一个常驻全屏层)
@@ -41,7 +41,7 @@ async function main() {
       setState: (s) => { if (s !== state) { state = s; animTime = 0; last = 0; } },
       setFacing: (r) => { facingRight = r; img.style.transform = r ? "scaleX(-1)" : "none"; },
       playPeep: playPeep,
-      onMoved: (x: number, y: number) => updateShadow(x, y),
+      onMoved: (x: number, y: number) => { updateShadow(x, y); updateHitOrigin(x, y); },   // 同步喂 hittest 缓存(零 IPC)
     });
     setupHitTest(lib, () => currentFrame, 160, () => dragging);
     setupShadow(lib);
@@ -125,8 +125,7 @@ function setupDrag() {
     setTimeout(() => { if (dragging && !movedDuringDrag) endDrag(); }, 400);
   });
   window.addEventListener("mouseup", () => { if (dragging) endDrag(); });
-  // 兜底 2:窗口移动事件停息 = 松手(mouseup 丢失也能恢复);拖拽中同步地面阴影 + 边界钳制
-  let dragScale = 1;
+  // 兜底 2:窗口移动事件停息 = 松手(mouseup 丢失也能恢复);拖拽中同步地面阴影 + hittest 缓存 + 边界钳制
   petWin.onMoved(async (ev) => {
     if (!dragging) return;
     movedDuringDrag = true;
@@ -135,8 +134,9 @@ function setupDrag() {
     try {
       const p = ev.payload as { x: number; y: number };   // 事件自带物理坐标(免一次 IPC)
       updateShadow(p.x, p.y);      // 物理直传(shadow 内部自己算)
-      // 钳制:脚不进任务栏下面、头不彻底出屏顶、横向不出屏(macOS 拖拽 clamp 同款)
-      behavior.clampDragFrame(p.x / dragScale, p.y / dragScale);
+      updateHitOrigin(p.x, p.y);   // hittest 原点缓存同步(模态拖拽不走 setOrigin)
+      // 钳制:脚不进任务栏下面、头不彻底出屏顶、横向不出屏(macOS 拖拽 clamp 同款;入参物理)
+      behavior.clampDragFrame(p.x, p.y);
     } catch { /* */ }
   });
 }
