@@ -134,8 +134,7 @@ function setupDrag() {
     dragWaiter = setTimeout(endDrag, 300);
     try {
       const p = ev.payload as { x: number; y: number };   // 事件自带物理坐标(免一次 IPC)
-      dragScale = await petWin.scaleFactor();
-      updateShadow(p.x / dragScale, p.y / dragScale);      // 原生拖拽没有 setOrigin,这里补阴影
+      updateShadow(p.x, p.y);      // 物理直传(shadow 内部自己算)
       // 钳制:脚不进任务栏下面、头不彻底出屏顶、横向不出屏(macOS 拖拽 clamp 同款)
       behavior.clampDragFrame(p.x / dragScale, p.y / dragScale);
     } catch { /* */ }

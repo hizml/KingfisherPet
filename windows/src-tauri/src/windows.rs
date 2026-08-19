@@ -118,3 +118,29 @@ pub fn show_no_activate(w: &tauri::WebviewWindow) {
 pub fn show_no_activate(w: &tauri::WebviewWindow) {
     let _ = w.show();   // 非 Windows 退化为普通显示
 }
+
+/// 鸟所在显示器的【工作区】(物理像素,已扣任务栏;任务栏在任意边都对)。
+/// MonitorFromWindow(最近的显示器) + GetMonitorInfoW.rcWork。
+/// 返回 (x, y, w, h)。屏幕坐标统一物理化的基石。
+#[cfg(windows)]
+pub fn work_area(hwnd_val: isize) -> Option<(i32, i32, i32, i32)> {
+    use windows::Win32::Graphics::Gdi::{MonitorFromWindow, GetMonitorInfoW, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+    use windows::Win32::Foundation::{HWND, RECT};
+    unsafe {
+        let hwnd = HWND(hwnd_val as *mut _);
+        let mon = MonitorFromWindow(Some(hwnd), MONITOR_DEFAULTTONEAREST);
+        if mon.is_invalid() { return None; }
+        let mut mi = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        if !GetMonitorInfoW(mon, &mut mi).as_bool() { return None; }
+        let RECT { left, top, right, bottom, .. } = mi.rcWork;
+        Some((left, top, right - left, bottom - top))
+    }
+}
+
+#[cfg(not(windows))]
+pub fn work_area(_hwnd_val: isize) -> Option<(i32, i32, i32, i32)> {
+    None
+}
