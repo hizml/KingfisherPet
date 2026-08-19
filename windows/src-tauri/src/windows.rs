@@ -160,7 +160,45 @@ pub fn work_area(hwnd_val: isize) -> Option<(i32, i32, i32, i32)> {
     }
 }
 
+/// 找回小鸟(Rust 侧自愈,不经过 webview——鸟窗隐藏/前端状态废掉时 TS 指令不可靠):
+/// 光标所在显示器的工作区右下角,脚踩任务栏顶,原子地 移动+显示+置顶+不抢焦点。
+/// 返回落点物理坐标(日志/前端缓存用)。
+#[cfg(windows)]
+pub fn recall_show(w: &tauri::WebviewWindow) -> Option<(i32, i32)> {
+    use windows::Win32::Foundation::{POINT, RECT};
+    use windows::Win32::Graphics::Gdi::{MonitorFromPoint, GetMonitorInfoW, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetCursorPos, GetWindowRect, SetWindowPos, HWND_TOPMOST,
+        SWP_NOACTIVATE, SWP_SHOWWINDOW, SWP_NOSIZE,
+    };
+    let hwnd = w.hwnd().ok()?;
+    unsafe {
+        // 光标所在显示器(用户正看着的那块);查不到光标就主屏原点
+        let mut pt = POINT::default();
+        if GetCursorPos(&mut pt).is_err() { pt = POINT { x: 0, y: 0 }; }
+        let mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+        if mon.is_invalid() { return None; }
+        let mut mi = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        if !GetMonitorInfoW(mon, &mut mi).as_bool() { return None; }
+        let RECT { right, bottom, .. } = mi.rcWork;
+        // 鸟窗物理尺寸实测;脚在窗底上方 26/160、右边距 30/160(比例 DPI 无关)
+        let mut wr = RECT::default();
+        if GetWindowRect(hwnd, &mut wr).is_err() { return None; }
+        let wpx = (wr.right - wr.left).max(1);
+        let hpx = (wr.bottom - wr.top).max(1);
+        let x = right - wpx - wpx * 30 / 160;
+        let y = bottom - hpx + hpx * 26 / 160;   // 窗底越过工作区底 26/160 → 脚正好踩任务栏顶
+        let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), x, y, 0, 0,
+            SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOSIZE);
+        Some((x, y))
+    }
+}
+
 #[cfg(not(windows))]
-pub fn work_area(_hwnd_val: isize) -> Option<(i32, i32, i32, i32)> {
+pub fn recall_show(w: &tauri::WebviewWindow) -> Option<(i32, i32)> {
+    let _ = w.show();
     None
 }
