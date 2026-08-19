@@ -1,7 +1,7 @@
 // 行为状态机 + 移动(走/飞)+ 代际取消。移植自 macOS Behavior.swift。
-// 坐标统一用【逻辑像素】:Rust(Win32)返回物理,这里统一 /scale 转逻辑;
-// 窗口定位用 LogicalPosition。之前物理/逻辑混用,在 125%/150% 缩放下
-// 脚位、树枝、地面全部错位(鸟落不到树枝上的根源之一)。
+// 坐标约定(v1.4.12 起):屏幕坐标【全物理像素】——Win32/Rust 命令、area()、
+// setOrigin(PhysicalPosition)、各舞台窗事件载荷全部物理;只有窗口内绘制用逻辑。
+// 逻辑常量(SIZE/FEET_*)进物理世界必须乘 _scale(SIZE_P()/FEET_TOP_P()/FEET_BOT_P())。
 
 import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
 import type { Window as TauriWindow } from "@tauri-apps/api/window";
@@ -305,7 +305,7 @@ async function dropPoopAt(x: number, y: number) {
     const a = await area();
     let best = a.maxY;   // 任务栏顶(兜底)
     try {
-      const list = await invoke<[number, number, number, number][]>("surfaces_below_cmd", { x: x * sc });
+      const list = await invoke<[number, number, number, number][]>("surfaces_below_cmd", { x });   // x 已是物理(调用方换算过),不能再乘 sc
       for (const s of list) {
         const top = s[1];
         if (top < y - 6 && top > best) { best = top; landHwnd = s[3]; }   // 在屎下方且更高的表面
@@ -361,7 +361,8 @@ async function startFish() {
     const a = await area();
     const o = await getOrigin();
     const half = SIZE_P() / 2;
-    const targetX = Math.min(Math.max(a.minX + half + 40 + Math.random() * (a.maxX - a.minX - SIZE - 80), a.minX), a.maxX - SIZE);   // 随机俯冲列
+    // 全物理(之前钳制用逻辑 SIZE,125%/150% 缩放下鸟整个探出右缘 = "飞到屏幕外")
+    const targetX = Math.min(Math.max(a.minX + half + 40 * _scale + Math.random() * (a.maxX - a.minX - SIZE_P() - 80 * _scale), a.minX), a.maxX - SIZE_P());   // 随机俯冲列
     setFacing(targetX + half > o.x + 80);
     animateFlight({ x: targetX, y: a.minY }, 1.0, () => {
       enter("hover");                                   // 悬停瞄准(macOS 同款)
@@ -520,7 +521,7 @@ export async function dragDidEnd() {
       const d = Math.abs(c.y - feetY);
       if (d < bestD) { bestD = d; best = c; }
     }
-    if (best && bestD <= 70) {
+    if (best && bestD <= 70 * _scale) {   // 吸附范围 70 逻辑点(物理比较要乘缩放,高 DPI 下否则范围缩水)
       await setOrigin(o.x, best.y - FEET_BOT_P());   // 脚精确踩表面(x 保持松手位置)
       if (best.hwnd != null) {
         // 吸到窗口上沿:接管栖窗增量跟随(不居中)
@@ -553,7 +554,7 @@ export async function callOver() {
     const o = await getOrigin();
     setFacing(target.x > o.x);
     branch.hideBranch();
-    branch.showBranchAt(target.x + SIZE / 2, target.y + FEET_FROM_TOP);   // 树枝先到
+    branch.showBranchAt(target.x + SIZE_P() / 2, target.y + FEET_TOP_P());   // 树枝先到(全物理;之前用逻辑常量,高 DPI 下树枝飘错位)
     animateFlight(target, 1.0, () => finish());
   } catch (e) { startFly(); }
 }

@@ -7,7 +7,12 @@
 import { listen, emit } from "@tauri-apps/api/event";
 const cv = document.getElementById("c");
 const ctx = cv.getContext("2d");
-function resize() { cv.width = window.innerWidth; cv.height = window.innerHeight; }
+function resize() {   // 画布按 DPR 渲染(逻辑分辨率在高 DPI 屏上发糊);坐标系仍用 CSS 逻辑
+  const d = window.devicePixelRatio || 1;
+  cv.width = Math.round(window.innerWidth * d);
+  cv.height = Math.round(window.innerHeight * d);
+  ctx.setTransform(d, 0, 0, d, 0, 0);
+}
 resize(); window.addEventListener("resize", resize);
 
 // 主题色(colors.json 的 crack_dark/light;切主题即时换)
