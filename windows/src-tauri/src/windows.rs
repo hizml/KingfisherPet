@@ -202,3 +202,73 @@ pub fn recall_show(w: &tauri::WebviewWindow) -> Option<(i32, i32)> {
     let _ = w.show();
     None
 }
+
+// ── 诊断(坐标问题定位):Win32 侧地面真值 ──
+
+/// 进程 DPI 感知级别(0=unaware / 1=system / 2=per-monitor)。
+/// 非 per-monitor 时 Win32 坐标被虚拟化,和 WebView 的物理坐标错位——整类 bug 的判据。
+#[cfg(windows)]
+pub fn dpi_awareness() -> i32 {
+    use windows::Win32::UI::HiDpi::{
+        GetThreadDpiAwarenessContext, GetAwarenessFromDpiAwarenessContext,
+    };
+    unsafe {
+        let ctx = GetThreadDpiAwarenessContext();
+        GetAwarenessFromDpiAwarenessContext(ctx).0
+    }
+}
+
+#[cfg(not(windows))]
+pub fn dpi_awareness() -> i32 { -1 }
+
+/// 每台显示器:rcMonitor(l,t,r,b) + rcWork(l,t,r,b) 物理 + 有效 DPI。
+#[cfg(windows)]
+pub fn diag_monitors() -> Vec<(i32, i32, i32, i32, i32, i32, i32, i32, u32)> {
+    use windows::Win32::Foundation::{LPARAM, RECT};
+    use windows::Win32::Graphics::Gdi::{EnumDisplayMonitors, GetMonitorInfoW, MONITORINFO, HDC};
+    use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+    use std::cell::RefCell;
+    thread_local! {
+        static OUT: RefCell<Vec<(i32, i32, i32, i32, i32, i32, i32, i32, u32)>> =
+            RefCell::new(Vec::new());
+    }
+    unsafe extern "system" fn proc(mon: windows::Win32::Graphics::Gdi::HMONITOR, _dc: HDC, _r: *mut RECT, _l: LPARAM) -> windows::core::BOOL {
+        let mut mi = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        if GetMonitorInfoW(mon, &mut mi).as_bool() {
+            let (mut dx, mut dy) = (0u32, 0u32);
+            let _ = GetDpiForMonitor(mon, MDT_EFFECTIVE_DPI, &mut dx, &mut dy);
+            let RECT { left: ml, top: mt, right: mr, bottom: mb, .. } = mi.rcMonitor;
+            let RECT { left: wl, top: wt, right: wr, bottom: wb, .. } = mi.rcWork;
+            OUT.with(|o| o.borrow_mut().push((ml, mt, mr, mb, wl, wt, wr, wb, dx)));
+        }
+        windows::core::BOOL(1)
+    }
+    unsafe {
+        OUT.with(|o| o.borrow_mut().clear());
+        let _ = EnumDisplayMonitors(None, None, Some(proc), LPARAM(0));
+        OUT.with(|o| o.borrow_mut().clone())
+    }
+}
+
+#[cfg(not(windows))]
+pub fn diag_monitors() -> Vec<(i32, i32, i32, i32, i32, i32, i32, i32, u32)> { Vec::new() }
+
+/// 鸟窗实测:GetWindowRect(物理)+ 窗口 DPI。诊断"窗口实际在哪/多大"。
+#[cfg(windows)]
+pub fn diag_main_window(w: &tauri::WebviewWindow) -> Option<(i32, i32, i32, i32, u32)> {
+    use windows::Win32::Foundation::RECT;
+    use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
+    use windows::Win32::UI::HiDpi::GetDpiForWindow;
+    let hwnd = w.hwnd().ok()?;
+    unsafe {
+        let mut r = RECT::default();
+        if GetWindowRect(hwnd, &mut r).is_err() { return None; }
+        Some((r.left, r.top, r.right, r.bottom, GetDpiForWindow(hwnd)))
+    }
+}
+
+#[cfg(not(windows))]
+pub fn diag_main_window(_w: &tauri::WebviewWindow) -> Option<(i32, i32, i32, i32, u32)> { None }

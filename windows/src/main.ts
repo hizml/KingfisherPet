@@ -1,7 +1,9 @@
 // 逐帧渲染 + 拖拽(startDragging 原生)+ 行为状态机。日志通过 emit 发 Rust 终端。
 
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { listen, emit } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { SpriteLibrary } from "./sprite";
 import { setupHitTest, updateHitOrigin } from "./hittest";
 import { setupShadow, updateShadow } from "./shadow";
@@ -58,6 +60,7 @@ async function main() {
       else if (id === "eat") behavior.doEat();
       else if (id === "fish") behavior.doFish();
       else if (id === "recall") behavior.recallToScreen();   // 找回小鸟(坐标自愈逃生口)
+      else if (id === "diag") collectDiagnostics();   // 诊断信息(写文件+记事本打开,定位坐标问题)
       else if (id === "perch") behavior.doPerch();
       else if (id === "peck") behavior.doPeck();
       else if (id === "show") { behavior.isVisible() ? behavior.fallAway() : behavior.hatchIn(); }   // 显示/隐藏 toggle
@@ -77,6 +80,11 @@ async function main() {
     listen("wake", () => behavior.wakeFromUserAbsence());     // 唤醒 → 赖床 2–4 秒
     await behavior.start();
     requestAnimationFrame(tick);
+    // 跨不同 DPI 显示器:窗口物理尺寸不会自动跟着变(160 物理 ≠ 新屏的 160 逻辑),
+    // 而坐标全链按新 scale 算 → 脚位/树枝/钳制整体错位。这里重设为 160 逻辑
+    petWin.onScaleChanged(async () => {
+      try { await petWin.setSize(new LogicalSize(160, 160)); } catch { /* */ }
+    });
   } catch (e: any) {
     emit("log", "main err: " + (e?.stack || String(e)));
   }
@@ -110,6 +118,7 @@ let dragWaiter: ReturnType<typeof setTimeout> | null = null;
 let dragging = false;
 let movedDuringDrag = false;                                 // 拖拽中是否真的移动过(判点击)
 let dragStartPos: { x: number; y: number } | null = null;   // 按下时窗口位置(判点击/拖拽)
+let clickFallbackFired = false;                              // 400ms 点击回退已触发(慢启动拖拽自愈用)
 function setupDrag() {
   img.draggable = false;
   img.addEventListener("mousedown", async (e) => {
@@ -119,20 +128,28 @@ function setupDrag() {
     behavior.dragBegin();
     dragging = true;
     movedDuringDrag = false;
+    clickFallbackFired = false;
     petWin.startDragging().catch((err: any) => emit("log", "startDragging err: " + err));
     // 兜底 1:纯点击(无移动)时 startDragging 模态可能吃掉 mouseup 且 onMoved 不触发
     // → 400ms 后仍未结束且没动过,按点击收尾,防 busy=true 永久卡死
-    setTimeout(() => { if (dragging && !movedDuringDrag) endDrag(); }, 400);
+    setTimeout(() => { if (dragging && !movedDuringDrag) { clickFallbackFired = true; endDrag(); } }, 400);
   });
   window.addEventListener("mouseup", () => { if (dragging) endDrag(); });
   // 兜底 2:窗口移动事件停息 = 松手(mouseup 丢失也能恢复);拖拽中同步地面阴影 + hittest 缓存 + 边界钳制
   petWin.onMoved(async (ev) => {
-    if (!dragging) return;
+    const p = ev.payload as { x: number; y: number };   // 事件自带物理坐标(免一次 IPC)
+    if (!dragging) {
+      // 慢启动拖拽自愈:400ms 回退已按点击收尾,但用户其实还按着并真的拖起来了
+      // → 重新进入拖拽态,恢复钳制 + 松手走正常收尾(否则这段拖动完全脱管,能拖出屏)
+      if (!clickFallbackFired) return;
+      clickFallbackFired = false;
+      dragging = true;
+      movedDuringDrag = true;
+    }
     movedDuringDrag = true;
     if (dragWaiter) clearTimeout(dragWaiter);
     dragWaiter = setTimeout(endDrag, 300);
     try {
-      const p = ev.payload as { x: number; y: number };   // 事件自带物理坐标(免一次 IPC)
       updateShadow(p.x, p.y);      // 物理直传(shadow 内部自己算)
       updateHitOrigin(p.x, p.y);   // hittest 原点缓存同步(模态拖拽不走 setOrigin)
       // 钳制:脚不进任务栏下面、头不彻底出屏顶、横向不出屏(macOS 拖拽 clamp 同款;入参物理)
@@ -154,6 +171,41 @@ async function endDrag() {
     }
   } catch { /* */ }
   behavior.dragDidEnd();
+}
+
+/// 诊断:收集前端可见的全部坐标/DPI 状态 → Rust 拼 Win32 实测 → 写文件开记事本
+async function collectDiagnostics() {
+  try {
+    const mons: any[] = await (petWin as any).availableMonitors().catch(() => []);
+    const cur = await (petWin as any).currentMonitor().catch(() => null);
+    const pos = await petWin.outerPosition();
+    const size = await petWin.outerSize();
+    const sf = await petWin.scaleFactor();
+    const wa = await invoke<any>("work_area_cmd");
+    const cursor = await invoke<any>("cursor_pos_cmd");
+    let stage: any = null;
+    const po = await WebviewWindow.getByLabel("poop");
+    if (po) stage = {
+      pos: await po.outerPosition(), size: await po.outerSize(), scale: await po.scaleFactor(),
+    };
+    const report = {
+      time: new Date().toISOString(),
+      devicePixelRatio: window.devicePixelRatio,
+      screen_css: { w: screen.width, h: screen.height },
+      scaleFactor_api: sf,
+      outerPosition: { x: pos.x, y: pos.y },
+      outerSize: { w: size.width, h: size.height },
+      currentMonitor: cur,
+      availableMonitors: mons,
+      work_area_cmd: wa,
+      cursor_pos_cmd: cursor,
+      stage_poop: stage,
+      saved_pos: { x: localStorage.getItem("kf_x"), y: localStorage.getItem("kf_y") },
+    };
+    await invoke("diag_write", { payload: JSON.stringify(report, null, 2) });
+  } catch (e: any) {
+    emit("log", "diag err: " + (e?.stack || String(e)));
+  }
 }
 
 main();
