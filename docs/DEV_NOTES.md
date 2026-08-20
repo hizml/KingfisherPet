@@ -123,3 +123,22 @@ PoopController / CrackController / ShadowController / BranchController
 
 见 docs/TESTING.md。要点:改完汇报必须注明验证方式(编译/场景/快照/仅推理四档),
 "仅推理"不得表述为"已修复/没问题";发版前跑 `./tools/run_tests.sh` + 手动清单。
+
+## API 使用纪律(用户指令:幽灵 API 事故后立,以后不许再犯)
+
+2026-08-20 事故:Windows 端把 `currentMonitor/availableMonitors` 当 Window 方法调用
+(实际是模块级函数),`as any` 绕过类型检查 + catch 静默吞错,导致缩放系数
+自启动起永远=1,200% 缩放屏全链坐标错位,连蒙四个版本才靠诊断数据破案。
+
+1. **禁止 `as any`**(CI lint.yml 机器强制,grep 到即红)。API 不确定存在时,
+   写正确类型让 TS 检查;类型对不上 = 大概率调错了,去查装的包而不是 cast 绕过
+2. **API 以装的包为准,不以记忆/文档为准**:核实去读
+   `windows/node_modules/@tauri-apps/api/` 的实际实现(读完整个文件再下结论,
+   WebviewWindow 的方法混入在文件末尾 applyMixins,读一半会冤枉好人)
+3. **catch 不许全静默**:承载型失败(舞台窗/坐标/IPC)用 `src/log.ts` 的
+   `warnOnce` 留痕(每 key 只报第一次);热路径轮询可静默但首次异常要能被发现
+4. **修 bug 先铺可观测性**:连修两轮未果必须停下加诊断/日志拿地面真值,
+   禁止第三轮继续盲改(本轮"诊断信息"功能就是这个教训的产物)
+5. Rust 侧 cfg(windows) 代码必须过 windows target 的 cargo check
+   (本地 `cargo check --target x86_64-pc-windows-gnu`,CI lint.yml 同款)
+

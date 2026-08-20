@@ -15,7 +15,7 @@ async function ensure() {
       // → 同 label 再 new 会 reject,ready 永远失败(切主题后特效/屎全废)。先查再建。
       const existing = await WebviewWindow.getByLabel("crack");
       // 虚拟桌面 bounding box(多屏覆盖;不再单屏 0,0)。⚠️ availableMonitors 是模块函数
-      const mons = (await availableMonitors().catch(() => [])) as any[];
+      const mons = await availableMonitors().catch(() => []);
       const sc0 = mons[0]?.scaleFactor ?? 1;
       let ox = 0, oy = 0, rw = 1920, rh = 1080;
       if (mons.length) {
