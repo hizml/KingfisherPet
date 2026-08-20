@@ -43,10 +43,18 @@ fn work_area_cmd(app: tauri::AppHandle) -> Option<(i32, i32, i32, i32)> {
 
 #[tauri::command]
 fn stage_visibility(app: tauri::AppHandle, label: String, show: bool) {
-    // 舞台窗(poop/crack)隐藏/显示:睡眠时隐藏 → WebView2 停合成/挂起(省电);
-    // 显示走 NOACTIVATE 防抢前台焦点
+    // 舞台窗(poop/crack)隐藏/显示:睡眠时隐藏 → WebView2 停合成/挂起(省电)。
+    // 显示必须走 tauri 的 show()(wry 会恢复 WebView2 控制器可见性 = 恢复渲染);
+    // 之前只做原生 SetWindowPos(SWP_SHOWWINDOW)——窗口亮了但 wry 还认为它隐藏,
+    // 控制器不恢复 → 页面不渲染(能看到窗口投影、内容全无的根因)。
+    // show() 会激活抢一次焦点,随后用 NOACTIVATE+TOPMOST 补位(不二次抢)。
     if let Some(w) = app.get_webview_window(&label) {
-        if show { crate::windows::show_no_activate(&w); } else { let _ = w.hide(); }
+        if show {
+            let _ = w.show();
+            crate::windows::show_no_activate(&w);
+        } else {
+            let _ = w.hide();
+        }
     }
 }
 

@@ -69,6 +69,7 @@ listen("stage-origin", (e) => {   // 舞台建在虚拟桌面原点,body 平移�
   const { x, y } = e.payload;
   document.body.style.transform = `translate(${-x}px, ${-y}px)`;
 });
+listen("stage-ping", () => { emit("stage-pong", "crack"); });   // 健康探针(诊断用)
 emit("child-ready", "crack");   // listener 已注册
 </script>
 </body></html>

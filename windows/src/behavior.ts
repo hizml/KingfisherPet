@@ -64,9 +64,21 @@ async function area(): Promise<{ minX: number; minY: number; maxX: number; maxY:
   try {
     await scale();   // 顺带刷新 _scale(供 SIZE_P 等用)
     const wa = await invoke<[number, number, number, number] | null>("work_area_cmd");
-    if (wa) return { minX: wa[0], minY: wa[1], maxX: wa[0] + wa[2], maxY: wa[1] + wa[3] };
+    if (wa) {
+      const a = { minX: wa[0], minY: wa[1], maxX: wa[0] + wa[2], maxY: wa[1] + wa[3] };
+      areaCached = { a, at: performance.now() };
+      return a;
+    }
   } catch (e) { emit("log", "area " + e); }
   return { minX: 0, minY: 0, maxX: 1920, maxY: 1040 };   // 兜底
+}
+
+/// 热路径用:area 结果 2s 缓存(工作区几乎不变),免去每跳 2 次 IPC——
+/// 拖拽钳制要每帧检查,之前 area() 的 IPC 往返让快速拖拽钻进任务栏下面。
+let areaCached: { a: { minX: number; minY: number; maxX: number; maxY: number }, at: number } | null = null;
+async function areaFast() {
+  if (areaCached && performance.now() - areaCached.at < 2000) return areaCached.a;
+  return area();
 }
 
 async function getOrigin(): Promise<{ x: number; y: number }> {
@@ -506,7 +518,7 @@ export async function clampDragFrame(x: number, y: number) {
   if (clampBusy) return;   // 上一次钳制还在途,不叠加(防抖动)
   clampBusy = true;
   try {
-    const a = await area();
+    const a = await areaFast();   // 缓存版:热路径零 IPC,只剩越界时一次纠正
     const cx = Math.min(Math.max(x, a.minX), a.maxX - SIZE_P());
     const cy = Math.min(Math.max(y, a.minY), a.maxY - FEET_TOP_P());   // 脚最低到任务栏顶
     if (Math.abs(cx - x) > 1 || Math.abs(cy - y) > 1) {
@@ -535,7 +547,14 @@ export async function dragDidEnd() {
     }
     if (best && bestD <= 70 * _scale) {   // 吸附范围 70 逻辑点(物理比较要乘缩放,高 DPI 下否则范围缩水)
       const cx = Math.min(Math.max(o.x, a.minX), a.maxX - SIZE_P());   // X 也钳回屏内(右缘松手别停在屏外)
-      await setOrigin(cx, best.y - FEET_TOP_P());   // 脚精确踩表面(x 保持松手位置)
+      const ty = best.y - FEET_TOP_P();
+      await setOrigin(cx, ty);   // 脚精确踩表面(x 保持松手位置)
+      // 验证+重试:setPosition 是异步 SetWindowPos,与模态拖拽竞速偶发丢失
+      // → 之前"松手有时候回不到任务栏上"的根源
+      const p = await getOrigin();
+      if (Math.abs(p.y - ty) > 2 || Math.abs(p.x - cx) > 2) {
+        await setOrigin(cx, ty);
+      }
       if (best.hwnd != null) {
         // 吸到窗口上沿:接管栖窗增量跟随(不居中)
         perchedHwnd = best.hwnd;

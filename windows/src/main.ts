@@ -210,6 +210,14 @@ async function collectDiagnostics() {
   });
   report.stage_poop_error = (await import("./poop")).stageError;   // 创建失败原因(之前静默)
   report.stage_handshaken = (await import("./poop")).stageHandshaken;   // 舞台页面是否在听(页面活着与否)
+  report.stage_pong = await g("pong", async () => {   // 实锤探针:发 ping 等 pong(页面渲染/事件链是否通)
+    await (await import("./poop")).ensurePoopStage();
+    return await new Promise<string>((res) => {
+      const un = listen<string>("stage-pong", (e) => { un.then(f => f()); res(e.payload); });
+      emit("stage-ping", null);
+      setTimeout(() => { un.then(f => f()); res("TIMEOUT"); }, 1500);
+    });
+  });
   {   // 当前栖的窗口实测矩形(验证"停窗脚位"):鸟脚 Y 应≈窗口上沿
     const h = behavior.getPerchedHwnd();
     report.perched = h == null ? null : await g("perched", () => invoke("window_rect_cmd", { hwndVal: h }));
