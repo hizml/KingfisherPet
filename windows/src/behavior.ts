@@ -625,7 +625,7 @@ export async function start() {
     // 防 DPI/多屏换算错位把鸟丢屏外("没在屏幕里"的逃生口,启动即自愈)
     try {
       const p = await win.outerPosition();
-      const mons = (await availableMonitors()) as any[];   // 模块函数(Window 上没有此方法)
+      const mons = await availableMonitors();   // 模块函数(Window 上没有此方法),返回带类型
       const inside = mons.some(m =>
         p.x >= m.position.x - 20 && p.x <= m.position.x + m.size.width + 20 &&
         p.y >= m.position.y - 20 && p.y <= m.position.y + m.size.height + 20);

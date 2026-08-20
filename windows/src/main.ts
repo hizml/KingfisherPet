@@ -30,7 +30,7 @@ let currentFrame = "idle_0";
 window.addEventListener("error", (e: ErrorEvent) =>
   emit("log", "error: " + (e.error?.stack || e.message)));
 window.addEventListener("unhandledrejection", (e: PromiseRejectionEvent) =>
-  emit("log", "reject: " + ((e.reason as any)?.stack || String(e.reason))));
+  emit("log", "reject: " + (e.reason?.stack || String(e.reason))));
 
 async function main() {
   try {

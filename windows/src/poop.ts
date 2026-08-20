@@ -17,7 +17,7 @@ async function ensure() {
       const existing = await WebviewWindow.getByLabel("poop");
       // 虚拟桌面 bounding box(多屏;固定 3000x2000 会超屏面,单屏又盖不到副屏)
       // ⚠️ availableMonitors 是模块函数,不是 Window 方法(当方法调会 TypeError 被吞)
-      const mons = (await availableMonitors().catch(() => [])) as any[];
+      const mons = await availableMonitors().catch(() => []);
       const mon = mons[0];
       const sc0 = mon?.scaleFactor ?? 1;
       let ox = 0, oy = 0, rw = 1920, rh = 1080;

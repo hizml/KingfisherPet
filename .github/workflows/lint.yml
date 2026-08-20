@@ -1,0 +1,28 @@
+name: lint
+on:
+  push:
+    branches: [main]
+    paths: ["windows/**", ".github/workflows/lint.yml"]
+
+jobs:
+  windows-check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: x86_64-pc-windows-msvc }
+      - name: 禁 as any(幽灵API事故的机器防线)
+        shell: bash
+        run: |
+          if grep -rn "as any" windows/src --include="*.ts"; then
+            echo "::error::windows/src 出现 as any —— 它绕过类型检查,正是 currentMonitor 幽灵调用活下来的原因。请写正确类型。"
+            exit 1
+          fi
+      - name: 前端类型检查 + 构建
+        working-directory: windows
+        run: npm ci && npm run build
+      - name: Rust 检查(Windows target,tag 前抓 cfg(windows) 编译错)
+        working-directory: windows/src-tauri
+        run: cargo check
