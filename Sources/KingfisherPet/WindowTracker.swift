@@ -12,7 +12,7 @@ enum WindowTracker {
     static func frontPerch(birdWidth: CGFloat) -> Perch? {
         let opts: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
         guard let infos = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]],
-              let screen = NSScreen.main else { return nil }
+              let screen = NSScreen.screens.first else { return nil }   // CG全局坐标锚定主屏(screens[0]);NSScreen.main 是焦点屏,副屏活动时换算会偏
         let myPID = ProcessInfo.processInfo.processIdentifier
         let sf = screen.frame
 
@@ -45,7 +45,7 @@ enum WindowTracker {
                             groundY: CGFloat) -> (y: CGFloat, id: CGWindowID?) {
         let opts: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
         guard let infos = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]],
-              let screen = NSScreen.main else { return (groundY, nil) }
+              let screen = NSScreen.screens.first else { return (groundY, nil) }   // 同上:换算锚必须是主屏
         let myPID = ProcessInfo.processInfo.processIdentifier
         let sf = screen.frame
         var bestY = groundY
@@ -76,7 +76,7 @@ enum WindowTracker {
     static func frontWindowAt(nsPoint p: CGPoint) -> CGWindowID? {
         let opts: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
         guard let infos = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]],
-              let screen = NSScreen.main else { return nil }
+              let screen = NSScreen.screens.first else { return nil }   // CG全局坐标锚定主屏(screens[0]);NSScreen.main 是焦点屏,副屏活动时换算会偏
         let myPID = ProcessInfo.processInfo.processIdentifier
         let cgX = p.x
         let cgY = screen.frame.height - p.y
@@ -114,7 +114,7 @@ enum WindowTracker {
                                groundY: CGFloat) -> (y: CGFloat, id: CGWindowID?) {
         let opts: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
         guard let infos = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]],
-              let screen = NSScreen.main else { return (groundY, nil) }
+              let screen = NSScreen.screens.first else { return (groundY, nil) }   // 同上:换算锚必须是主屏
         let myPID = ProcessInfo.processInfo.processIdentifier
         let sf = screen.frame
         // Dock 顶作为候选
