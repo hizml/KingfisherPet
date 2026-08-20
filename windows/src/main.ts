@@ -209,6 +209,11 @@ async function collectDiagnostics() {
     return { pos: { x: p.x, y: p.y }, size: { w: s.width, h: s.height }, scale: await po.scaleFactor() };
   });
   report.stage_poop_error = (await import("./poop")).stageError;   // 创建失败原因(之前静默)
+  report.stage_handshaken = (await import("./poop")).stageHandshaken;   // 舞台页面是否在听(页面活着与否)
+  {   // 当前栖的窗口实测矩形(验证"停窗脚位"):鸟脚 Y 应≈窗口上沿
+    const h = behavior.getPerchedHwnd();
+    report.perched = h == null ? null : await g("perched", () => invoke("window_rect_cmd", { hwndVal: h }));
+  }
   report.saved_pos = { x: localStorage.getItem("kf_x"), y: localStorage.getItem("kf_y") };
   try { await invoke("diag_append", { payload: JSON.stringify(report, null, 2) }); }
   catch (e: any) { emit("log", "diag append err: " + String(e)); }

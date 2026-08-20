@@ -109,6 +109,7 @@ function stopPerchCheck() {
 let perchedHwnd: number | null = null;
 let lastPerchRect: { x: number; y: number } | null = null;
 let perchMoving = false, lastPerchMove = 0;
+export function getPerchedHwnd(): number | null { return perchedHwnd; }   // 诊断用:当前栖的窗口
 function startPerchCheck() {
   stopPerchCheck();
   if (perchedHwnd == null) return;
@@ -384,6 +385,7 @@ async function startFish() {
             const perchX = a.minX + 30 + Math.random() * (a.maxX - a.minX - SIZE_P() - 60);
             const high = Math.random() < 0.5;
             const perchY = high ? a.minY : (a.maxY - FEET_TOP_P());   // 随机高度歇脚
+            setFacing(perchX > targetX);   // 叼鱼返航朝向落点(macOS 同款;之前漏了 → 倒着飞)
             if (high) branch.showBranchAt(perchX + half, perchY + FEET_TOP_P());   // 高处 → 树枝先到
             animateFlight({ x: perchX, y: perchY }, 1.0, () => {
               enter("eat");
@@ -495,13 +497,14 @@ export async function wakeFromUserAbsence() {
 
 export function dragBegin() { beginAction(); leavePerchWin(); branch.hideBranch(); enter("idle"); }   // 拖拽收枝(macOS 同款)
 
-/// 原生拖拽中的边界钳制(逻辑坐标):脚不进任务栏下、头不出屏顶、横向不出屏。
-/// 节流 100ms——和 Win32 模态移动循环互 setPosition 打架会抖。
-let lastClamp = 0;
+/// 原生拖拽中的边界钳制(物理坐标):脚不进任务栏下、头不出屏顶、横向不出屏。
+/// 每次移动都检查,但只在【越界时】才 setOrigin(正常拖拽零额外 IPC;
+/// 之前 100ms 节流让快速拖拽能钻到任务栏下面)。越界时与模态移动循环的
+/// 竞争表现为"顶在边上",这是预期行为。
+let clampBusy = false;
 export async function clampDragFrame(x: number, y: number) {
-  const now = performance.now();
-  if (now - lastClamp < 100) return;
-  lastClamp = now;
+  if (clampBusy) return;   // 上一次钳制还在途,不叠加(防抖动)
+  clampBusy = true;
   try {
     const a = await area();
     const cx = Math.min(Math.max(x, a.minX), a.maxX - SIZE_P());
@@ -509,7 +512,7 @@ export async function clampDragFrame(x: number, y: number) {
     if (Math.abs(cx - x) > 1 || Math.abs(cy - y) > 1) {
       await setOrigin(cx, cy);
     }
-  } catch { /* */ }
+  } catch { /* */ } finally { clampBusy = false; }
 }
 export async function dragDidEnd() {
   try {
