@@ -1,6 +1,6 @@
 // 逐帧渲染 + 拖拽(startDragging 原生)+ 行为状态机。日志通过 emit 发 Rust 终端。
 
-import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalSize, currentMonitor, availableMonitors } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { listen, emit } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
@@ -189,8 +189,8 @@ async function collectDiagnostics() {
   report.outerSize = await g("size", async () => {
     const s = await petWin.outerSize(); return { w: s.width, h: s.height };
   });
-  report.currentMonitor = await g("mon", () => (petWin as any).currentMonitor());
-  report.availableMonitors = await g("mons", () => (petWin as any).availableMonitors());
+  report.currentMonitor = await g("mon", () => currentMonitor());
+  report.availableMonitors = await g("mons", () => availableMonitors());
   report.work_area_cmd = await g("wa", () => invoke("work_area_cmd"));
   report.cursor_pos_cmd = await g("cur", () => invoke("cursor_pos_cmd"));
   report.stage_poop = await g("poop", async () => {
@@ -199,6 +199,7 @@ async function collectDiagnostics() {
     const p = await po.outerPosition(); const s = await po.outerSize();
     return { pos: { x: p.x, y: p.y }, size: { w: s.width, h: s.height }, scale: await po.scaleFactor() };
   });
+  report.stage_poop_error = (await import("./poop")).stageError;   // 创建失败原因(之前静默)
   report.saved_pos = { x: localStorage.getItem("kf_x"), y: localStorage.getItem("kf_y") };
   try { await invoke("diag_append", { payload: JSON.stringify(report, null, 2) }); }
   catch (e: any) { emit("log", "diag append err: " + String(e)); }
