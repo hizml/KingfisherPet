@@ -173,39 +173,35 @@ async function endDrag() {
   behavior.dragDidEnd();
 }
 
-/// 诊断:收集前端可见的全部坐标/DPI 状态 → Rust 拼 Win32 实测 → 写文件开记事本
+/// 诊断:收集前端可见的坐标/DPI 状态 → Rust 追加进诊断文件
+/// (主报告由 Rust 生成并打开记事本;这里每字段独立容错,一处失败不影响其余)
 async function collectDiagnostics() {
-  try {
-    const mons: any[] = await (petWin as any).availableMonitors().catch(() => []);
-    const cur = await (petWin as any).currentMonitor().catch(() => null);
-    const pos = await petWin.outerPosition();
-    const size = await petWin.outerSize();
-    const sf = await petWin.scaleFactor();
-    const wa = await invoke<any>("work_area_cmd");
-    const cursor = await invoke<any>("cursor_pos_cmd");
-    let stage: any = null;
+  const g = async <T>(k: string, f: () => Promise<T>): Promise<any> => {
+    try { return await f(); } catch (e: any) { return "ERR: " + String(e); }
+  };
+  const report: Record<string, any> = { time: new Date().toISOString() };
+  report.devicePixelRatio = window.devicePixelRatio;
+  report.screen_css = { w: screen.width, h: screen.height };
+  report.scaleFactor_api = await g("sf", () => petWin.scaleFactor());
+  report.outerPosition = await g("pos", async () => {
+    const p = await petWin.outerPosition(); return { x: p.x, y: p.y };
+  });
+  report.outerSize = await g("size", async () => {
+    const s = await petWin.outerSize(); return { w: s.width, h: s.height };
+  });
+  report.currentMonitor = await g("mon", () => (petWin as any).currentMonitor());
+  report.availableMonitors = await g("mons", () => (petWin as any).availableMonitors());
+  report.work_area_cmd = await g("wa", () => invoke("work_area_cmd"));
+  report.cursor_pos_cmd = await g("cur", () => invoke("cursor_pos_cmd"));
+  report.stage_poop = await g("poop", async () => {
     const po = await WebviewWindow.getByLabel("poop");
-    if (po) stage = {
-      pos: await po.outerPosition(), size: await po.outerSize(), scale: await po.scaleFactor(),
-    };
-    const report = {
-      time: new Date().toISOString(),
-      devicePixelRatio: window.devicePixelRatio,
-      screen_css: { w: screen.width, h: screen.height },
-      scaleFactor_api: sf,
-      outerPosition: { x: pos.x, y: pos.y },
-      outerSize: { w: size.width, h: size.height },
-      currentMonitor: cur,
-      availableMonitors: mons,
-      work_area_cmd: wa,
-      cursor_pos_cmd: cursor,
-      stage_poop: stage,
-      saved_pos: { x: localStorage.getItem("kf_x"), y: localStorage.getItem("kf_y") },
-    };
-    await invoke("diag_write", { payload: JSON.stringify(report, null, 2) });
-  } catch (e: any) {
-    emit("log", "diag err: " + (e?.stack || String(e)));
-  }
+    if (!po) return null;
+    const p = await po.outerPosition(); const s = await po.outerSize();
+    return { pos: { x: p.x, y: p.y }, size: { w: s.width, h: s.height }, scale: await po.scaleFactor() };
+  });
+  report.saved_pos = { x: localStorage.getItem("kf_x"), y: localStorage.getItem("kf_y") };
+  try { await invoke("diag_append", { payload: JSON.stringify(report, null, 2) }); }
+  catch (e: any) { emit("log", "diag append err: " + String(e)); }
 }
 
 main();
