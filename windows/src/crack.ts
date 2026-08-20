@@ -4,6 +4,7 @@
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { availableMonitors } from "@tauri-apps/api/window";
 import { emit, listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { warnOnce } from "./log";
 
 let win: WebviewWindow | null = null;
@@ -14,15 +15,17 @@ async function ensure() {
       // 主窗 location.reload()(切主题)后模块重置,但 poop 窗是 app 级、不会被销毁
       // → 同 label 再 new 会 reject,ready 永远失败(切主题后特效/屎全废)。先查再建。
       const existing = await WebviewWindow.getByLabel("crack");
-      // 虚拟桌面 bounding box(多屏覆盖;不再单屏 0,0)。⚠️ availableMonitors 是模块函数
+      // 包围盒用【工作区并集】(同 poop.ts:整屏覆盖的置顶窗会触发 Windows
+      // 全屏检测 → 压任务栏层级 + 创建闪白 + 舞台 z 序被卷到后面)
       const mons = await availableMonitors().catch(() => []);
       const sc0 = mons[0]?.scaleFactor ?? 1;
       let ox = 0, oy = 0, rw = 1920, rh = 1080;
       if (mons.length) {
         let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
         for (const m of mons) {
-          x0 = Math.min(x0, m.position.x); y0 = Math.min(y0, m.position.y);
-          x1 = Math.max(x1, m.position.x + m.size.width); y1 = Math.max(y1, m.position.y + m.size.height);
+          const wa = m.workArea ?? { position: m.position, size: m.size };
+          x0 = Math.min(x0, wa.position.x); y0 = Math.min(y0, wa.position.y);
+          x1 = Math.max(x1, wa.position.x + wa.size.width); y1 = Math.max(y1, wa.position.y + wa.size.height);
         }
         ox = x0 / sc0; oy = y0 / sc0; rw = (x1 - x0) / sc0; rh = (y1 - y0) / sc0;
       }
@@ -30,6 +33,7 @@ async function ensure() {
         url: "crack.html",
         transparent: true, decorations: false, alwaysOnTop: true,
         resizable: false, skipTaskbar: true, focus: false,
+        visible: false,   // 创建时不可见,页面就绪再 NOACTIVATE 显示(杀白闪)
         width: Math.ceil(rw), height: Math.ceil(rh),
         x: Math.round(ox), y: Math.round(oy),
       });
@@ -57,6 +61,10 @@ async function ensure() {
         }),
         new Promise<void>(res => setTimeout(res, 2000)),
       ]);
+      if (!existing) {
+        await invoke("stage_visibility", { label: "crack", show: true })
+          .catch(e => warnOnce("crack stage show", e));
+      }
     })();
     attempt.catch((e: any) => { warnOnce("crack stage", e); ready = null; });   // 失败留痕 + 可重试
     ready = attempt;
