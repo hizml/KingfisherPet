@@ -39,7 +39,7 @@ async function ensure() {
         url: "poop.html",
         transparent: true, decorations: false, alwaysOnTop: true,
         resizable: false, skipTaskbar: true, focus: false,
-        visible: false,   // 创建时不可见:WebView2 初始化会白屏一闪;页面就绪再 NOACTIVATE 显示
+        visible: false, shadow: false,   // 创建时不可见:WebView2 初始化会白屏一闪;页面就绪再 NOACTIVATE 显示
         width: Math.ceil(rw), height: Math.ceil(rh),
         x: Math.round(ox), y: Math.round(oy),
       });

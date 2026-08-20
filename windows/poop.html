@@ -212,6 +212,8 @@ listen("stage-origin", (e) => {   // 舞台建在虚拟桌面原点,body 平移�
   const { x, y } = e.payload;
   document.body.style.transform = `translate(${-x}px, ${-y}px)`;
 });
+// 健康探针:主窗 ping → 本页 pong(诊断用:页面活着/事件链通,一眼判定)
+listen("stage-ping", () => { emit("stage-pong", "poop"); });
 // 睡眠/唤醒:暂停/恢复坐屎轮询(Rust 广播到所有窗口)
 let stageDormant = false;
 listen("sleep", () => { stageDormant = true; });

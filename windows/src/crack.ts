@@ -33,7 +33,7 @@ async function ensure() {
         url: "crack.html",
         transparent: true, decorations: false, alwaysOnTop: true,
         resizable: false, skipTaskbar: true, focus: false,
-        visible: false,   // 创建时不可见,页面就绪再 NOACTIVATE 显示(杀白闪)
+        visible: false, shadow: false,   // 创建时不可见,页面就绪再 NOACTIVATE 显示(杀白闪)
         width: Math.ceil(rw), height: Math.ceil(rh),
         x: Math.round(ox), y: Math.round(oy),
       });
