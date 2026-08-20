@@ -84,10 +84,9 @@ fn recall_cmd(app: tauri::AppHandle) {
     recall_internal(&app);
 }
 
-/// 诊断:Rust/Win32 实测 + 前端收集的 JSON 拼成报告,写文件并用记事本打开
-/// (坐标问题定位——不再盲猜,直接看地面真值)。
-#[tauri::command]
-fn diag_write(app: tauri::AppHandle, payload: String) {
+/// 诊断(主链路,Rust 一手包办,不依赖前端):Win32 实测写报告 + 记事本打开。
+/// 前端随后可用 diag_append 追加 webview 侧数据(追加不重开)。
+fn diag_run(app: &tauri::AppHandle) {
     let mut rpt = String::new();
     rpt.push_str("=== KingfisherPet 坐标诊断 ===\n");
     rpt.push_str(&format!("dpi_awareness(0=unaware/1=system/2=per-monitor): {}\n",
@@ -107,9 +106,9 @@ fn diag_write(app: tauri::AppHandle, payload: String) {
         }
         rpt.push_str(&format!("main is_visible: {:?}\n", w.is_visible()));
     }
-    rpt.push_str("\n=== Webview(JS 收集) ===\n");
-    rpt.push_str(&payload);
-    rpt.push_str("\n");
+    if let Some(c) = crate::windows::cursor_pos() {
+        rpt.push_str(&format!("cursor(物理): {},{}\n", c.0, c.1));
+    }
 
     let dir = std::env::var("APPDATA")
         .map(|d| std::path::PathBuf::from(d))
@@ -123,6 +122,19 @@ fn diag_write(app: tauri::AppHandle, payload: String) {
     }
     println!("[diag] {}", path.display());
     let _ = open::that(&path);
+}
+
+/// 前端诊断数据追加(不重开记事本;主报告由 diag_run 保证落地)
+#[tauri::command]
+fn diag_append(payload: String) {
+    let dir = std::env::var("APPDATA")
+        .map(|d| std::path::PathBuf::from(d))
+        .unwrap_or_else(|_| std::env::temp_dir());
+    let path = dir.join("KingfisherPet").join("diagnostics.txt");
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new().append(true).create(true).open(path) {
+        let _ = writeln!(f, "\n=== Webview(JS 收集) ===\n{}\n", payload);
+    }
 }
 
 /// 界面语言:系统首选语言 zh 开头 → 中文,否则英文。
@@ -274,7 +286,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, recall_cmd, diag_write])
+        .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, recall_cmd, diag_append])
         .setup(|app| {
             crate::system::setup_power(app.handle().clone());   // 睡眠/锁屏/唤醒 → emit sleep/wake
             // 前端 log 事件 → 终端(调试 webview 错)
@@ -322,6 +334,11 @@ pub fn run() {
                             refresh_menu(&handle);
                         }
                         "recall" => { recall_internal(&handle); }   // Rust 直操(前端状态废掉也能救回)
+                        "diag" => {
+                            // 诊断:Rust 一手包办(写报告+开记事本),再通知前端追加 webview 数据
+                            diag_run(&handle);
+                            let _ = app.emit("menu", "diag");
+                        }
                         "show" => {
                             // 鸟窗隐藏时前端收不到事件(或不可靠):先 Rust 侧救回,
                             // 走 recall 链路(移安全位+恢复舞台+延迟复位);可见时正常走前端 toggle

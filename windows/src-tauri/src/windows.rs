@@ -22,19 +22,61 @@ unsafe fn visible_rect(hwnd: windows::Win32::Foundation::HWND) -> Option<windows
 
 #[cfg(windows)]
 pub fn front_perch(bird_w: f64) -> Option<(f64, f64, isize)> {
-    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
-    use windows::Win32::Foundation::RECT;
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId, EnumWindows, GetClassNameW};
+    use windows::Win32::Foundation::{HWND, LPARAM, RECT};
     use windows::Win32::System::Threading::GetCurrentProcessId;
-    unsafe {
-        let hwnd = GetForegroundWindow();
-        if hwnd.0.is_null() { return None; }   // windows crate V0.61 HWND.0 是 *mut c_void
+    use std::cell::{Cell, RefCell};
+
+    // extern fn 不能捕获 → 参数走 thread_local(命令单线程,安全)
+    thread_local! {
+        static MY_PID: Cell<u32> = Cell::new(0);
+        static BIRD_W: Cell<u64> = Cell::new(0);
+        static FG: Cell<usize> = Cell::new(0);
+        static CAND: RefCell<Option<(f64, f64, isize)>> = RefCell::new(None);
+    }
+
+    unsafe fn suitable(hwnd: HWND, my_pid: u32, bird_w: f64) -> Option<(f64, f64, isize)> {
         let mut pid: u32 = 0;
         GetWindowThreadProcessId(hwnd, Some(&mut pid));
-        if pid == GetCurrentProcessId() { return None; }   // 排除自己
+        if pid == my_pid { return None; }
+        let mut cls = [0u16; 64];
+        let n = GetClassNameW(hwnd, &mut cls).max(0) as usize;
+        let name = String::from_utf16_lossy(&cls[..n.min(cls.len())]);
+        if matches!(name.as_str(), "Progman" | "WorkerW" | "Shell_TrayWnd") { return None; }   // 桌面/任务栏
         let r: RECT = visible_rect(hwnd)?;
         if (r.right - r.left) < 260 || (r.bottom - r.top) < 160 { return None; }
-        let cx = (r.left + r.right) as f64 / 2.0 - bird_w / 2.0;
-        Some((cx, r.top as f64, hwnd.0 as isize))
+        Some(((r.left + r.right) as f64 / 2.0 - bird_w / 2.0, r.top as f64, hwnd.0 as isize))
+    }
+
+    unsafe extern "system" fn proc(hwnd: HWND, _l: LPARAM) -> windows::core::BOOL {
+        unsafe {
+            let my_pid = MY_PID.with(|c| c.get());
+            let bird_w = f64::from_bits(BIRD_W.with(|c| c.get()));
+            let fg = HWND(FG.with(|c| c.get()) as *mut _);
+            if hwnd == fg { return windows::core::BOOL(1); }   // 前台已试过(不合格才到这)
+            if let Some(hit) = suitable(hwnd, my_pid, bird_w) {
+                CAND.with(|c| *c.borrow_mut() = Some(hit));
+                return windows::core::BOOL(0);   // 找到首个(Z 序最顶)即停
+            }
+            windows::core::BOOL(1)
+        }
+    }
+
+    unsafe {
+        let my_pid = GetCurrentProcessId();
+        // 1) 前台窗口。托盘菜单点击后前台常是任务栏(高度不够)/桌面(Progman),
+        //    之前直接 None → "停到窗口上"点完没反应
+        let fg = GetForegroundWindow();
+        if !fg.0.is_null() {
+            if let Some(hit) = suitable(fg, my_pid, bird_w) { return Some(hit); }
+        }
+        // 2) 兜底:Z 序从顶到底第一个合格窗口
+        MY_PID.with(|c| c.set(my_pid));
+        BIRD_W.with(|c| c.set(bird_w.to_bits()));
+        FG.with(|c| c.set(fg.0 as usize));
+        CAND.with(|c| *c.borrow_mut() = None);
+        let _ = EnumWindows(Some(proc), LPARAM(0));
+        CAND.with(|c| *c.borrow())
     }
 }
 
