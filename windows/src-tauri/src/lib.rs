@@ -109,6 +109,8 @@ fn diag_run(app: &tauri::AppHandle) {
     if let Some(c) = crate::windows::cursor_pos() {
         rpt.push_str(&format!("cursor(物理): {},{}\n", c.0, c.1));
     }
+    let labels: Vec<String> = app.webview_windows().keys().cloned().collect();
+    rpt.push_str(&format!("app windows(实际存在): {:?}\n", labels));
 
     let dir = std::env::var("APPDATA")
         .map(|d| std::path::PathBuf::from(d))

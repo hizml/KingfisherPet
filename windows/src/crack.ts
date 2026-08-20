@@ -2,7 +2,7 @@
 // 主窗 emit("crack-at", {x,y}) → crack 窗 canvas 画放射裂。对应 macOS CrackController(独立覆盖层)。
 
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { availableMonitors } from "@tauri-apps/api/window";
 import { emit, listen } from "@tauri-apps/api/event";
 
 let win: WebviewWindow | null = null;
@@ -13,8 +13,8 @@ async function ensure() {
       // 主窗 location.reload()(切主题)后模块重置,但 poop 窗是 app 级、不会被销毁
       // → 同 label 再 new 会 reject,ready 永远失败(切主题后特效/屎全废)。先查再建。
       const existing = await WebviewWindow.getByLabel("crack");
-      // 虚拟桌面 bounding box(多屏覆盖;不再单屏 0,0)
-      const mons = await (getCurrentWindow() as any).availableMonitors().catch(() => []) ?? [];
+      // 虚拟桌面 bounding box(多屏覆盖;不再单屏 0,0)。⚠️ availableMonitors 是模块函数
+      const mons = (await availableMonitors().catch(() => [])) as any[];
       const sc0 = mons[0]?.scaleFactor ?? 1;
       let ox = 0, oy = 0, rw = 1920, rh = 1080;
       if (mons.length) {
