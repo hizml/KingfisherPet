@@ -84,6 +84,47 @@ fn recall_cmd(app: tauri::AppHandle) {
     recall_internal(&app);
 }
 
+/// 诊断:Rust/Win32 实测 + 前端收集的 JSON 拼成报告,写文件并用记事本打开
+/// (坐标问题定位——不再盲猜,直接看地面真值)。
+#[tauri::command]
+fn diag_write(app: tauri::AppHandle, payload: String) {
+    let mut rpt = String::new();
+    rpt.push_str("=== KingfisherPet 坐标诊断 ===\n");
+    rpt.push_str(&format!("dpi_awareness(0=unaware/1=system/2=per-monitor): {}\n",
+        crate::windows::dpi_awareness()));
+    rpt.push_str("monitors[rcMonitor l,t,r,b | rcWork l,t,r,b | dpi](物理):\n");
+    for (i, m) in crate::windows::diag_monitors().iter().enumerate() {
+        rpt.push_str(&format!("  #{} monitor({},{},{},{}) work({},{},{},{}) dpi={}\n",
+            i, m.0, m.1, m.2, m.3, m.4, m.5, m.6, m.7, m.8));
+    }
+    if let Some(w) = app.get_webview_window("main") {
+        if let Some(r) = crate::windows::diag_main_window(&w) {
+            rpt.push_str(&format!("main GetWindowRect(l,t,r,b)={} {} {} {} dpi={}\n", r.0, r.1, r.2, r.3, r.4));
+        }
+        #[cfg(windows)]
+        if let Ok(h) = w.hwnd() {
+            rpt.push_str(&format!("work_area_cmd(main): {:?}\n", crate::windows::work_area(h.0 as isize)));
+        }
+        rpt.push_str(&format!("main is_visible: {:?}\n", w.is_visible()));
+    }
+    rpt.push_str("\n=== Webview(JS 收集) ===\n");
+    rpt.push_str(&payload);
+    rpt.push_str("\n");
+
+    let dir = std::env::var("APPDATA")
+        .map(|d| std::path::PathBuf::from(d))
+        .unwrap_or_else(|_| std::env::temp_dir());
+    let dir = dir.join("KingfisherPet");
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("diagnostics.txt");
+    if let Err(e) = std::fs::write(&path, rpt) {
+        println!("[diag] 写失败 {}: {}", path.display(), e);
+        return;
+    }
+    println!("[diag] {}", path.display());
+    let _ = open::that(&path);
+}
+
 /// 界面语言:系统首选语言 zh 开头 → 中文,否则英文。
 /// 用 reg.exe 查注册表(纯 std + CommandExt,不依赖 windows crate feature——
 /// Win32_Globalization 在 CI 上 feature 门控行为不稳,E0433)。
@@ -150,6 +191,7 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
     let peck = MenuItem::with_id(app, "peck", t("啄一下", "Peck"), true, None::<&str>)?;
     let show = MenuItem::with_id(app, "show", t("显示 / 隐藏", "Show / Hide"), true, None::<&str>)?;
     let recall = MenuItem::with_id(app, "recall", t("找回小鸟", "Find the Bird"), true, None::<&str>)?;
+    let diag = MenuItem::with_id(app, "diag", t("诊断信息", "Diagnostics"), true, None::<&str>)?;
     let repair = MenuItem::with_id(app, "repair", t("修复屏幕", "Repair Screen"), true, None::<&str>)?;
 
     // ── 设置区(子菜单 + 勾选当前项)──
@@ -209,7 +251,7 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
     ])?;
     let _ = menu; // 分隔符+设置区需要 append;改用一次性 with_items 全量
     let items: Vec<&dyn IsMenuItem<tauri::Wry>> = vec![
-        &call, &fish, &sing, &perch, &peck, &show, &recall, &repair,
+        &call, &fish, &sing, &perch, &peck, &show, &recall, &repair, &diag,
         &m_theme, &m_act, &m_spd, &sound, &login, &m_lang,
         &about, &quit,
     ];
@@ -232,7 +274,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, recall_cmd])
+        .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, recall_cmd, diag_write])
         .setup(|app| {
             crate::system::setup_power(app.handle().clone());   // 睡眠/锁屏/唤醒 → emit sleep/wake
             // 前端 log 事件 → 终端(调试 webview 错)

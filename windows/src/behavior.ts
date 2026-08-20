@@ -522,7 +522,8 @@ export async function dragDidEnd() {
       if (d < bestD) { bestD = d; best = c; }
     }
     if (best && bestD <= 70 * _scale) {   // 吸附范围 70 逻辑点(物理比较要乘缩放,高 DPI 下否则范围缩水)
-      await setOrigin(o.x, best.y - FEET_BOT_P());   // 脚精确踩表面(x 保持松手位置)
+      const cx = Math.min(Math.max(o.x, a.minX), a.maxX - SIZE_P());   // X 也钳回屏内(右缘松手别停在屏外)
+      await setOrigin(cx, best.y - FEET_BOT_P());   // 脚精确踩表面(x 保持松手位置)
       if (best.hwnd != null) {
         // 吸到窗口上沿:接管栖窗增量跟随(不居中)
         perchedHwnd = best.hwnd;
