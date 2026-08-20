@@ -31,13 +31,13 @@ fn surfaces_below_cmd(x: f64) -> Vec<(f64, f64, f64, isize)> {
 
 #[tauri::command]
 fn work_area_cmd(app: tauri::AppHandle) -> Option<(i32, i32, i32, i32)> {
-    use tauri::Manager;
-    if let Some(w) = app.get_webview_window("main") {
-        #[cfg(windows)]
-        if let Ok(h) = w.hwnd() {
-            return crate::windows::work_area(h.0 as isize);
-        }
+    let w = app.get_webview_window("main")?;
+    #[cfg(windows)]
+    if let Ok(h) = w.hwnd() {
+        return crate::windows::work_area(h.0 as isize);
     }
+    #[cfg(not(windows))]
+    let _ = w;   // 非 Windows 无工作区查询(前端有兜底)
     None
 }
 

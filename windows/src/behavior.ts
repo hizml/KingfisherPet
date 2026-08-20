@@ -15,6 +15,12 @@ import { hideShadow } from "./shadow";
 import { invoke } from "@tauri-apps/api/core";
 import { settings } from "./settings";
 import { setSleepMuted } from "./audio";
+import { warnOnce } from "./log";
+
+/// 舞台窗显隐(失败留痕:舞台丢了=树枝/阴影/屎全灭,不能静默)
+function stageVis(label: string, show: boolean) {
+  invoke("stage_visibility", { label, show }).catch(e => warnOnce("stage_vis " + label + " " + show, e));
+}
 
 const win: TauriWindow = getCurrentWindow();
 const SIZE = 160;      // 窗口逻辑宽高(sprite 内部逻辑像素)
@@ -48,7 +54,7 @@ async function scale(): Promise<number> {
   try {
     const s = await win.scaleFactor();
     if (s && s > 0) { _scale = s; }
-  } catch { /* */ }
+  } catch (e) { warnOnce("scale", e); }
   return _scale;
 }
 
@@ -318,7 +324,7 @@ async function dropPoopAt(x: number, y: number) {
   } catch { /* */ }
   const dist = Math.max(0, landingY - y);
   const fallSec = Math.max(0.15, dist / 220);   // 220px/s(macOS 同款);近距也留 0.15s 可见下落
-  try { await poop.dropPoop(x, y, landingY, fallSec, landHwnd, sc); } catch { /* */ }
+  try { await poop.dropPoop(x, y, landingY, fallSec, landHwnd, sc); } catch (e) { warnOnce("dropPoop", e); }
 }
 
 // 栖窗:飞到最前窗口的上沿歇脚(Win32 front_perch;mac stub 返回 null → finish)
@@ -464,8 +470,8 @@ export function sleepForUserAbsence() {
   userSleeping = true;
   setSleepMuted(true);   // 睡眠期间不叫(macOS 同款);正在播的也停
   // 节能:舞台窗隐藏 → WebView2 挂起(全屏透明层不合成);唤醒时恢复
-  invoke("stage_visibility", { label: "poop", show: false }).catch(() => {});
-  invoke("stage_visibility", { label: "crack", show: false }).catch(() => {});
+  stageVis("poop", false);
+  stageVis("crack", false);
   enter("sleep");
   // 不 startZzz:锁屏后是安全桌面看不见,整天 0.9s/次的 DOM churn 纯耗电;解锁赖床时再飘
 }
@@ -475,8 +481,8 @@ export async function wakeFromUserAbsence() {
   if (!onScreen) { userSleeping = false; return; }   // 隐藏鸟不复活(macOS 同款守卫)
   wakeGraceUntil = performance.now() + 2000;   // 唤醒宽限:窗口层级未稳,先别急着动作
   setSleepMuted(false);
-  invoke("stage_visibility", { label: "poop", show: true }).catch(() => {});   // 舞台恢复(鸟要阴影/特效)
-  invoke("stage_visibility", { label: "crack", show: true }).catch(() => {});
+  stageVis("poop", true);   // 舞台恢复(鸟要阴影/特效)
+  stageVis("crack", true);
   try { await poop.wakeGrace(); } catch { /* */ }   // 坐着的屎 3s 内不误判重落
   enter("sleep");
   startZzzInterval();
@@ -578,8 +584,8 @@ export async function recallToScreen() {
       onScreen = true;
       await invoke("show_no_activate");
       // 舞台窗一并恢复(之前漏了:找回后没阴影/没树枝/不拉屎的根源)
-      invoke("stage_visibility", { label: "poop", show: true }).catch(() => {});
-      invoke("stage_visibility", { label: "crack", show: true }).catch(() => {});
+      stageVis("poop", true);
+      stageVis("crack", true);
     }
     await setOrigin(a.maxX - SIZE_P() - 30 * _scale, a.maxY - FEET_TOP_P());
   } catch (e) { emit("log", "recall " + e); }
@@ -657,10 +663,10 @@ export async function fallAway() {
     const a = await area();
     // 掉出屏幕底(线性下坠)后隐藏窗口
     animateMove({ x: o.x, y: a.maxY + SIZE_P() + 40 * _scale }, 0.85, async () => {
-      try { await (win as any).hide(); } catch { /* */ }
+      try { await win.hide(); } catch (e) { warnOnce("hide", e); }
       hideShadow();
-      invoke("stage_visibility", { label: "poop", show: false }).catch(() => {});   // 隐藏鸟:舞台也挂起(零耗)
-      invoke("stage_visibility", { label: "crack", show: false }).catch(() => {});
+      stageVis("poop", false);   // 隐藏鸟:舞台也挂起(零耗)
+      stageVis("crack", false);
       enter("idle");
       busy = false;
     });
@@ -674,8 +680,8 @@ export async function hatchIn() {
     const a = await area();
     await setOrigin(a.maxX - SIZE_P() - 30 * _scale, a.maxY - FEET_TOP_P());
     await invoke("show_no_activate");   // 显示但不抢前台焦点
-    invoke("stage_visibility", { label: "poop", show: true }).catch(() => {});
-    invoke("stage_visibility", { label: "crack", show: true }).catch(() => {});
+    stageVis("poop", true);
+    stageVis("crack", true);
   } catch { /* */ }
   enter("egg");
   hold(1.4, () => { enter("idle"); scheduleThink(); });

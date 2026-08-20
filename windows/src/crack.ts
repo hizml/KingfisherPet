@@ -4,12 +4,13 @@
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { availableMonitors } from "@tauri-apps/api/window";
 import { emit, listen } from "@tauri-apps/api/event";
+import { warnOnce } from "./log";
 
 let win: WebviewWindow | null = null;
 let ready: Promise<void> | null = null;
 async function ensure() {
   if (!ready) {
-    ready = (async () => {
+    const attempt = (async () => {
       // 主窗 location.reload()(切主题)后模块重置,但 poop 窗是 app 级、不会被销毁
       // → 同 label 再 new 会 reject,ready 永远失败(切主题后特效/屎全废)。先查再建。
       const existing = await WebviewWindow.getByLabel("crack");
@@ -39,8 +40,12 @@ async function ensure() {
       };
       await emitOrigin();
       if (!existing) {
-        await w0.once("tauri://created", () => {});
-        await w0.setIgnoreCursorEvents(true).catch(() => {});   // 穿透,别挡屏幕
+        // 创建事件 5s 超时:别让挂死的创建把 ensure 永久吊住
+        await Promise.race([
+          w0.once("tauri://created", () => {}),
+          new Promise<void>((_, rej) => setTimeout(() => rej(new Error("crack stage create timeout")), 5000)),
+        ]);
+        await w0.setIgnoreCursorEvents(true).catch(e => warnOnce("crack ignore", e));   // 穿透,别挡屏幕
       }
       // 等 child 页注册完 listener(否则首次 emit 子窗还没监听,事件丢失)。
       // reload 后子窗 listener 已在,此握手立即满足/超时放行,均安全。
@@ -53,11 +58,13 @@ async function ensure() {
         new Promise<void>(res => setTimeout(res, 2000)),
       ]);
     })();
+    attempt.catch((e: any) => { warnOnce("crack stage", e); ready = null; });   // 失败留痕 + 可重试
+    ready = attempt;
   }
   await ready;
 }
 
-export function setupCrack() { ensure().catch(() => {}); }
+export function setupCrack() { ensure().catch(e => warnOnce("crack setup", e)); }
 
 export async function crackAt(x: number, y: number) {
   await ensure();
