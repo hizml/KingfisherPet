@@ -85,6 +85,15 @@ async function main() {
     petWin.onScaleChanged(async () => {
       try { await petWin.setSize(new LogicalSize(160, 160)); } catch { /* */ }
     });
+    if (import.meta.env.DEV) {
+      // 开发模式:启动 8s 自动收集诊断打到终端(坐标/舞台窗问题本机即可复现)
+      setTimeout(async () => {
+        await collectDiagnostics();
+        const { stageError } = await import("./poop");
+        const po = await WebviewWindow.getByLabel("poop");
+        emit("log", `DEV diag: stage_poop=${po ? "EXISTS" : "NULL"} stageError=${stageError ?? "none"}`);
+      }, 8000);
+    }
   } catch (e: any) {
     emit("log", "main err: " + (e?.stack || String(e)));
   }

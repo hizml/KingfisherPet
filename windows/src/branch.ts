@@ -3,6 +3,7 @@
 // 对应 macOS BranchController.showAt:飞往悬空落点时树枝先到。
 import { emit } from "@tauri-apps/api/event";
 import { ensurePoopStage } from "./poop";
+import { warnOnce } from "./log";
 
 let theme = localStorage.getItem("kf_theme") || "flat";   // 主题切换走 reload,启动时读持久化值
 
@@ -10,7 +11,7 @@ async function branchEvt(show: boolean, x = 0, y = 0) {
   try {
     await ensurePoopStage();
     await emit("branch", { show, x, y, theme });
-  } catch { /* */ }
+  } catch (e) { warnOnce("branch", e); }
 }
 
 export function setupBranch(_lib: unknown) {

@@ -1,9 +1,10 @@
 // 屎:独立全屏透明窗(WebviewWindow "poop"),物理下落(屏幕坐标,不跟鸟窗)。
 // 对应 macOS PoopController(独立窗 + 物理)。避免 macOS 踩过的「屎跟窗走」坑。
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { getCurrentWindow, availableMonitors } from "@tauri-apps/api/window";
+import { availableMonitors } from "@tauri-apps/api/window";
 import { emit, listen } from "@tauri-apps/api/event";
 import { settings } from "./settings";
+import { warnOnce } from "./log";
 
 let win: WebviewWindow | null = null;
 let ready: Promise<void> | null = null;
@@ -61,7 +62,11 @@ async function ensure() {
       ]);
     })();
     // 创建失败:记原因 + 复位允许下次重试(之前拒绝态被永久缓存,阴影/树枝/屎全哑)
-    attempt.catch((e: any) => { stageError = String(e?.message ?? e); ready = null; });
+    attempt.catch((e: any) => {
+      stageError = String(e?.message ?? e);
+      warnOnce("poop stage", e);
+      ready = null;
+    });
     ready = attempt;
   }
   await ready;
