@@ -294,8 +294,7 @@ pub fn run() {
         ))
         .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, diag_append, assert_z_cmd])
         .setup(|app| {
-            crate::system::setup_power(app.handle().clone());   // 睡眠/锁屏/唤醒 → emit sleep/wake
-            crate::system::setup_session_monitor(app.handle().clone());   // RDP 会话变化 → 前端重载自愈
+            crate::system::setup_power(app.handle().clone());   // 睡眠/锁屏/唤醒/会话 → emit sleep/wake/session-change
             // 设置窗主动拉状态(打开时):回语言/自启
             {
                 let app2 = app.handle().clone();
@@ -369,7 +368,8 @@ pub fn run() {
                                 let inside = mons.iter().any(|m|
                                     p.x >= m.position().x - 40 && p.x <= m.position().x + m.size().width as i32 + 40 &&
                                     p.y >= m.position().y - 40 && p.y <= m.position().y + m.size().height as i32 + 40);
-                                if !inside && now.saturating_sub(healed) > 60 {
+                                let vis = w.is_visible().unwrap_or(true);
+                                if !inside && vis && now.saturating_sub(healed) > 60 {   // 隐藏=用户意图(fallAway),不找回
                                     crate::kflog::kflog(&format!("rust-watchdog: 主窗出屏({},{}) → 找回", p.x, p.y));
                                     LAST_HEAL.store(now, Ordering::Relaxed);
                                     let _ = crate::windows::recall_show(&w);

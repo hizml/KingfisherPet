@@ -17,6 +17,7 @@ pub fn setup_power(app: tauri::AppHandle) {
         // 勿扰检测(去抖计数):全屏应用 → dnd(鸟隐身+静音);系统在放声音 → media(不叫)
         let mut fs_on = 0u32; let mut fs_off = 0u32; let mut dnd = false;
         let mut au_on = 0u32; let mut au_off = 0u32; let mut media = false;
+        let mut wts_tick = 0u32; let mut last_wts = -1i32;   // RDP 会话状态(轮询;隐藏消息窗方案不可靠)
         loop {
             std::thread::sleep(std::time::Duration::from_secs(2));
 
@@ -69,6 +70,19 @@ pub fn setup_power(app: tauri::AppHandle) {
                 let _ = app.emit("media", false);
             }
 
+            // --- RDP 会话状态(断开/重连):ConnectState 变化 → 恢复时前端重载自愈 ---
+            wts_tick += 1;
+            if wts_tick % 4 == 0 {
+                let st = wts_connect_state();
+                if st != last_wts {
+                    crate::kflog::kflog(&format!("wts: 会话状态 {last_wts} → {st}"));
+                    last_wts = st;
+                    if st == 0 {   // WTSActive:从断开/连接中恢复 → 合成器可能已丢,前端重载贴图自愈
+                        let _ = app.emit("session-change", ());
+                    }
+                }
+            }
+
             // --- 锁屏探测 ---
             let is_locked = unsafe {
                 match OpenInputDesktop(DESKTOP_CONTROL_FLAGS(0), false, DESKTOP_READOBJECTS) {
@@ -89,53 +103,30 @@ pub fn setup_power(app: tauri::AppHandle) {
     });
 }
 
-/// 远程桌面会话监听:WM_WTSSESSION_CHANGE(解锁/远程重连)时通知前端重载。
-/// 动机:WebView2 在 RDP 会话切换后合成器会丢失,页面活着但贴图不显示
-/// (用户报告"运行一会儿贴图消失,疑似远程桌面");页面内无法自检,
-/// 只能靠会话事件触发 location.reload() 自愈。
-#[cfg(windows)]
-pub fn setup_session_monitor(app: tauri::AppHandle) {
-    use tauri::Emitter;
-    std::thread::spawn(move || {
-        use windows::Win32::UI::WindowsAndMessaging::{GetMessageW, CreateWindowExW, MSG, WS_OVERLAPPED, WINDOW_EX_STYLE};
-        use windows::Win32::System::RemoteDesktop::WTSRegisterSessionNotification;
-        use windows::Win32::Foundation::HWND;
-        use windows::core::PCWSTR;
-        const WM_WTSSESSION_CHANGE: u32 = 0x02B1;
-        const NOTIFY_FOR_THIS_SESSION: u32 = 0;
-        const WTS_SESSION_UNLOCK: u32 = 0x8;
-        const WTS_SESSION_REMOTE_CONNECT: u32 = 0x9;
-        unsafe {
-            // 隐藏消息窗:用内置 STATIC 类(免注册/WndProc),只收会话通知
-            let hwnd = CreateWindowExW(
-                WINDOW_EX_STYLE(0),
-                PCWSTR(windows::core::w!("STATIC").as_ptr()),
-                PCWSTR(windows::core::w!("").as_ptr()),
-                WS_OVERLAPPED, 0, 0, 0, 0,
-                None, None, None, None,
-            );
-            let Ok(hwnd) = hwnd else { return };
-            let _ = WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION);
-            let mut msg = MSG::default();
-            while GetMessageW(&mut msg, None, 0, 0).as_bool() {
-                if msg.message == WM_WTSSESSION_CHANGE {
-                    let evt = msg.wParam.0 as u32;
-                    // 解锁或远程重连:合成器可能已丢,通知前端重载自愈
-                    if evt == WTS_SESSION_UNLOCK || evt == WTS_SESSION_REMOTE_CONNECT {
-                        crate::kflog::kflog(&format!("session: 会话恢复(evt={evt}),通知前端重载"));
-                        let _ = app.emit("session-change", ());
-                    }
-                }
-            }
-            let _ = HWND::default();
-        }
-    });
-}
-
-#[cfg(not(windows))]
-pub fn setup_session_monitor(_app: tauri::AppHandle) {}
-
 #[cfg(not(windows))]
 pub fn setup_power(_app: tauri::AppHandle) {
     // mac:用原生 Swift 版,Tauri mac 端不需要
 }
+
+
+/// WTS 当前会话连接状态(WTSActive=0 / WTSConnected=1 / WTSDisconnected=4)。
+/// RDP 断开时变 Disconnected,重连回 Active——比隐藏消息窗方案可靠(实测触发)。
+#[cfg(windows)]
+fn wts_connect_state() -> i32 {
+    use windows::Win32::System::RemoteDesktop::{WTSQuerySessionInformationW, WTSConnectState, WTS_CURRENT_SERVER_HANDLE, WTS_CURRENT_SESSION};
+    use windows::Win32::Foundation::LocalFree;
+    unsafe {
+        let mut buf: windows::core::PWSTR = windows::core::PWSTR::null();
+        let mut len: u32 = 0;
+        let ok = WTSQuerySessionInformationW(
+            Some(WTS_CURRENT_SERVER_HANDLE), WTS_CURRENT_SESSION, WTSConnectState,
+            &mut buf, &mut len).is_ok();
+        if !ok || buf.is_null() { return -1; }
+        let v = *buf.as_ptr() as i32;
+        let _ = LocalFree(Some(windows::Win32::Foundation::HLOCAL(buf.as_ptr() as _)));
+        v
+    }
+}
+
+#[cfg(not(windows))]
+fn wts_connect_state() -> i32 { -1 }
