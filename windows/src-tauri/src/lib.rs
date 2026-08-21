@@ -236,15 +236,13 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
     let t = |zh_txt: &str, en_txt: &str| -> String { (if zh { zh_txt } else { en_txt }).into() };
 
     // ── 动作区(平铺,对应 Mac 菜单上半)──
-    // 动作项:鸟隐藏时置灰(用户要求:隐藏时菜单操作不让点);显示/隐藏本身保持可用
-    let bird_visible = app.get_webview_window("main")
-        .map(|w| w.is_visible().unwrap_or(true))
-        .unwrap_or(true);
-    let call = MenuItem::with_id(app, "call", t("召唤过来", "Call Over"), bird_visible, None::<&str>)?;
-    let fish = MenuItem::with_id(app, "fish", t("去抓条鱼", "Catch a Fish"), bird_visible, None::<&str>)?;
-    let sing = MenuItem::with_id(app, "sing", t("唱一个", "Sing"), bird_visible, None::<&str>)?;
-    let perch = MenuItem::with_id(app, "perch", t("停到窗口上", "Perch on a Window"), bird_visible, None::<&str>)?;
-    let peck = MenuItem::with_id(app, "peck", t("啄一下", "Peck"), bird_visible, None::<&str>)?;
+    // 动作项始终可用:隐藏时点击 = 前端 withVisible 自动先破壳显示再执行
+    // (比置灰优雅:无延迟、一步到位;置灰方案有"打开时快照"的延迟观感)
+    let call = MenuItem::with_id(app, "call", t("召唤过来", "Call Over"), true, None::<&str>)?;
+    let fish = MenuItem::with_id(app, "fish", t("去抓条鱼", "Catch a Fish"), true, None::<&str>)?;
+    let sing = MenuItem::with_id(app, "sing", t("唱一个", "Sing"), true, None::<&str>)?;
+    let perch = MenuItem::with_id(app, "perch", t("停到窗口上", "Perch on a Window"), true, None::<&str>)?;
+    let peck = MenuItem::with_id(app, "peck", t("啄一下", "Peck"), true, None::<&str>)?;
     let show = MenuItem::with_id(app, "show", t("显示 / 隐藏", "Show / Hide"), true, None::<&str>)?;
     let diag = MenuItem::with_id(app, "diag", t("诊断信息", "Diagnostics"), true, None::<&str>)?;
     let repair = MenuItem::with_id(app, "repair", t("修复屏幕", "Repair Screen"), true, None::<&str>)?;
