@@ -451,6 +451,13 @@ pub fn run() {
                 refresh_menu(app);
             });
 
+            // 出生定位:窗口创建即放右下角+脚踩任务栏(Rust 直操,不依赖 JS——
+            // 窗口默认创建在系统居中位置,JS 定位前会闪在中心,失败则永久留中心)
+            if let Some(w) = app.get_webview_window("main") {
+                if crate::windows::recall_show(&w).is_some() {
+                    crate::kflog::kflog("start: 窗口出生定位右下角(Rust)");
+                }
+            }
             // 启动恢复持久化的语言(之前重启丢回跟随系统)
             if let Some(l) = prefs_get("lang") {
                 if matches!(l.as_str(), "zh" | "en" | "system") {
