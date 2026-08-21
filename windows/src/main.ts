@@ -35,8 +35,6 @@ window.addEventListener("unhandledrejection", (e: PromiseRejectionEvent) =>
 async function main() {
   try {
     await lib.load(localStorage.getItem("kf_theme") || "flat");
-    const first = lib.frame("idle_0");
-    if (first) img.src = first.img.src;
 
     behavior.setup({
       lib,

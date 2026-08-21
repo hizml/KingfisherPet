@@ -632,6 +632,7 @@ export async function dragDidEnd() {
 /// 召唤:飞向鼠标位置(水平对齐,高度取屏中;macOS 同款)
 export async function callOver() {
   if (dndActive) return;   // 勿扰中不召唤(窗口已隐藏,召唤=在全屏上飞)
+  if (!onScreen) await hatchIn();   // 隐藏时先破壳再召唤
   leavePerchWin();
   enter("fly");
   try {
@@ -650,13 +651,18 @@ export async function callOver() {
     animateFlight(target, 1.0, () => finish());
   } catch (e) { startFly(); }
 }
-export function doSing() { startSing(); }   // 用户操作永远最高优先级:无条件打断(之前 if(!busy) 在睡觉/动作中点了没反应)
-export function doEat() { startEat(); }
-export function doFish() { startFish(); }
+/// 菜单动作:隐藏时先完整破壳再执行(一次点击=显示+动作;Mac 同款缺失一并修)
+function withVisible(action: () => void) {
+  if (onScreen) { action(); return; }
+  hatchIn().then(() => { if (onScreen && !dndActive) action(); }).catch(() => {});
+}
+export function doSing() { withVisible(() => startSing()); }   // 用户操作永远最高优先级:无条件打断
+export function doEat() { withVisible(() => startEat()); }
+export function doFish() { withVisible(() => startFish()); }
 
 
-export function doPerch() { startPerchWindow(); }   // 菜单指定动作打断当前(macOS 同款不判 busy)
-export function doPeck() { startPeck(); }
+export function doPerch() { withVisible(() => startPerchWindow()); }   // 菜单指定动作打断当前
+export function doPeck() { withVisible(() => startPeck()); }
 
 export function setup(ops: {
   lib: SpriteLibrary;
@@ -707,7 +713,7 @@ export async function start() {
   } catch (e) { console.error("start", e); }
   // 破壳登场:整蛋→裂纹→探头(macOS hatchIn 同款)再开始活动
   enter("egg");
-  hold(1.4, () => { enter("idle"); scheduleThink(); });
+  await new Promise<void>(r => hold(1.4, () => { enter("idle"); scheduleThink(); r(); }));   // 破壳完成才 resolve
 }
 
 /// 点击(非拖拽)→ 啾一声 + 心眼害羞 0.8s(macOS petViewWasClicked)

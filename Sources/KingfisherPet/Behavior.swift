@@ -671,8 +671,8 @@ final class Behavior: PetViewDelegate {
     }
 
     // MARK: - 显示:破壳而出
-    func hatchIn() {
-        guard !dndActive else { return }   // 勿扰中:鸟绝不盖全屏
+    func hatchIn(completion: (() -> Void)? = nil) {
+        guard !dndActive else { completion?(); return }   // 勿扰中:鸟绝不盖全屏
         beginAction()
         onScreen = true
         enter("egg")
@@ -685,7 +685,14 @@ final class Behavior: PetViewDelegate {
         hold(1.4) { [weak self] in
             guard let self = self else { return }
             self.finish()
+            completion?()
         }
+    }
+
+    /// 菜单动作:隐藏时先完整破壳再执行(Windows 同款;隐藏鸟不应响应动作)
+    func runWhenVisible(_ action: @escaping () -> Void) {
+        if onScreen { action(); return }
+        hatchIn(completion: action)
     }
 
     var isOnScreen: Bool { onScreen }   // 勿扰巡检用(隐身意图判断)
