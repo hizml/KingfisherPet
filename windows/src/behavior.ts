@@ -693,8 +693,11 @@ export async function start() {
     const sx = Number(localStorage.getItem("kf_x")), sy = Number(localStorage.getItem("kf_y"));
     if (localStorage.getItem("kf_x") && sx >= a.minX && sx <= a.maxX - SIZE_P() && sy >= a.minY && sy <= a.maxY - FEET_TOP_P()) {   // 脚(非窗底)在地面之上即可
       await setOrigin(sx, sy);
+      emit("log", `start: 恢复上次位置 ${Math.round(sx)},${Math.round(sy)}(工作区 ${a.maxX}x${a.maxY})`);
     } else {
-      await setOrigin(a.maxX - SIZE_P() - 30 * _scale, a.maxY - FEET_TOP_P());
+      const dx = a.maxX - SIZE_P() - 30 * _scale, dy = a.maxY - FEET_TOP_P();
+      await setOrigin(dx, dy);
+      emit("log", `start: 出生右下角 ${Math.round(dx)},${Math.round(dy)} 脚=${Math.round(dy + FEET_TOP_P())}(应=${Math.round(a.maxY)})`);
     }
     // 坐标自愈:校验窗口(物理)确实落在某台显示器内;不在 → 回当前显示器安全位。
     // 防 DPI/多屏换算错位把鸟丢屏外("没在屏幕里"的逃生口,启动即自愈)
