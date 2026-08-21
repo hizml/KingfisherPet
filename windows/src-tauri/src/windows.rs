@@ -54,7 +54,7 @@ unsafe fn visible_rect(hwnd: windows::Win32::Foundation::HWND) -> Option<windows
 
 #[cfg(windows)]
 pub fn front_perch(bird_w: f64) -> Option<(f64, f64, isize)> {
-    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId, EnumWindows};
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId, EnumWindows, GetWindowRect};
     use windows::Win32::Foundation::{HWND, LPARAM, RECT};
     use windows::Win32::System::Threading::GetCurrentProcessId;
     use std::cell::{Cell, RefCell};
@@ -72,6 +72,11 @@ pub fn front_perch(bird_w: f64) -> Option<(f64, f64, isize)> {
         GetWindowThreadProcessId(hwnd, Some(&mut pid));
         if pid == my_pid { return None; }
         if shell_junk_or_cloaked(hwnd) { return None; }   // 统一"普通应用窗口"判定
+        // 最小化窗口粗滤(位置 -32000;IsWindowVisible 对最小化窗口仍为真,
+        // 不滤的话 Z 序兜底会选中它的陈旧矩形 → "虚空停靠")。surfaces_below 早有此滤,这里漏了。
+        let mut raw = RECT::default();
+        if GetWindowRect(hwnd, &mut raw).is_err() { return None; }
+        if raw.left <= -20000 || raw.top <= -20000 { return None; }
         let r: RECT = visible_rect(hwnd)?;
         if (r.right - r.left) < 260 || (r.bottom - r.top) < 160 { return None; }
         Some(((r.left + r.right) as f64 / 2.0 - bird_w / 2.0, r.top as f64, hwnd.0 as isize))

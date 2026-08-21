@@ -601,9 +601,9 @@ export async function callOver() {
     animateFlight(target, 1.0, () => finish());
   } catch (e) { startFly(); }
 }
-export function doSing() { if (!busy) startSing(); }
-export function doEat() { if (!busy) startEat(); }
-export function doFish() { if (!busy) startFish(); }
+export function doSing() { startSing(); }   // 用户操作永远最高优先级:无条件打断(之前 if(!busy) 在睡觉/动作中点了没反应)
+export function doEat() { startEat(); }
+export function doFish() { startFish(); }
 
 /// 找回小鸟:光标所在屏右下角安全位重置(坐标 bug 逃生口)。
 /// 主链路在 Rust(recall_cmd,Win32 直操不依赖前端);这里处理延迟发来的状态复位。

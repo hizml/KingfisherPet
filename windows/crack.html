@@ -44,6 +44,7 @@ const cracks = [];                          // {x, y, r, polys: [[{x,y}...], ...
 // 锯齿射线×2(中段偶分叉+末端须)+ 同心环裂(9 段抖动折线)+ 偶发中心碎屑;
 // 双描边(暗粗 2.2 / 亮细 0.8)。之前画的是"重画 7 根直辐条",与 Mac 完全不同。
 function grow(c) {
+  const from = c.polys.length;   // 记追加前数量(之前用 length-4 反推,无碎屑时为负 → 画 undefined 抛错 = 裂纹全不显示)
   c.r = Math.min(180, c.r + 18);
   const R = c.r;
   const ray = (len) => {
@@ -77,7 +78,7 @@ function grow(c) {
     const cx = c.x + Math.cos(ang) * d, cy = c.y + Math.sin(ang) * d;
     c.polys.push([{ x: cx, y: cy }, { x: cx + 6, y: cy - 4 }, { x: cx + 2, y: cy + 6 }, { x: cx, y: cy }]);
   }
-  drawPolys(c, c.polys.length - 4);   // 只画新增
+  drawPolys(c, from);   // 只画新增
 }
 function drawPolys(c, from = 0) {
   for (const [style, w] of [[crackDark, 2.2], [crackLight, 0.8]]) {
