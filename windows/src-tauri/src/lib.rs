@@ -125,6 +125,19 @@ fn diag_run(app: &tauri::AppHandle) {
     let _ = open::that(&path);
 }
 
+/// 替用户"点显示":主窗右下角脚踩任务栏+显示+置顶(Rust 直操,
+/// 隐藏时点菜单动作的前置步骤——JS 定时器在隐藏窗口中会被挂起,不可依赖)。
+#[tauri::command]
+fn show_window_bottom_right(app: tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = crate::windows::recall_show(&w);   // 光标屏右下角+显示+NOACTIVATE
+    }
+    if let Some(w) = app.get_webview_window("poop") {
+        crate::windows::show_no_activate(&w);
+    }
+    let _ = assert_z_cmd(app.clone());
+}
+
 /// z 序断言:收敛到 poop(树枝/阴影/屎/特效) > main(鸟) > crack(裂纹)。
 /// ⚠️ SetWindowPos(TOPMOST) 每次把窗口提到置顶带【最顶】——调用顺序必须反过来:
 /// 先提 crack、再提 main、最后提 poop。之前 main→poop→crack,收敛后 crack 反而
@@ -305,7 +318,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, diag_append, assert_z_cmd])
+        .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, diag_append, assert_z_cmd, show_window_bottom_right])
         .setup(|app| {
             crate::system::setup_power(app.handle().clone());   // 睡眠/锁屏/唤醒/会话 → emit sleep/wake/session-change
             // 设置窗主动拉状态(打开时):回语言/自启
