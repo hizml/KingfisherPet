@@ -658,9 +658,13 @@ export async function callOver() {
 /// setTimeout 不回调,Promise 永不 resolve → 动作链断裂 → 鸟"运动中消失"
 /// + 看门狗 busy 熔断(日志实证:开始破壳×4 无完成,2min 后熔断×2)。
 /// 流程:Rust 置右下角+显示 → JS 切蛋帧跑破壳动画 → 1.4s 真实定时器完成后执行动作。
+let hatching = false;   // 破壳进行中(并发锁:快速重复点击只跑一个破壳)
 async function withVisible(action: () => void) {
-  if (onScreen) { action(); return; }
   if (dndActive) return;   // 勿扰中不复活
+  if (onScreen) { action(); return; }
+  if (hatching) { emit("log", "withVisible: 破壳进行中,忽略连点"); return; }   // 连点不再排队(之前多个 1.4s 定时器到点各自执行动作 = 破壳死循环)
+  hatching = true;
+  const g = gen;   // 代际快照:期间用户又点了显示/隐藏等,beginAction 会 gen++,本破壳作废
   try {
     await invoke("show_window_bottom_right");   // Rust 直操:右下角+显示+置顶(等价"先点显示")
     onScreen = true;
@@ -669,12 +673,15 @@ async function withVisible(action: () => void) {
     stageVis("poop", true);
     emit("log", "withVisible: 已显示,破壳中…");
     window.setTimeout(() => {   // 真实定时器(窗口已可见,不会被挂起)
+      hatching = false;
+      if (gen !== g) { emit("log", "withVisible: 破壳被新操作取代,丢弃动作"); return; }   // 代际失效(如期间点了隐藏)
       enter("idle");
       scheduleThink();
       emit("log", "withVisible: 破壳完成,执行动作");
       action();
     }, 1400 / settings.speed * 1000);
   } catch (e) {
+    hatching = false;
     warnOnce("withVisible", e);
   }
 }
