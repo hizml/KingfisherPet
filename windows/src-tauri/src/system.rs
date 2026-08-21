@@ -5,6 +5,7 @@
 //    普通进程打不开 ⇒ 判定已锁。锁 → emit sleep;解锁 → emit wake。
 //    没有它,锁屏走人机器不睡时鸟会整天空转(60fps+IPC 轮询),纯耗电。
 
+use tauri::Manager;   // get_webview_window 需要 Manager trait
 #[cfg(windows)]
 pub fn setup_power(app: tauri::AppHandle) {
     use tauri::Emitter;
@@ -38,14 +39,20 @@ pub fn setup_power(app: tauri::AppHandle) {
             }
 
             // --- 勿扰:全屏应用(视频/游戏全屏,鸟不能盖上去也不能叫) ---
-            let fs = crate::windows::fullscreen_app_present();
+            let bird_hwnd = app.get_webview_window("main")
+                .and_then(|w| w.hwnd().ok())
+                .map(|h| h.0 as isize)
+                .unwrap_or(0);
+            let fs = crate::windows::fullscreen_app_present(bird_hwnd);
             if fs { fs_on += 1; fs_off = 0; } else { fs_off += 1; fs_on = 0; }
             if !dnd && fs_on >= 2 {
                 dnd = true;
+                crate::DND.store(true, std::sync::atomic::Ordering::Relaxed);
                 crate::kflog::kflog("dnd: 全屏应用,进入勿扰");
                 let _ = app.emit("dnd", true);
             } else if dnd && fs_off >= 2 {
                 dnd = false;
+                crate::DND.store(false, std::sync::atomic::Ordering::Relaxed);
                 crate::kflog::kflog("dnd: 全屏退出,恢复");
                 let _ = app.emit("dnd", false);
             }
