@@ -689,11 +689,6 @@ final class Behavior: PetViewDelegate {
         }
     }
 
-    /// 菜单动作:隐藏时先完整破壳再执行(Windows 同款;隐藏鸟不应响应动作)
-    func runWhenVisible(_ action: @escaping () -> Void) {
-        if onScreen { action(); return }
-        hatchIn(completion: action)
-    }
 
     var isOnScreen: Bool { onScreen }   // 勿扰巡检用(隐身意图判断)
     var isSleeping: Bool { userSleeping }   // 锁屏/睡眠中(勿扰巡检需跳过)

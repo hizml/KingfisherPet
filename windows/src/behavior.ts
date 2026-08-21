@@ -632,10 +632,7 @@ export async function dragDidEnd() {
 /// 召唤:飞向鼠标位置(水平对齐,高度取屏中;macOS 同款)
 export async function callOver() {
   if (dndActive) return;   // 勿扰中不召唤(窗口已隐藏,召唤=在全屏上飞)
-  if (!onScreen) { withVisible(() => callOverCore()); return; }   // 隐藏时走统一破壳链(含并发锁;之前自带 hatchIn 绕锁)
-  callOverCore();
-}
-async function callOverCore() {
+  if (!onScreen) return;   // 隐藏时不响应(用户方案:唯一恢复入口=显示/隐藏)
   leavePerchWin();
   enter("fly");
   try {
@@ -661,40 +658,13 @@ async function callOverCore() {
 /// setTimeout 不回调,Promise 永不 resolve → 动作链断裂 → 鸟"运动中消失"
 /// + 看门狗 busy 熔断(日志实证:开始破壳×4 无完成,2min 后熔断×2)。
 /// 流程:Rust 置右下角+显示 → JS 切蛋帧跑破壳动画 → 1.4s 真实定时器完成后执行动作。
-let hatching = false;   // 破壳进行中(并发锁:快速重复点击只跑一个破壳)
-async function withVisible(action: () => void) {
-  if (dndActive) return;   // 勿扰中不复活
-  if (onScreen) { action(); return; }
-  if (hatching) { emit("log", "withVisible: 破壳进行中,忽略连点"); return; }   // 连点不再排队(之前多个 1.4s 定时器到点各自执行动作 = 破壳死循环)
-  hatching = true;
-  try {
-    await invoke("show_window_bottom_right");   // Rust 直操:右下角+显示+置顶(等价"先点显示")
-    onScreen = true;
-    beginAction();
-    const g = gen;   // 代际快照必须在 beginAction 之后拍(它自己会 gen++,之前拍在前面 → 定时器永远误判"被取代" → 动作全被丢弃 + busy 永卡 → 看门狗熔断,日志实锤)
-    enter("egg");
-    stageVis("poop", true);
-    emit("log", "withVisible: 已显示,破壳中…");
-    window.setTimeout(() => {   // 真实定时器(窗口已可见,不会被挂起)
-      hatching = false;
-      if (gen !== g) { emit("log", "withVisible: 破壳被新操作取代,丢弃动作"); return; }   // 代际失效(如期间点了隐藏)
-      enter("idle");
-      scheduleThink();
-      emit("log", "withVisible: 破壳完成,执行动作");
-      action();
-    }, 1400 / settings.speed * 1000);
-  } catch (e) {
-    hatching = false;
-    warnOnce("withVisible", e);
-  }
-}
-export function doSing() { withVisible(() => startSing()); }   // 用户操作永远最高优先级:无条件打断
-export function doEat() { withVisible(() => startEat()); }
-export function doFish() { withVisible(() => startFish()); }
+export function doSing() { if (!onScreen) return; startSing(); }   // 隐藏时不响应(用户方案)
+export function doEat() { if (!onScreen) return; startEat(); }
+export function doFish() { if (!onScreen) return; startFish(); }
 
 
-export function doPerch() { withVisible(() => startPerchWindow()); }   // 菜单指定动作打断当前
-export function doPeck() { withVisible(() => startPeck()); }
+export function doPerch() { if (!onScreen) return; startPerchWindow(); }
+export function doPeck() { if (!onScreen) return; startPeck(); }
 
 export function setup(ops: {
   lib: SpriteLibrary;
