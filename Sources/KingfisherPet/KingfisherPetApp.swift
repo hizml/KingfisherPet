@@ -562,27 +562,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - 动作
     @objc private func callOver() {
         let behavior = petController.behavior
-        behavior.runWhenVisible { behavior.callOver() }
+        guard behavior.isOnScreen else { return }   // 隐藏时不响应(与 Windows 一致;恢复入口只有显示/隐藏)
+        behavior.callOver()
     }
 
     @objc private func doFish() {
         let behavior = petController.behavior
-        behavior.runWhenVisible { behavior.startFish() }
+        guard behavior.isOnScreen else { return }   // 隐藏时不响应(与 Windows 一致;恢复入口只有显示/隐藏)
+        behavior.startFish()
     }
 
     @objc private func doSing() {
         let behavior = petController.behavior
-        behavior.runWhenVisible { behavior.startSing() }
+        guard behavior.isOnScreen else { return }   // 隐藏时不响应(与 Windows 一致;恢复入口只有显示/隐藏)
+        behavior.startSing()
     }
 
     @objc private func doPerch() {
         let behavior = petController.behavior
-        behavior.runWhenVisible { behavior.startPerchWindow() }
+        guard behavior.isOnScreen else { return }   // 隐藏时不响应(与 Windows 一致;恢复入口只有显示/隐藏)
+        behavior.startPerchWindow()
     }
 
     @objc private func doPeck() {
         let behavior = petController.behavior
-        behavior.runWhenVisible { behavior.startPeck() }
+        guard behavior.isOnScreen else { return }   // 隐藏时不响应(与 Windows 一致;恢复入口只有显示/隐藏)
+        behavior.startPeck()
     }
 
     @objc private func repairScreen() {
