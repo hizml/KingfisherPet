@@ -80,33 +80,6 @@ fn show_no_activate(app: tauri::AppHandle) {
     }
 }
 
-/// 找回小鸟(Rust 直操,不依赖前端):鸟窗移到光标所在屏工作区右下角并显示,
-/// 舞台窗(阴影/树枝/屎)一并恢复——之前前端 recall 只救鸟窗不救舞台,
-/// 找回后永远没树枝/阴影。最后延迟 emit 让前端复位状态(鸟窗刚恢复时事件会丢)。
-fn recall_internal(app: &tauri::AppHandle) {
-    use tauri::Emitter;
-    if DND.load(std::sync::atomic::Ordering::Relaxed) { crate::kflog::kflog("recall: 勿扰中忽略"); return; }   // 鸟绝不盖全屏
-    if let Some(w) = app.get_webview_window("main") {
-        let _ = crate::windows::recall_show(&w);
-    }
-    for label in ["poop", "crack"] {
-        if let Some(w) = app.get_webview_window(label) {
-            crate::windows::show_no_activate(&w);
-        }
-    }
-    let _ = assert_z_cmd(app.clone());   // 找回后恢复 poop(树枝)> main > crack
-    let h = app.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(400));
-        let _ = h.emit("menu", "recall");
-    });
-}
-
-#[tauri::command]
-fn recall_cmd(app: tauri::AppHandle) {
-    recall_internal(&app);
-}
-
 /// 诊断(主链路,Rust 一手包办,不依赖前端):Win32 实测写报告 + 记事本打开。
 /// 前端随后可用 diag_append 追加 webview 侧数据(追加不重开)。
 fn diag_run(app: &tauri::AppHandle) {
@@ -269,7 +242,6 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
     let perch = MenuItem::with_id(app, "perch", t("停到窗口上", "Perch on a Window"), true, None::<&str>)?;
     let peck = MenuItem::with_id(app, "peck", t("啄一下", "Peck"), true, None::<&str>)?;
     let show = MenuItem::with_id(app, "show", t("显示 / 隐藏", "Show / Hide"), true, None::<&str>)?;
-    let recall = MenuItem::with_id(app, "recall", t("找回小鸟", "Find the Bird"), true, None::<&str>)?;
     let diag = MenuItem::with_id(app, "diag", t("诊断信息", "Diagnostics"), true, None::<&str>)?;
     let repair = MenuItem::with_id(app, "repair", t("修复屏幕", "Repair Screen"), true, None::<&str>)?;
 
@@ -294,11 +266,11 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
     let quit = MenuItem::with_id(app, "quit", t("退出 翡", "Quit Fei"), true, None::<&str>)?;
 
     let menu = Menu::with_items(app, &[
-        &call, &fish, &sing, &perch, &peck, &show, &recall, &repair,
+        &call, &fish, &sing, &perch, &peck, &show, &repair,
     ])?;
     let _ = menu; // 分隔符+设置区需要 append;改用一次性 with_items 全量
     let items: Vec<&dyn IsMenuItem<tauri::Wry>> = vec![
-        &call, &fish, &sing, &perch, &peck, &show, &recall, &repair, &diag,
+        &call, &fish, &sing, &perch, &peck, &show, &repair, &diag,
         &m_theme, &sound, &settings, &about, &quit,
     ];
     Menu::with_items(app, &items)
@@ -320,7 +292,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, recall_cmd, diag_append, assert_z_cmd])
+        .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, diag_append, assert_z_cmd])
         .setup(|app| {
             crate::system::setup_power(app.handle().clone());   // 睡眠/锁屏/唤醒 → emit sleep/wake
             crate::system::setup_session_monitor(app.handle().clone());   // RDP 会话变化 → 前端重载自愈
@@ -492,23 +464,17 @@ pub fn run() {
                             drop(ui);
                             refresh_menu(&handle);
                         }
-                        "recall" => { recall_internal(&handle); }   // Rust 直操(前端状态废掉也能救回)
                         "diag" => {
                             // 诊断:Rust 一手包办(写报告+开记事本),再通知前端追加 webview 数据
                             diag_run(&handle);
                             let _ = app.emit("menu", "diag");
                         }
                         "show" => {
-                            // 鸟窗隐藏时前端收不到事件(或不可靠):先 Rust 侧救回,
-                            // 走 recall 链路(移安全位+恢复舞台+延迟复位);可见时正常走前端 toggle
+                            // 显示/隐藏统一走前端(hatchIn/fallAway);勿扰中忽略(鸟绝不盖全屏)
                             if DND.load(std::sync::atomic::Ordering::Relaxed) {
                                 crate::kflog::kflog("show: 勿扰中忽略");
                             } else {
-                                let hidden = app.get_webview_window("main")
-                                    .map(|w| !w.is_visible().unwrap_or(true))
-                                    .unwrap_or(false);
-                                if hidden { recall_internal(&handle); }
-                                else { let _ = app.emit("menu", "show"); }
+                                let _ = app.emit("menu", "show");
                             }
                         }
                         _ if id.starts_with("theme_") => {
