@@ -1,4 +1,4 @@
-// 逐帧渲染 + 拖拽(startDragging 原生)+ 行为状态机。日志通过 emit 发 Rust 终端。
+// 逐帧渲染 + 拖拽(JS 驱动,macOS 同构)+ 行为状态机。日志通过 emit 发 Rust 终端。
 
 import { getCurrentWindow, LogicalSize, currentMonitor, availableMonitors } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -120,55 +120,62 @@ function tick(now?: number) {
   requestAnimationFrame(tick);
 }
 
-// 拖拽:Tauri 原生 startDragging(系统跟手,绕开 DPI/坐标坑)
-// Windows 上 startDragging 进入 Win32 模态移动循环,webview 常收不到 mouseup
-// → 用窗口移动事件停息判定兜底(300ms 不动 = 拖拽结束)
-let dragWaiter: ReturnType<typeof setTimeout> | null = null;
+// 拖拽:JS 驱动(macOS 同构)。弃用 Tauri 原生 startDragging——那是 Win32 模态
+// 移动循环,窗口直接跟鼠标走,我们只能事后追着纠正,永远堵不住出界。
+// 这里用 Pointer Events + 指针捕获:每次移动都先钳到允许范围再落位,
+// 窗口物理上不可能出界(拖到边界外 = 鸟顶在边界线上,"框住范围")。
+// 捕获保证 pointerup 必达(光标离开窗口也不丢),不再需要任何模态循环补丁。
 let dragging = false;
 let movedDuringDrag = false;                                 // 拖拽中是否真的移动过(判点击)
 let dragStartPos: { x: number; y: number } | null = null;   // 按下时窗口位置(判点击/拖拽)
-let clickFallbackFired = false;                              // 400ms 点击回退已触发(慢启动拖拽自愈用)
+let dragOrigin = { x: 0, y: 0 };   // 窗口当前原点(我们自己设的,物理;每帧滚动更新)
+let grabGX = 0, grabGY = 0;        // 按下时 全局光标−窗口原点(物理;拖拽期间保持)
+let dragSc = 1;                    // 拖拽期间缩放(本地 CSS → 全局物理)
+let dragTickBusy = false;          // 落位在途时跳过本帧(下一帧补上)
+
 function setupDrag() {
   img.draggable = false;
-  img.addEventListener("mousedown", async (e) => {
+  img.addEventListener("pointerdown", async (e: PointerEvent) => {
     if (e.button !== 0) return;
     e.preventDefault();
-    try { const p = await petWin.outerPosition(); dragStartPos = { x: p.x, y: p.y }; } catch { dragStartPos = null; }
+    try { img.setPointerCapture(e.pointerId); } catch { /* */ }
+    try {
+      const p = await petWin.outerPosition();
+      const sc = await petWin.scaleFactor();
+      const cur = await invoke<[number, number] | null>("cursor_pos_cmd");
+      dragSc = sc;
+      dragStartPos = { x: p.x, y: p.y };
+      dragOrigin = { x: p.x, y: p.y };
+      const gx = cur ? cur[0] : p.x + 80 * sc;
+      const gy = cur ? cur[1] : p.y + 80 * sc;
+      grabGX = gx - p.x; grabGY = gy - p.y;
+    } catch { dragStartPos = null; }
     behavior.dragBegin();
+    behavior.dragResetCache();
     dragging = true;
     movedDuringDrag = false;
-    clickFallbackFired = false;
-    petWin.startDragging().catch((err: any) => emit("log", "startDragging err: " + err));
-    // 兜底 1:纯点击(无移动)时 startDragging 模态可能吃掉 mouseup 且 onMoved 不触发
-    // → 400ms 后仍未结束且没动过,按点击收尾,防 busy=true 永久卡死
-    setTimeout(() => { if (dragging && !movedDuringDrag) { clickFallbackFired = true; endDrag(); } }, 400);
+    dragTickBusy = false;
   });
-  window.addEventListener("mouseup", () => { if (dragging) endDrag(); });
-  // 兜底 2:窗口移动事件停息 = 松手(mouseup 丢失也能恢复);拖拽中同步地面阴影 + hittest 缓存 + 边界钳制
-  petWin.onMoved(async (ev) => {
-    const p = ev.payload as { x: number; y: number };   // 事件自带物理坐标(免一次 IPC)
-    if (!dragging) {
-      // 慢启动拖拽自愈:400ms 回退已按点击收尾,但用户其实还按着并真的拖起来了
-      // → 重新进入拖拽态,恢复钳制 + 松手走正常收尾(否则这段拖动完全脱管,能拖出屏)
-      if (!clickFallbackFired) return;
-      clickFallbackFired = false;
-      dragging = true;
-      movedDuringDrag = true;
-    }
-    movedDuringDrag = true;
-    if (dragWaiter) clearTimeout(dragWaiter);
-    dragWaiter = setTimeout(endDrag, 300);
+  img.addEventListener("pointermove", async (e: PointerEvent) => {
+    if (!dragging || !dragStartPos || dragTickBusy) return;
+    dragTickBusy = true;
     try {
-      updateShadow(p.x, p.y);      // 物理直传(shadow 内部自己算)
-      updateHitOrigin(p.x, p.y);   // hittest 原点缓存同步(模态拖拽不走 setOrigin)
-      // 钳制:脚不进任务栏下面、头不彻底出屏顶、横向不出屏(macOS 拖拽 clamp 同款;入参物理)
-      behavior.clampDragFrame(p.x, p.y);
-    } catch { /* */ }
+      // 全局光标 = 窗口原点(自维护)+ 本地 CSS × 缩放(零 IPC)
+      const gx = dragOrigin.x + e.clientX * dragSc;
+      const gy = dragOrigin.y + e.clientY * dragSc;
+      const t = await behavior.dragMoveTo(gx - grabGX, gy - grabGY);   // 钳制+落位
+      dragOrigin = t;
+      if (Math.hypot(t.x - dragStartPos.x, t.y - dragStartPos.y) > 3) movedDuringDrag = true;
+    } catch { /* */ } finally { dragTickBusy = false; }
   });
+  const up = () => { if (dragging) endDrag(); };
+  img.addEventListener("pointerup", up);
+  img.addEventListener("pointercancel", up);
+  window.addEventListener("blur", up);   // 焦点被抢走等极端场景兜底收尾
 }
+
 async function endDrag() {
   dragging = false;
-  if (dragWaiter) { clearTimeout(dragWaiter); dragWaiter = null; }
   // 点击 vs 拖拽:没移动过 或 位移 <5px(物理)→ 害羞+啾(macOS 同款)
   try {
     if (!movedDuringDrag && dragStartPos) {

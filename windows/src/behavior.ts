@@ -509,23 +509,22 @@ export async function wakeFromUserAbsence() {
 
 export function dragBegin() { beginAction(); leavePerchWin(); branch.hideBranch(); enter("idle"); }   // 拖拽收枝(macOS 同款)
 
-/// 原生拖拽中的边界钳制(物理坐标):脚不进任务栏下、头不出屏顶、横向不出屏。
-/// 每次移动都检查,但只在【越界时】才 setOrigin(正常拖拽零额外 IPC;
-/// 之前 100ms 节流让快速拖拽能钻到任务栏下面)。越界时与模态移动循环的
-/// 竞争表现为"顶在边上",这是预期行为。
-let clampBusy = false;
-export async function clampDragFrame(x: number, y: number) {
-  if (clampBusy) return;   // 上一次钳制还在途,不叠加(防抖动)
-  clampBusy = true;
-  try {
-    const a = await areaFast();   // 缓存版:热路径零 IPC,只剩越界时一次纠正
-    const cx = Math.min(Math.max(x, a.minX), a.maxX - SIZE_P());
-    const cy = Math.min(Math.max(y, a.minY), a.maxY - FEET_TOP_P());   // 脚最低到任务栏顶
-    if (Math.abs(cx - x) > 1 || Math.abs(cy - y) > 1) {
-      await setOrigin(cx, cy);
-    }
-  } catch { /* */ } finally { clampBusy = false; }
+/// JS 驱动拖拽的每帧落位:目标 = 光标 - 抓取偏移,钳到允许范围后落位。
+/// 【每次都钳】→ 窗口物理上不可能出界(macOS 同款"框住范围"手感:
+/// 拖到任务栏以下时鸟顶在边界线上,其他区域不响应)。
+/// 返回实际落位(调用方作为下一帧的窗口原点缓存)。
+let lastDragTo: { x: number; y: number } | null = null;
+export async function dragMoveTo(x: number, y: number) {
+  const a = await areaFast();
+  const cx = Math.min(Math.max(x, a.minX), a.maxX - SIZE_P());
+  const cy = Math.min(Math.max(y, a.minY), a.maxY - FEET_TOP_P());   // 脚不进任务栏下
+  if (lastDragTo && Math.abs(lastDragTo.x - cx) < 0.5 && Math.abs(lastDragTo.y - cy) < 0.5) return lastDragTo;
+  await setOrigin(cx, cy);   // 阴影/命中缓存经 onMoved 链路自带
+  lastDragTo = { x: cx, y: cy };
+  return lastDragTo;
 }
+export function dragResetCache() { lastDragTo = null; }
+
 export async function dragDidEnd() {
   try {
     const sc = await scale();
