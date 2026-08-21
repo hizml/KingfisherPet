@@ -271,7 +271,7 @@ function setupWatchdog() {
   wdLastAlive = performance.now();
   setInterval(async () => {
     try {
-      if (behavior.isSleeping() || !behavior.isVisible()) { wdLastAlive = performance.now(); return; }   // 睡眠/隐藏是正常静止
+      if (behavior.isSleeping() || !behavior.isVisible() || behavior.isDnd()) { wdLastAlive = performance.now(); return; }   // 睡眠/隐藏/勿扰是正常静止
       const st = behavior.watchdogState();
       if (st.busy && st.busySince && performance.now() - st.busySince > 120_000) {
         emit("log", "watchdog: busy 卡死 >120s,熔断复位");
