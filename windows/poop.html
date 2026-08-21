@@ -111,7 +111,7 @@ listen("poop-drop", async (e) => {
           try {
             const list = await (await import("@tauri-apps/api/core")).invoke("surfaces_below_cmd", { x: px0 });
             let best = -1e9;
-            for (const s2 of list) { const top = s2[1]; if (top < pl - 6 && top > best) best = top; }
+            for (const s2 of list) { const top = s2[1]; if (top > pl + 6 && top < best) best = top; }   // 同 dropPoopAt:方向已翻转
             if (best > -1e9) nl = best;
           } catch { /* */ }
           const nlL = nl / DPR;

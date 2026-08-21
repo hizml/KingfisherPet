@@ -21,6 +21,11 @@ fn cursor_pos_cmd() -> Option<(f64, f64)> {
 }
 
 #[tauri::command]
+fn window_at_point_cmd(x: f64, y: f64) -> Option<isize> {
+    crate::windows::window_at_point(x, y)
+}
+
+#[tauri::command]
 fn window_rect_cmd(hwnd_val: isize) -> Option<(f64, f64, f64, f64)> {
     crate::windows::window_rect(hwnd_val)
 }
@@ -288,7 +293,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, recall_cmd, diag_append])
+        .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, recall_cmd, diag_append])
         .setup(|app| {
             crate::system::setup_power(app.handle().clone());   // 睡眠/锁屏/唤醒 → emit sleep/wake
             // 设置窗主动拉状态(打开时):回语言/自启

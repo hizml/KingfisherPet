@@ -123,6 +123,12 @@ function stopPerchCheck() {
 let perchedHwnd: number | null = null;
 let lastPerchRect: { x: number; y: number } | null = null;
 let perchMoving = false, lastPerchMove = 0;
+let occlBad = 0, occlTick = 0, detachStreak = 0, fastTicks = 0;   // 飞走条件计数(macOS checkPerch 同款 + 甩下)
+function perchFlee(reason: string) {
+  emit("log", "perch: 飞走(" + reason + ")");
+  stopPerchCheck();
+  startFly(300);
+}
 export function getPerchedHwnd(): number | null { return perchedHwnd; }   // 诊断用:当前栖的窗口
 function startPerchCheck() {
   // ⚠️ 只清计时器,不碰 perchedHwnd——stopPerchCheck() 会把它置 null,
@@ -130,13 +136,28 @@ function startPerchCheck() {
   if (perchTimer) { clearInterval(perchTimer); perchTimer = null; }
   if (perchedHwnd == null) return;
   const hwnd = perchedHwnd;
+  occlBad = 0; occlTick = 0; detachStreak = 0; fastTicks = 0;
   perchTimer = setInterval(async () => {
     try {
       const r = await invoke<[number, number, number, number] | null>("window_rect_cmd", { hwndVal: hwnd });
-      if (!r) { stopPerchCheck(); startFly(300); return; }   // 窗口没了 → 飞远
+      if (!r) { perchFlee("窗口消失"); return; }   // 窗口没了 → 飞远
       const wx = r[0], wy = r[1];   // 物理直用
       if (!lastPerchRect) { lastPerchRect = { x: wx, y: wy }; return; }
       const dx = wx - lastPerchRect.x, dy = wy - lastPerchRect.y;
+      // 剧烈晃动(≥25px/50ms 持续 ~0.4s)→ 被甩下(用户直觉;Mac 无此条)
+      if (Math.abs(dx) + Math.abs(dy) > 25) { fastTicks++; if (fastTicks >= 8) { perchFlee("被甩下"); return; } }
+      else fastTicks = 0;
+      // 拖太高:鸟头要出屏 → 飞走(macOS detach 同款)
+      const a = await areaFast();
+      if (wy - FEET_TOP_P() < a.minY) { detachStreak++; if (detachStreak >= 3) { perchFlee("拖太高"); return; } }
+      else detachStreak = 0;
+      // 遮挡:每 10 跳(≈0.5s)查脚点最顶窗,连续 2 次不是栖窗 → 被盖住飞走(macOS occlusion 同款)
+      if (++occlTick % 10 === 0) {
+        const o0 = await getOrigin();
+        const at = await invoke<number | null>("window_at_point_cmd", { x: o0.x + SIZE_P() / 2, y: o0.y + FEET_TOP_P() });
+        if (at != null && at !== hwnd) { occlBad++; if (occlBad >= 2) { perchFlee("被盖住"); return; } }
+        else occlBad = 0;
+      }
       if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
         perchMoving = true; lastPerchMove = performance.now();   // 用户拖栖窗 → think 推迟(macOS 同款)
         const o = await getOrigin();
@@ -270,8 +291,16 @@ async function startFly(minDist = 0) {
 
 // MARK: 静态动作
 let facingRight = false;   // 朝向(effects/poop/crack 出口随朝向偏移,macOS 同款)
+async function perchBranchHere() {   // 空中被用户触发的静态动作:脚下补树枝(否则"虚空啄")
+  try {
+    const a = await areaFast();
+    const o = await getOrigin();
+    const feetY = o.y + FEET_TOP_P();
+    if (feetY < a.maxY - 40 * _scale) branch.showBranchAt(o.x + SIZE_P() / 2, feetY);
+  } catch { /* */ }
+}
 function startSing() {
-  beginAction(); enter("sing"); playPeep();
+  beginAction(); perchBranchHere(); enter("sing"); playPeep();
   effects.notes(facingRight ? 110 : 50, 34);   // 音符从头上方出(macOS 同款:距顶 34)
   hold(1.2 + Math.random() * 0.4, () => finish());
 }
@@ -284,7 +313,7 @@ function startSleep() {   // 打盹持续飘 zzz(macOS 每 0.9s,从头上方出)
   zzzTimer = setInterval(emitZzz, 900);
   hold(5 + Math.random() * 4, () => finish());
 }
-function startEat() { beginAction(); enter("eat"); playPeep(); hold(1.1, () => finish()); }
+function startEat() { beginAction(); perchBranchHere(); enter("eat"); playPeep(); hold(1.1, () => finish()); }
 function startSun() {
   beginAction(); enter("sun");
   // 太阳在鸟斜上方、偏向空的一侧(macOS ±92);local y=-64(鸟头顶上方 64px)
@@ -294,7 +323,7 @@ function startSun() {
   hold(dur, () => finish());   // 同一随机数(macOS 同款,晒完太阳正好走)
 }
 function startPeck() {
-  beginAction(); playPeep();   // 先叫一声再啄(macOS:啄时不叫)
+  beginAction(); perchBranchHere(); playPeep();   // 先叫一声再啄(macOS:啄时不叫);空中啄脚下补枝
   const count = 3 + Math.floor(Math.random() * 3);        // 连啄 3-5 次
   const willCrack = Math.random() < 0.12;                  // 12% 啄裂(macOS 同款)
   peckBurst(count, willCrack);
@@ -335,7 +364,9 @@ async function dropPoopAt(x: number, y: number) {
       const list = await invoke<[number, number, number, number][]>("surfaces_below_cmd", { x });   // x 已是物理(调用方换算过),不能再乘 sc
       for (const s of list) {
         const top = s[1];
-        if (top < y - 6 && top > best) { best = top; landHwnd = s[3]; }   // 在屎下方且更高的表面
+        // 表面在屎下方(top > y)且取最近的一条(top 最小)。
+        // ⚠️ Mac 原比较符是 NS 底原点语义,顶左原点必须翻转——之前照抄,屎永远忽略窗口直落任务栏
+        if (top > y + 6 && top < best) { best = top; landHwnd = s[3]; }
       }
     } catch { /* */ }
     landingY = best;

@@ -10,7 +10,7 @@
 unsafe fn shell_junk_or_cloaked(hwnd: windows::Win32::Foundation::HWND) -> bool {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
-    use windows::Win32::UI::WindowsAndMessaging::{GetClassNameW, GetWindowLongPtrW, GWL_EXSTYLE, WS_EX_TOOLWINDOW};
+    use windows::Win32::UI::WindowsAndMessaging::{GetClassNameW, GetWindowLongPtrW, GWL_EXSTYLE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST};
     const BAD: [&str; 9] = [
         "Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd",
         "NotifyIconOverflowWindow", "TrayNotifyWnd", "TopLevelWindowForOverflowXamlIsland",
@@ -20,9 +20,11 @@ unsafe fn shell_junk_or_cloaked(hwnd: windows::Win32::Foundation::HWND) -> bool 
     let n = GetClassNameW(hwnd, &mut cls).max(0) as usize;
     let name = String::from_utf16_lossy(&cls[..n.min(cls.len())]);
     if BAD.contains(&name.as_str()) { return true; }
-    // 工具窗:系统弹层/托盘宿主都是 TOOLWINDOW,普通应用主窗口不是(Mac layer-0 同语义)
+    // 工具窗 + 置顶窗:系统弹层/托盘宿主是 TOOLWINDOW;悬浮/系统常驻层是 TOPMOST——
+    // macOS 只认 layer-0 普通窗口,两者对齐(幽灵停靠疑凶多为置顶系统窗)
     let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
     if (ex & WS_EX_TOOLWINDOW.0 as isize) != 0 { return true; }
+    if (ex & WS_EX_TOPMOST.0 as isize) != 0 { return true; }
     // DWM 隐身(UWP 挂起等:窗口在、IsWindowVisible 真、视觉上不在)
     let mut cloaked: u32 = 0;
     if DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED,
@@ -54,7 +56,7 @@ unsafe fn visible_rect(hwnd: windows::Win32::Foundation::HWND) -> Option<windows
 
 #[cfg(windows)]
 pub fn front_perch(bird_w: f64) -> Option<(f64, f64, isize)> {
-    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId, EnumWindows, GetWindowRect};
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId, EnumWindows, GetWindowRect, GetClassNameW};
     use windows::Win32::Foundation::{HWND, LPARAM, RECT};
     use windows::Win32::System::Threading::GetCurrentProcessId;
     use std::cell::{Cell, RefCell};
@@ -110,7 +112,15 @@ pub fn front_perch(bird_w: f64) -> Option<(f64, f64, isize)> {
         FG.with(|c| c.set(fg.0 as usize));
         CAND.with(|c| *c.borrow_mut() = None);
         let _ = EnumWindows(Some(proc), LPARAM(0));
-        CAND.with(|c| *c.borrow())
+        let hit = CAND.with(|c| *c.borrow());
+        if let Some((_, top, h)) = &hit {
+            // 兜底选中打日志:下次诊断直接点名幽灵窗是谁(类名+位置)
+            let mut cls = [0u16; 64];
+            let n = GetClassNameW(HWND(*h as *mut _), &mut cls).max(0) as usize;
+            let name = String::from_utf16_lossy(&cls[..n.min(cls.len())]);
+            crate::kflog::kflog(&format!("perch: 兜底选中 hwnd={:?} class={} top={}", h, name, *top as i64));
+        }
+        hit
     }
 }
 
@@ -349,3 +359,45 @@ pub fn diag_main_window(w: &tauri::WebviewWindow) -> Option<(i32, i32, i32, i32,
 
 #[cfg(not(windows))]
 pub fn diag_main_window(_w: &tauri::WebviewWindow) -> Option<(i32, i32, i32, i32, u32)> { None }
+
+/// 屏幕物理坐标 (x,y) 处最顶层的【普通应用窗口】hwnd;没有返回 None。
+/// 栖窗遮挡检测用(对应 macOS WindowTracker.frontWindowAt)。
+#[cfg(windows)]
+pub fn window_at_point(x: f64, y: f64) -> Option<isize> {
+    use windows::Win32::Foundation::{HWND, LPARAM, RECT};
+    use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowRect, GetWindowThreadProcessId};
+    use windows::Win32::System::Threading::GetCurrentProcessId;
+    use std::cell::Cell;
+    thread_local! {
+        static HIT: Cell<isize> = Cell::new(0);
+        static PT: Cell<(f64, f64)> = Cell::new((0.0, 0.0));
+        static MY: Cell<u32> = Cell::new(0);
+    }
+    unsafe extern "system" fn proc(hwnd: HWND, _l: LPARAM) -> windows::core::BOOL {
+        unsafe {
+            let mut pid: u32 = 0;
+            GetWindowThreadProcessId(hwnd, Some(&mut pid));
+            if pid == MY.with(|m| m.get()) { return windows::core::BOOL(1); }
+            if crate::windows::shell_junk_or_cloaked(hwnd) { return windows::core::BOOL(1); }
+            let mut r = RECT::default();
+            if GetWindowRect(hwnd, &mut r).is_err() { return windows::core::BOOL(1); }
+            let (px, py) = PT.with(|p| p.get());
+            if px >= r.left as f64 && px <= r.right as f64 && py >= r.top as f64 && py <= r.bottom as f64 {
+                HIT.with(|h| h.set(hwnd.0 as isize));
+                return windows::core::BOOL(0);   // Z 序最顶命中即停
+            }
+            windows::core::BOOL(1)
+        }
+    }
+    unsafe {
+        HIT.with(|h| h.set(0));
+        PT.with(|p| p.set((x, y)));
+        MY.with(|m| m.set(GetCurrentProcessId()));
+        let _ = EnumWindows(Some(proc), LPARAM(0));
+        let hit = HIT.with(|h| h.get());
+        if hit == 0 { None } else { Some(hit) }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn window_at_point(_x: f64, _y: f64) -> Option<isize> { None }
