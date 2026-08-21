@@ -401,3 +401,73 @@ pub fn window_at_point(x: f64, y: f64) -> Option<isize> {
 
 #[cfg(not(windows))]
 pub fn window_at_point(_x: f64, _y: f64) -> Option<isize> { None }
+
+
+/// z 序断言:main → poop → crack 依次提到置顶带(不显示、不激活)。
+/// 舞台(树枝/阴影)必须稳定在鸟之上(用户要求:树枝层级比鸟高;
+/// 各处单独 SetWindowPos 会互相翻转,统一收敛)。
+#[cfg(windows)]
+pub fn raise_no_show(w: &tauri::WebviewWindow) {
+    use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOOWNERZORDER};
+    if let Ok(h) = w.hwnd() {
+        unsafe {
+            let _ = SetWindowPos(h, Some(HWND_TOPMOST), 0, 0, 0, 0,
+                SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_NOOWNERZORDER);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn raise_no_show(w: &tauri::WebviewWindow) { let _ = w; }
+
+/// 全屏应用检测:前台窗是【普通应用窗口】且矩形与所在显示器的整屏矩形
+/// 完全一致(最大化窗口只盖工作区,不会命中)。视频/游戏全屏 → 勿扰。
+#[cfg(windows)]
+pub fn fullscreen_app_present() -> bool {
+    use windows::Win32::Graphics::Gdi::{MonitorFromWindow, GetMonitorInfoW, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+    use windows::Win32::System::Threading::GetCurrentProcessId;
+    unsafe {
+        let fg = GetForegroundWindow();
+        if fg.0.is_null() { return false; }
+        let mut pid: u32 = 0;
+        GetWindowThreadProcessId(fg, Some(&mut pid));
+        if pid == GetCurrentProcessId() { return false; }
+        if shell_junk_or_cloaked(fg) { return false; }
+        let Some(r) = visible_rect(fg) else { return false; };
+        let mon = MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST);
+        if mon.is_invalid() { return false; }
+        let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+        if !GetMonitorInfoW(mon, &mut mi).as_bool() { return false; }
+        let m = mi.rcMonitor;
+        r.left == m.left && r.top == m.top && r.right == m.right && r.bottom == m.bottom
+    }
+}
+
+#[cfg(not(windows))]
+pub fn fullscreen_app_present() -> bool { false }
+
+/// 系统有没有在放声音(WASAPI 默认输出设备峰值;>0 即有应用在出声)。
+/// 勿扰之一:听歌/看片时鸟不叫。
+#[cfg(windows)]
+pub fn audio_active() -> bool {
+    use windows::Win32::Media::Audio::{IMMDeviceEnumerator, MMDeviceEnumerator, eRender, eConsole};
+    use windows::Win32::Media::Audio::Endpoints::IAudioMeterInformation;
+    use windows::core::Interface;
+    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_MULTITHREADED};
+    unsafe {
+        let hr = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let need_uninit = hr.is_ok();
+        let result = (|| -> Option<f32> {
+            let enumerator: IMMDeviceEnumerator = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
+            let dev = enumerator.GetDefaultAudioEndpoint(eRender, eConsole).ok()?;
+            let meter: IAudioMeterInformation = dev.cast().ok()?;
+            meter.GetPeakValue().ok()
+        })();
+        if need_uninit { CoUninitialize(); }
+        result.unwrap_or(0.0) > 0.001
+    }
+}
+
+#[cfg(not(windows))]
+pub fn audio_active() -> bool { false }

@@ -291,12 +291,18 @@ async function startFly(minDist = 0) {
 
 // MARK: 静态动作
 let facingRight = false;   // 朝向(effects/poop/crack 出口随朝向偏移,macOS 同款)
-async function perchBranchHere() {   // 空中被用户触发的静态动作:脚下补树枝(否则"虚空啄")
+async function perchBranchHere() {   // 用户触发的静态动作补枝规则(用户定):
+  // 只有【真空中】才出枝——栖在窗口上/站在任务栏上/脚下有任何表面都不出。
+  if (perchedHwnd != null) return;   // 栖着窗口:脚下是窗口
   try {
     const a = await areaFast();
     const o = await getOrigin();
     const feetY = o.y + FEET_TOP_P();
-    if (feetY < a.maxY - 40 * _scale) branch.showBranchAt(o.x + SIZE_P() / 2, feetY);
+    if (feetY >= a.maxY - 40 * _scale) return;   // 地面(任务栏顶)
+    // 脚下有普通窗口(刚落上还没登记栖窗等场景):也不出枝
+    const at = await invoke<number | null>("window_at_point_cmd", { x: o.x + SIZE_P() / 2, y: feetY + 4 });
+    if (at != null) return;
+    branch.showBranchAt(o.x + SIZE_P() / 2, feetY);   // 真空 → 出枝
   } catch { /* */ }
 }
 function startSing() {
@@ -716,6 +722,35 @@ export function happyAction() {
 let onScreen = true;
 export function isVisible() { return onScreen; }
 export function isSleeping() { return userSleeping; }   // main.ts 睡眠时跳过渲染用
+
+// ── 勿扰模式(全屏应用:鸟不能盖在视频上、不叫;对应 macOS dnd)──
+let dndActive = false;
+export function isDnd() { return dndActive; }
+export async function dndSet(on: boolean) {
+  if (on === dndActive) return;
+  dndActive = on;
+  if (on) {
+    emit("log", "dnd: 进入勿扰(鸟隐身+静音)");
+    gen++; busy = false; busySince = null;   // 静默打断一切(不能在全屏上播放死亡动画)
+    userSleeping = false;
+    setSleepMuted(true);
+    stopZzzInterval(); stopPerchCheck();
+    branch.hideBranch();
+    try { await hideShadow(); } catch { /* */ }
+    stageVis("poop", false); stageVis("crack", false);
+    try { await win.hide(); } catch (e) { warnOnce("dnd hide", e); }
+    enter("sleep");   // 隐藏着,恢复时重置
+  } else {
+    emit("log", "dnd: 退出勿扰");
+    wakeGraceUntil = performance.now() + 1500;
+    try { await invoke("show_no_activate"); } catch (e) { warnOnce("dnd show", e); }
+    stageVis("poop", true); stageVis("crack", true);
+    setSleepMuted(false);
+    enter("idle");
+    busy = false;
+    scheduleThink();
+  }
+}
 
 // ── 看门狗暴露(main.ts 15s 巡检;macOS watchdog 同款哲学:假设自己会坏)──
 export function watchdogState() {

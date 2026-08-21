@@ -2,7 +2,7 @@ import AppKit
 import QuartzCore
 
 /// 树枝:鸟停到屏幕高处歇脚时脚下出现一根树枝。
-/// - 和鸟同层(.floating 之上的 statusBar+1),鸟在树枝之上(同级靠 key 序)。
+/// - 比鸟高一层(statusBar+2):树枝盖住鸟脚,站立感更真实。
 /// - 飞往高处前可在目的地"提前出现"(showAt),鸟到了无缝接管,而不是到了才冒出来。
 /// - 一个可移动的透明 click-through 小窗口,60fps 跟随鸟的 x,贴在脚下。
 final class BranchController {
@@ -28,7 +28,7 @@ final class BranchController {
         overlay.isOpaque = false
         overlay.backgroundColor = .clear
         overlay.hasShadow = false
-        overlay.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)  // 和鸟同层
+        overlay.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 2)  // 比鸟高一层:树枝盖住脚(用户要求)
         overlay.ignoresMouseEvents = true
         overlay.collectionBehavior = [.canJoinAllSpaces]   // 去 stationary:close/orderOut 后才会真正离窗列表
         overlay.isReleasedWhenClosed = false

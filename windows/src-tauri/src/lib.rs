@@ -58,10 +58,40 @@ fn stage_visibility(app: tauri::AppHandle, label: String, show: bool) {
         if show {
             let _ = w.show();
             crate::windows::show_no_activate(&w);
+            restack(&app);   // 每次置顶都会重排层级,补一刀恢复 鸟>树枝>裂纹
         } else {
             let _ = w.hide();
         }
     }
+}
+
+/// 三窗层级链:鸟(main)最上 → 树枝/阴影/屎舞台(poop)居中 → 裂纹(crack)最下。
+/// Windows 置顶段内"谁刚置顶谁在上",任何一次 TOPMOST 断言都会打乱链,
+/// 所以显示舞台/找回后统一重排(用户要求:裂纹不得盖住树枝和鸟)。
+fn restack(app: &tauri::AppHandle) {
+    let main = app.get_webview_window("main");
+    let poop = app.get_webview_window("poop");
+    let crack = app.get_webview_window("crack");
+    #[cfg(windows)]
+    unsafe {
+        use ::windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE};
+        if let (Some(m), Some(p)) = (&main, &poop) {
+            if let (Ok(mh), Ok(ph)) = (m.hwnd(), p.hwnd()) {
+                // poop 插到 main 正下方
+                let _ = SetWindowPos(ph, Some(mh), 0, 0, 0, 0,
+                    SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
+            }
+        }
+        if let (Some(p), Some(c)) = (&poop, &crack) {
+            if let (Ok(ph), Ok(ch)) = (p.hwnd(), c.hwnd()) {
+                // crack 插到 poop 正下方(最底)
+                let _ = SetWindowPos(ch, Some(ph), 0, 0, 0, 0,
+                    SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = (&main, &poop, &crack);
 }
 
 /// 显示主窗但不激活(不抢用户前台焦点)。Windows 走 SetWindowPos(NOACTIVATE),
@@ -86,6 +116,7 @@ fn recall_internal(app: &tauri::AppHandle) {
             crate::windows::show_no_activate(&w);
         }
     }
+    restack(app);   // 找回后恢复 鸟>树枝>裂纹 层级链
     let h = app.clone();
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(400));
@@ -140,6 +171,19 @@ fn diag_run(app: &tauri::AppHandle) {
     }
     println!("[diag] {}", path.display());
     let _ = open::that(&path);
+}
+
+/// z 序断言:main → poop → crack(舞台在鸟上,树枝盖脚)。看门狗周期调用。
+#[tauri::command]
+fn assert_z_cmd(app: tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        crate::windows::raise_no_show(&w);
+    }
+    for label in ["poop", "crack"] {
+        if let Some(w) = app.get_webview_window(label) {
+            crate::windows::raise_no_show(&w);
+        }
+    }
 }
 
 /// 前端诊断数据追加(不重开记事本;主报告由 diag_run 保证落地)
@@ -293,7 +337,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, recall_cmd, diag_append])
+        .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, recall_cmd, diag_append, assert_z_cmd])
         .setup(|app| {
             crate::system::setup_power(app.handle().clone());   // 睡眠/锁屏/唤醒 → emit sleep/wake
             // 设置窗主动拉状态(打开时):回语言/自启
