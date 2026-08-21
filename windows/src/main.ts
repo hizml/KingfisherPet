@@ -300,7 +300,15 @@ function setupWatchdog() {
         wdLastAlive = performance.now();
       }
       if (performance.now() > wdLastZ) {
-        invoke("assert_z_cmd").catch(() => {});   // z 序收敛(5s):poop(树枝)> main > crack
+        // 卡隐身自愈:状态认为可见但窗口实际隐藏(显示竞速失败等)→ 立即显示。
+      // 之前此状态无人救:点动作全部隐形执行 = "鸟消失",只能手动点两次显示/隐藏
+      if (behavior.isVisible() && !behavior.isSleeping() && !behavior.isDnd()) {
+        try {
+          const vis = await petWin.isVisible();
+          if (!vis) { emit("log", "watchdog: 卡隐身(状态可见/窗口隐藏),自愈显示"); await invoke("show_no_activate"); }
+        } catch { /* */ }
+      }
+      invoke("assert_z_cmd").catch(() => {});   // z 序收敛(5s):poop(树枝)> main > crack
         wdLastZ = performance.now() + 5000;
       }
       if (performance.now() > wdLeakCooldownUntil) {
