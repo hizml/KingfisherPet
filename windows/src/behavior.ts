@@ -780,8 +780,7 @@ export async function fallAway() {
     animateMove({ x: o.x, y: a.maxY + SIZE_P() + 40 * _scale }, 0.85, async () => {
       try { await win.hide(); } catch (e) { warnOnce("hide", e); }
       hideShadow();
-      stageVis("poop", false);   // 隐藏鸟:舞台也挂起(零耗)
-      stageVis("crack", false);
+      stageVis("poop", false);   // 隐藏鸟:特效舞台挂起(零耗);裂纹不动——屏幕裂纹与鸟无关(用户定)
       enter("idle");
       busy = false;
     });
@@ -791,13 +790,12 @@ export async function hatchIn() {
   if (onScreen) return;
   onScreen = true;
   beginAction();
+  enter("egg");   // 先切蛋帧再显示——之前先亮窗(上一帧 idle)再变蛋,"先出来再破壳"的错序
   try {
     const a = await area();
     await setOrigin(a.maxX - SIZE_P() - 30 * _scale, a.maxY - FEET_TOP_P());
-    await invoke("show_no_activate");   // 显示但不抢前台焦点
-    stageVis("poop", true);
-    stageVis("crack", true);
+    await invoke("show_no_activate");   // 显示但不抢前台焦点(此刻已是蛋)
+    stageVis("poop", true);   // 裂纹舞台不跟显隐(用户定)
   } catch { /* */ }
-  enter("egg");
   hold(1.4, () => { enter("idle"); scheduleThink(); });
 }
