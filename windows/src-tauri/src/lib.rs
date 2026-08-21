@@ -323,6 +323,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, recall_cmd, diag_append, assert_z_cmd])
         .setup(|app| {
             crate::system::setup_power(app.handle().clone());   // 睡眠/锁屏/唤醒 → emit sleep/wake
+            crate::system::setup_session_monitor(app.handle().clone());   // RDP 会话变化 → 前端重载自愈
             // 设置窗主动拉状态(打开时):回语言/自启
             {
                 let app2 = app.handle().clone();

@@ -89,6 +89,52 @@ pub fn setup_power(app: tauri::AppHandle) {
     });
 }
 
+/// 远程桌面会话监听:WM_WTSSESSION_CHANGE(解锁/远程重连)时通知前端重载。
+/// 动机:WebView2 在 RDP 会话切换后合成器会丢失,页面活着但贴图不显示
+/// (用户报告"运行一会儿贴图消失,疑似远程桌面");页面内无法自检,
+/// 只能靠会话事件触发 location.reload() 自愈。
+#[cfg(windows)]
+pub fn setup_session_monitor(app: tauri::AppHandle) {
+    use tauri::Emitter;
+    std::thread::spawn(move || {
+        use windows::Win32::UI::WindowsAndMessaging::{GetMessageW, CreateWindowExW, MSG, WS_OVERLAPPED, WINDOW_EX_STYLE};
+        use windows::Win32::System::RemoteDesktop::WTSRegisterSessionNotification;
+        use windows::Win32::Foundation::HWND;
+        use windows::core::PCWSTR;
+        const WM_WTSSESSION_CHANGE: u32 = 0x02B1;
+        const NOTIFY_FOR_THIS_SESSION: u32 = 0;
+        const WTS_SESSION_UNLOCK: u32 = 0x8;
+        const WTS_SESSION_REMOTE_CONNECT: u32 = 0x9;
+        unsafe {
+            // 隐藏消息窗:用内置 STATIC 类(免注册/WndProc),只收会话通知
+            let hwnd = CreateWindowExW(
+                WINDOW_EX_STYLE(0),
+                PCWSTR(windows::core::w!("STATIC").as_ptr()),
+                PCWSTR(windows::core::w!("").as_ptr()),
+                WS_OVERLAPPED, 0, 0, 0, 0,
+                None, None, None, None,
+            );
+            let Ok(hwnd) = hwnd else { return };
+            let _ = WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION);
+            let mut msg = MSG::default();
+            while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+                if msg.message == WM_WTSSESSION_CHANGE {
+                    let evt = msg.wParam.0 as u32;
+                    // 解锁或远程重连:合成器可能已丢,通知前端重载自愈
+                    if evt == WTS_SESSION_UNLOCK || evt == WTS_SESSION_REMOTE_CONNECT {
+                        crate::kflog::kflog(&format!("session: 会话恢复(evt={evt}),通知前端重载"));
+                        let _ = app.emit("session-change", ());
+                    }
+                }
+            }
+            let _ = HWND::default();
+        }
+    });
+}
+
+#[cfg(not(windows))]
+pub fn setup_session_monitor(_app: tauri::AppHandle) {}
+
 #[cfg(not(windows))]
 pub fn setup_power(_app: tauri::AppHandle) {
     // mac:用原生 Swift 版,Tauri mac 端不需要
