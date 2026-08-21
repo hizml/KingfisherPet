@@ -38,6 +38,7 @@ async function loadThemeColors(t) {
 loadThemeColors(theme);
 listen("theme", (e) => { theme = e.payload; loadThemeColors(theme); });
 
+const DPR = window.devicePixelRatio || 1;    // 物理→CSS(重写时曾丢失声明 → crack-at 每次抛 ReferenceError = 裂纹从未画出来)
 const MAX_CRACKS = 8;                        // 上限(macOS maxCracks=8)
 const cracks = [];                          // {x, y, r, polys: [[{x,y}...], ...]} 累积(旧痕保留)
 // macOS CrackController 同款累积式:每次啄击【追加】——
@@ -107,7 +108,7 @@ listen("crack-at", (e) => {
 window.addEventListener("resize", () => {
   for (const c of cracks) drawPolys(c, 0);
 });
-listen("crack-clear", () => { cracks = []; ctx.clearRect(0, 0, cv.width, cv.height); });
+listen("crack-clear", () => { cracks.length = 0; ctx.clearRect(0, 0, cv.width, cv.height); });   // length=0:const 数组不能重新赋值(之前必抛)
 listen("stage-origin", (e) => {   // 舞台建在虚拟桌面原点,body 平移回 (0,0) 语义
   const { x, y } = e.payload;
   document.body.style.transform = `translate(${-x}px, ${-y}px)`;

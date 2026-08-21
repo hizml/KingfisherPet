@@ -108,6 +108,11 @@ async function main() {
           setTimeout(() => { un.then(f => f()); res("TIMEOUT"); }, 1500);
         });
         emit("log", `DEV diag: stage_poop=${po ? "EXISTS" : "NULL"} stageError=${stageError ?? "none"} handshaken=${po2.stageHandshaken} pong=${pong} probe=${localStorage.getItem("kf_poop_probe")} err=${localStorage.getItem("kf_poop_err")}`);
+        // 裂纹端到端自测:发一个 crack-at(物理坐标),1s 后读错误探针
+        const { crackAt } = await import("./crack");
+        await crackAt(400 * window.devicePixelRatio, 300 * window.devicePixelRatio);
+        await new Promise(r => setTimeout(r, 1000));
+        emit("log", `DEV crack-test: err=${localStorage.getItem("kf_crack_err") ?? "none"} probe=${localStorage.getItem("kf_crack_probe")}`);
       }, 8000);
     }
     setupWatchdog();

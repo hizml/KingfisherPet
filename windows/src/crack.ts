@@ -56,7 +56,12 @@ async function ensure() {
           w0.once("tauri://created", () => {}),
           new Promise<void>((_, rej) => setTimeout(() => rej(new Error("crack stage create timeout")), 5000)),
         ]);
-        await w0.setIgnoreCursorEvents(true).catch(e => warnOnce("crack ignore", e));   // 穿透,别挡屏幕
+        // 穿透设置放握手后(页面在 = 窗口必然就绪)且重试 3 次:
+        // 全屏置顶窗若不穿透会吞掉整屏点击(P0)
+        for (let i = 0; i < 3; i++) {
+          try { await w0.setIgnoreCursorEvents(true); break; }
+          catch (e) { if (i === 2) warnOnce("ignore retry-failed", e); await new Promise(r => setTimeout(r, 400)); }
+        }
       }
       await Promise.race([
         childReady,
