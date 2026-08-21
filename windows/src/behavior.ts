@@ -746,12 +746,12 @@ export async function dndSet(on: boolean) {
     branch.hideBranch();
     try { await hideShadow(); } catch { /* */ }
     stageVis("poop", false); stageVis("crack", false);
-    try { await win.hide(); } catch (e) { warnOnce("dnd hide", e); }
+    await setMainVisible(false, "dnd进入");
     enter("sleep");   // 隐藏着,恢复时重置
   } else {
     emit("log", "dnd: 退出勿扰");
     wakeGraceUntil = performance.now() + 1500;
-    try { await invoke("show_no_activate"); } catch (e) { warnOnce("dnd show", e); }
+    await setMainVisible(true, "dnd退出");
     stageVis("poop", true); stageVis("crack", true);
     setSleepMuted(false);
     enter("idle");
@@ -787,7 +787,7 @@ export async function fallAway() {
     const a = await area();
     // 掉出屏幕底(线性下坠)后隐藏窗口
     animateMove({ x: o.x, y: a.maxY + SIZE_P() + 40 * _scale }, 0.85, async () => {
-      try { await win.hide(); } catch (e) { warnOnce("hide", e); }
+      await setMainVisible(false, "fallAway");
       hideShadow();
       stageVis("poop", false);   // 隐藏鸟:特效舞台挂起(零耗);裂纹不动——屏幕裂纹与鸟无关(用户定)
       enter("idle");
@@ -795,6 +795,34 @@ export async function fallAway() {
     });
   } catch { onScreen = true; finish(); }
 }
+/// 主窗显隐统一出口(全程留痕:消失类问题的日志定位——之前 hide/show 散落
+/// 各处且失败静默,鸟"有几率消失"后无从查证)
+async function setMainVisible(on: boolean, why: string) {
+  try {
+    if (on) {
+      await invoke("show_no_activate");
+      // 验证:显示后窗口真的可见(RDP/托盘菜单竞速下有概率失败,失败重试一次)
+      let ok = false;
+      try { ok = await win.isVisible(); } catch { /* */ }
+      if (!ok) {
+        emit("log", `vis: 显示未生效(${why}),重试`);
+        await invoke("show_no_activate");
+        try { ok = await win.isVisible(); } catch { /* */ }
+        if (!ok) { warnOnce("show 失败 " + why, new Error("不可见")); return false; }
+      }
+      emit("log", `vis: 显示 ✓ (${why})`);
+      return true;
+    } else {
+      await win.hide();
+      emit("log", `vis: 隐藏 ✓ (${why})`);
+      return true;
+    }
+  } catch (e) {
+    warnOnce("vis " + (on ? "show" : "hide") + " " + why, e);
+    return false;
+  }
+}
+
 export async function hatchIn() {
   if (onScreen) return;
   if (dndActive) return;   // 勿扰中不复活(同 recall)
@@ -805,8 +833,8 @@ export async function hatchIn() {
   try {
     const a = await area();
     await setOrigin(a.maxX - SIZE_P() - 30 * _scale, a.maxY - FEET_TOP_P());
-    await invoke("show_no_activate");   // 显示但不抢前台焦点(此刻已是蛋)
+    await setMainVisible(true, "hatchIn");   // 显示+验证(之前失败被静默吞 → onScreen=true 但窗口隐藏 = 卡隐身,点动作全部隐形执行,"鸟消失")
     stageVis("poop", true);   // 裂纹舞台不跟显隐(用户定)
-  } catch { /* */ }
+  } catch (e) { warnOnce("hatchIn", e); }
   hold(1.4, () => { enter("idle"); scheduleThink(); emit("log", "hatchIn: 破壳完成"); });
 }
