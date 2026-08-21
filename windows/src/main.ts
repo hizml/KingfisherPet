@@ -267,6 +267,7 @@ async function collectDiagnostics() {
 /// 3) 窗口数熔断:常驻 main/poop/crack(+settings),>8 或出现陌生窗 → 关掉(5min 冷却)
 let wdLastAlive = 0;
 let wdLeakCooldownUntil = 0;
+let wdLastZ = 0;
 function setupWatchdog() {
   wdLastAlive = performance.now();
   setInterval(async () => {
@@ -286,7 +287,10 @@ function setupWatchdog() {
         behavior.watchdogKick();
         wdLastAlive = performance.now();
       }
-      invoke("assert_z_cmd").catch(() => {});   // z 序断言:舞台(树枝)稳定在鸟之上
+      if (performance.now() > wdLastZ) {
+        invoke("assert_z_cmd").catch(() => {});   // z 序收敛(5s):poop(树枝)> main > crack
+        wdLastZ = performance.now() + 5000;
+      }
       if (performance.now() > wdLeakCooldownUntil) {
         const all: any[] = await WebviewWindow.getAll();
         const legal = new Set(["main", "poop", "crack", "settings"]);

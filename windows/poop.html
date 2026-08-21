@@ -101,7 +101,9 @@ listen("poop-drop", async (e) => {
       if (performance.now() < graceState.until) return;   // 唤醒宽限
       try {
         const r = await (await import("@tauri-apps/api/core")).invoke("window_rect_cmd", { hwndVal: hwnd });
-        const gone = !r || (px0 < r[0] || px0 > r[0] + r[2]);   // 物理比较
+        // 承载判定:屎底边(landingY)应坐在窗口上沿(r[1])上且横跨窗口。
+        // 之前只比 x——窗口【垂直】移开时屎 x 仍在范围内 → 判定不触发 → 屎悬空(Mac 会掉)
+        const gone = !r || px0 < r[0] || px0 > r[0] + r[2] || Math.abs(r[1] - pl) > 8;
         if (gone) {
           bad++;
           if (bad < 3) return;   // 迟滞

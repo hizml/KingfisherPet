@@ -431,6 +431,7 @@ async function startDart() {
 async function startFish() {
   beginAction();
   leavePerchWin();
+  branch.hideBranch();   // 起飞收枝(和 startFly/dart 一致;之前漏了 → 鸟飞走旧枝悬空)
   enter("fly");
   try {
     const a = await area();
