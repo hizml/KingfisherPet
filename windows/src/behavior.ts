@@ -654,28 +654,7 @@ export function doSing() { startSing(); }   // 用户操作永远最高优先级
 export function doEat() { startEat(); }
 export function doFish() { startFish(); }
 
-/// 找回小鸟:光标所在屏右下角安全位重置(坐标 bug 逃生口)。
-/// 主链路在 Rust(recall_cmd,Win32 直操不依赖前端);这里处理延迟发来的状态复位。
-export async function recallToScreen() {
-  if (dndActive) return;   // 勿扰中(全屏应用):绝不把鸟拉回全屏之上,退出勿扰自然恢复
-  beginAction();
-  leavePerchWin();
-  branch.hideBranch();
-  try {
-    const a = await area();
-    if (!onScreen) {
-      onScreen = true;
-      await invoke("show_no_activate");
-      // 舞台窗一并恢复(之前漏了:找回后没阴影/没树枝/不拉屎的根源)
-      stageVis("poop", true);
-      stageVis("crack", true);
-    }
-    await setOrigin(a.maxX - SIZE_P() - 30 * _scale, a.maxY - FEET_TOP_P());
-  } catch (e) { emit("log", "recall " + e); }
-  enter("idle");
-  busy = false;
-  scheduleThink();
-}
+
 export function doPerch() { startPerchWindow(); }   // 菜单指定动作打断当前(macOS 同款不判 busy)
 export function doPeck() { startPeck(); }
 
@@ -704,8 +683,9 @@ export async function start() {
     const feetY = sy + FEET_TOP_P();
     if (localStorage.getItem("kf_x") && sx >= a.minX && sx <= a.maxX - SIZE_P() && sy >= a.minY && sy <= a.maxY - FEET_TOP_P()
         && Math.abs(feetY - a.maxY) <= 40 * _scale) {   // 出生必须脚踏实地(悬空 → 右下角)
-      await setOrigin(sx, sy);
-      emit("log", `start: 恢复上次位置 ${Math.round(sx)},${Math.round(sy)}(工作区 ${a.maxX}x${a.maxY})`);
+      // Y 强制贴任务栏顶:恢复位置可能有 ±40 点容差,出生即精确踏地(用户:脚悬空 18px)
+      await setOrigin(sx, a.maxY - FEET_TOP_P());
+      emit("log", `start: 恢复上次位置 ${Math.round(sx)},Y 贴地 ${Math.round(a.maxY - FEET_TOP_P())}(工作区 ${a.maxX}x${a.maxY})`);
     } else {
       const dx = a.maxX - SIZE_P() - 30 * _scale, dy = a.maxY - FEET_TOP_P();
       await setOrigin(dx, dy);

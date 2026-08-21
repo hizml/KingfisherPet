@@ -59,7 +59,6 @@ async function main() {
       else if (id === "sing") behavior.doSing();
       else if (id === "eat") behavior.doEat();
       else if (id === "fish") behavior.doFish();
-      else if (id === "recall") behavior.recallToScreen();   // 找回小鸟(坐标自愈逃生口)
       else if (id === "diag") collectDiagnostics();   // 诊断信息(写文件+记事本打开,定位坐标问题)
       else if (id === "perch") behavior.doPerch();
       else if (id === "peck") behavior.doPeck();
