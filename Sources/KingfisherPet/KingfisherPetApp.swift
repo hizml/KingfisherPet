@@ -2,6 +2,7 @@ import AppKit
 import ServiceManagement
 import Foundation
 import QuartzCore
+import CoreAudio
 
 /// 诊断日志:append 到 /tmp/kf_debug.log(睡眠唤醒卡死排查用)。CACurrentMediaTime 打时间戳。
 /// 用缓存的 FileHandle(不每次开关文件,避免高频 IO 吃 CPU)。超过 5MB 截断(防无限增长)。

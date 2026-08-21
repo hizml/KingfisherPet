@@ -118,6 +118,7 @@ async function main() {
       }, 8000);
     }
     setupWatchdog();
+    setInterval(() => emit("hb", null).catch(() => {}), 30_000);   // 心跳:Rust 侧看门狗监测主窗死活
   } catch (e: any) {
     emit("log", "main err: " + (e?.stack || String(e)));
   }
