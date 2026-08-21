@@ -161,7 +161,11 @@ function startPerchCheck() {
       if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
         perchMoving = true; lastPerchMove = performance.now();   // 用户拖栖窗 → think 推迟(macOS 同款)
         const o = await getOrigin();
-        await setOrigin(o.x + dx, o.y + dy);   // 增量跟随,保持相对位置(不往窗口中间凑)
+        // 跟随要钳制(macOS clampPerch 同款)——栖窗被拖向屏缘/别的显示器时,
+        // 裸跟随会把鸟带出屏幕外(长跑"只见树枝不见鸟"的真凶之一)
+        const cx = Math.min(Math.max(o.x + dx, a.minX), a.maxX - SIZE_P());
+        const cy = Math.min(Math.max(o.y + dy, a.minY), a.maxY - FEET_TOP_P());
+        await setOrigin(cx, cy);
         lastPerchRect = { x: wx, y: wy };
       } else if (perchMoving && performance.now() - lastPerchMove > 600) {
         perchMoving = false;   // 停 0.6s → 恢复思考

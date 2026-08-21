@@ -376,6 +376,54 @@ pub fn run() {
                     crate::kflog::kflog(&format!("autostart → {on}"));
                 });
             }
+            // Rust 侧看门狗(主窗 WebView 崩死时 JS 看门狗同归于尽,必须在这层兜底):
+            // 1) 心跳:主窗每 30s emit("hb");丢失 >120s(且已运行 >3min)→ 重载主窗页面自愈(10min 冷却)
+            // 2) 出屏:主窗位置跑出所有显示器 → 找回安全位(跟随未钳制等历史路径的兜底)
+            {
+                use std::sync::atomic::{AtomicU64, Ordering};
+                static LAST_HB: AtomicU64 = AtomicU64::new(0);
+                static LAST_HEAL: AtomicU64 = AtomicU64::new(0);
+                let app2 = app.handle().clone();
+                app.listen("hb", |_| {
+                    LAST_HB.store(
+                        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+                        Ordering::Relaxed);
+                });
+                std::thread::spawn(move || {
+                    let boot = std::time::Instant::now();
+                    loop {
+                        std::thread::sleep(std::time::Duration::from_secs(30));
+                        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs()).unwrap_or(0);
+                        let hb = LAST_HB.load(Ordering::Relaxed);
+                        let healed = LAST_HEAL.load(Ordering::Relaxed);
+                        // 心跳丢失 → 主窗页面重载(蛋壳重启,好过整只鸟消失)
+                        if boot.elapsed().as_secs() > 180 && hb > 0 && now.saturating_sub(hb) > 120
+                            && now.saturating_sub(healed) > 600 {
+                            crate::kflog::kflog("rust-watchdog: 主窗心跳丢失 >120s,重载主窗页面自愈");
+                            LAST_HEAL.store(now, Ordering::Relaxed);
+                            if let Some(w) = app2.get_webview_window("main") {
+                                let _ = w.eval("location.reload()");
+                            }
+                            continue;
+                        }
+                        // 出屏自愈:窗口原点在所有显示器之外 → 拉回光标所在屏安全位
+                        if let Some(w) = app2.get_webview_window("main") {
+                            if let (Ok(p), Ok(mons)) = (w.outer_position(), app2.available_monitors()) {
+                                let inside = mons.iter().any(|m|
+                                    p.x >= m.position().x - 40 && p.x <= m.position().x + m.size().width as i32 + 40 &&
+                                    p.y >= m.position().y - 40 && p.y <= m.position().y + m.size().height as i32 + 40);
+                                if !inside && now.saturating_sub(healed) > 60 {
+                                    crate::kflog::kflog(&format!("rust-watchdog: 主窗出屏({},{}) → 找回", p.x, p.y));
+                                    LAST_HEAL.store(now, Ordering::Relaxed);
+                                    let _ = crate::windows::recall_show(&w);
+                                    let _ = app2.emit("menu", "recall");
+                                }
+                            }
+                        }
+                    }
+                });
+            }
             // 前端 log 事件 → 终端 + 滚动日志文件(可观测性:排障不再依赖终端)
             app.listen("log", |event| {
                 let line = event.payload().trim_matches('"').to_string();
