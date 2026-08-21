@@ -1,7 +1,7 @@
 // 屎:独立全屏透明窗(WebviewWindow "poop"),物理下落(屏幕坐标,不跟鸟窗)。
 // 对应 macOS PoopController(独立窗 + 物理)。避免 macOS 踩过的「屎跟窗走」坑。
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { availableMonitors } from "@tauri-apps/api/window";
+import { availableMonitors, PhysicalPosition } from "@tauri-apps/api/window";
 import { emit, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { settings } from "./settings";
@@ -35,13 +35,22 @@ async function ensure() {
         }
         ox = x0 / sc0; oy = y0 / sc0; rw = (x1 - x0) / sc0; rh = (y1 - y0) / sc0;
       }
+      // 握手监听【先】注册:页面加载很快,晚注册会错过 child-ready(握手竞态)
+      const childReady = new Promise<void>(res => {
+        const un = listen("child-ready", (e) => {
+          if (e.payload === "poop") { un.then(f => f()); stageHandshaken = true; res(); }
+        });
+      });
+      // 创建即可见但放在【屏外】:WebView2 对隐藏窗不保证加载页面,
+      // 屏外创建两头兼得——页面必加载,白闪/尺寸动画全程不可见
+      const OFF = 30000;
       const w0 = existing ?? new WebviewWindow("poop", {
         url: "poop.html",
         transparent: true, decorations: false, alwaysOnTop: true,
         resizable: false, skipTaskbar: true, focus: false,
-        visible: false, shadow: false,   // 创建时不可见:WebView2 初始化会白屏一闪;页面就绪再 NOACTIVATE 显示
+        shadow: false,
         width: Math.ceil(rw), height: Math.ceil(rh),
-        x: Math.round(ox), y: Math.round(oy),
+        x: Math.round(ox) - OFF, y: Math.round(oy),
       });
       win = w0;
       // 告诉子窗舞台原点:body 平移回 (0,0) 语义,事件里的全局逻辑坐标直接可用
@@ -57,18 +66,14 @@ async function ensure() {
         ]);
         await w0.setIgnoreCursorEvents(true).catch(() => {});   // 穿透,别挡屏幕
       }
-      // 等 child 页注册完 listener(否则首次 emit 子窗还没监听,事件丢失)。
-      // reload 后子窗 listener 已在,此握手立即满足/超时放行,均安全。
+      // 等 child 页注册完 listener(握手监听已在创建前挂好;超时放行,页面晚到也能工作)
       await Promise.race([
-        new Promise<void>(res => {
-          const un = listen("child-ready", (e) => {
-            if (e.payload === "poop") { un.then(f => f()); stageHandshaken = true; res(); }
-          });
-        }),
-        new Promise<void>(res => setTimeout(res, 2000)),
+        childReady,
+        new Promise<void>(res => setTimeout(res, 3000)),
       ]);
       if (!existing) {
-        // 页面就绪后才显示(NOACTIVATE 不抢焦点;白闪阶段已全程不可见)
+        // 页面就绪 → 归位(单次 SetWindowPos,无飞入动画)+ 置顶不抢焦点
+        try { await w0.setPosition(new PhysicalPosition(Math.round(ox), Math.round(oy))); } catch { /* */ }
         await invoke("stage_visibility", { label: "poop", show: true })
           .catch(e => warnOnce("poop stage show", e));
       }

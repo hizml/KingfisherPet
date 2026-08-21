@@ -2,7 +2,7 @@
 // 主窗 emit("crack-at", {x,y}) → crack 窗 canvas 画放射裂。对应 macOS CrackController(独立覆盖层)。
 
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { availableMonitors } from "@tauri-apps/api/window";
+import { availableMonitors, PhysicalPosition } from "@tauri-apps/api/window";
 import { emit, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { warnOnce } from "./log";
@@ -29,13 +29,20 @@ async function ensure() {
         }
         ox = x0 / sc0; oy = y0 / sc0; rw = (x1 - x0) / sc0; rh = (y1 - y0) / sc0;
       }
+      // 握手监听先注册(竞态),创建即可见但屏外(页面必加载、白闪不可见)
+      const childReady = new Promise<void>(res => {
+        const un = listen("child-ready", (e) => {
+          if (e.payload === "crack") { un.then(f => f()); res(); }
+        });
+      });
+      const OFF = 30000;
       const w0 = existing ?? new WebviewWindow("crack", {
         url: "crack.html",
         transparent: true, decorations: false, alwaysOnTop: true,
         resizable: false, skipTaskbar: true, focus: false,
-        visible: false, shadow: false,   // 创建时不可见,页面就绪再 NOACTIVATE 显示(杀白闪)
+        shadow: false,
         width: Math.ceil(rw), height: Math.ceil(rh),
-        x: Math.round(ox), y: Math.round(oy),
+        x: Math.round(ox) - OFF, y: Math.round(oy),
       });
       win = w0;
       // 告诉子窗舞台原点:body 平移回 (0,0) 语义,事件里的全局逻辑坐标直接可用
@@ -51,17 +58,12 @@ async function ensure() {
         ]);
         await w0.setIgnoreCursorEvents(true).catch(e => warnOnce("crack ignore", e));   // 穿透,别挡屏幕
       }
-      // 等 child 页注册完 listener(否则首次 emit 子窗还没监听,事件丢失)。
-      // reload 后子窗 listener 已在,此握手立即满足/超时放行,均安全。
       await Promise.race([
-        new Promise<void>(res => {
-          const un = listen("child-ready", (e) => {
-            if (e.payload === "crack") { un.then(f => f()); res(); }
-          });
-        }),
-        new Promise<void>(res => setTimeout(res, 2000)),
+        childReady,
+        new Promise<void>(res => setTimeout(res, 3000)),
       ]);
       if (!existing) {
+        try { await w0.setPosition(new PhysicalPosition(Math.round(ox), Math.round(oy))); } catch { /* */ }
         await invoke("stage_visibility", { label: "crack", show: true })
           .catch(e => warnOnce("crack stage show", e));
       }

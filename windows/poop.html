@@ -9,10 +9,21 @@ img,div.fx{position:fixed;pointer-events:none}
 @keyframes kf-sun-pulse{from{transform:scale(0.95)}to{transform:scale(1.1)}}
 </style>
 </head><body>
+<script>
+// 探针(不依赖 Tauri API):页面是否执行到这里 + 模块是否抛错
+localStorage.setItem("kf_poop_probe", "script-start " + Date.now());
+localStorage.removeItem("kf_poop_err");   // 清上一轮的残影
+window.addEventListener("error", (e) => {
+  localStorage.setItem("kf_poop_err", (e.message || "") + " @ " + (e.filename || "") + ":" + (e.lineno || ""));
+});
+</script>
 <script type="module">
 import { listen, emit } from "@tauri-apps/api/event";
+localStorage.setItem("kf_poop_probe", "module-import-ok " + Date.now());
+const DPR = window.devicePixelRatio || 1;   // 物理→CSS 换算(之前整个文件没声明,所有内容处理器首事件即崩)
+try {
 let theme = localStorage.getItem("kf_theme") || "flat";
-listen<string>("theme", (e) => { theme = e.payload; });   // 主窗切主题(reload 不影响本窗),素材跟着换
+listen("theme", (e) => { theme = e.payload; });   // 主窗切主题(reload 不影响本窗),素材跟着换
 // 载荷已是逻辑像素(behavior 统一逻辑坐标),直接用
 
 // 唤醒宽限:3s 内承载面监测不判"没了"(唤醒瞬间窗口层级混乱,否则满屏屎同时重落)
@@ -221,6 +232,11 @@ let stageDormant = false;
 listen("sleep", () => { stageDormant = true; });
 listen("wake", () => { stageDormant = false; graceState.until = performance.now() + 3000; });
 
+localStorage.setItem("kf_poop_probe", "module-done " + Date.now());
 emit("child-ready", "poop");   // 告诉主窗 listener 已注册(防首次 emit 丢失)
+} catch (err) {
+  localStorage.setItem("kf_poop_err", "module: " + (err && err.message || err));
+  throw err;
+}
 </script>
 </body></html>

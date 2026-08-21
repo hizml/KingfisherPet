@@ -3,8 +3,17 @@
 <style>html,body{margin:0;background:transparent;overflow:hidden;width:100vw;height:100vh}canvas{position:fixed;left:0;top:0;width:100vw;height:100vh}</style>
 </head><body>
 <canvas id="c"></canvas>
+<script>
+localStorage.setItem("kf_crack_probe", "script-start " + Date.now());
+localStorage.removeItem("kf_crack_err");   // 清上一轮的残影
+window.addEventListener("error", (e) => {
+  localStorage.setItem("kf_crack_err", (e.message || "") + " @ " + (e.filename || "") + ":" + (e.lineno || ""));
+});
+</script>
 <script type="module">
 import { listen, emit } from "@tauri-apps/api/event";
+localStorage.setItem("kf_crack_probe", "module-import-ok " + Date.now());
+try {
 const cv = document.getElementById("c");
 const ctx = cv.getContext("2d");
 function resize() {   // 画布按 DPR 渲染(逻辑分辨率在高 DPI 屏上发糊);坐标系仍用 CSS 逻辑
@@ -27,7 +36,7 @@ async function loadThemeColors(t) {
   } catch { /* */ }
 }
 loadThemeColors(theme);
-listen<string>("theme", (e) => { theme = e.payload; loadThemeColors(theme); });
+listen("theme", (e) => { theme = e.payload; loadThemeColors(theme); });
 
 const MAX_CRACKS = 8;                        // 上限(macOS maxCracks=8)
 let cracks = [];                             // {x,y,r}
@@ -70,6 +79,11 @@ listen("stage-origin", (e) => {   // 舞台建在虚拟桌面原点,body 平移�
   document.body.style.transform = `translate(${-x}px, ${-y}px)`;
 });
 listen("stage-ping", () => { emit("stage-pong", "crack"); });   // 健康探针(诊断用)
+localStorage.setItem("kf_crack_probe", "module-done " + Date.now());
 emit("child-ready", "crack");   // listener 已注册
+} catch (err) {
+  localStorage.setItem("kf_crack_err", "module: " + (err && err.message || err));
+  throw err;
+}
 </script>
 </body></html>

@@ -354,11 +354,13 @@ async function startPerchWindow() {
     if (py - FEET_TOP_P() < (await area()).minY) { startFly(300); return; }   // 窗台太高,头会出屏 → 不停
     const o = await getOrigin();
     setFacing(px > o.x);
+    emit("log", `perch: 目标 px=${Math.round(px)} py=${Math.round(py)}(窗沿) 鸟origin应为 py-${Math.round(FEET_TOP_P())}`);
     animateFlight({ x: px, y: py - FEET_TOP_P() }, 1.1, () => {   // 脚踩窗口上沿
       // 记住栖的窗口(HWND+矩形),增量跟随
       perchedHwnd = perch[2];
       lastPerchRect = null;
       startPerchCheck();
+      getOrigin().then(l => emit("log", `perch: 落定 origin=${Math.round(l.x)},${Math.round(l.y)} 脚=${Math.round(l.y + FEET_TOP_P())}(应≈${Math.round(py)})`)).catch(() => {});
       finish();
     });
   } catch (e) { finish(); }
