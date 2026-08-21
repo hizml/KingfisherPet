@@ -40,7 +40,15 @@ async function main() {
 
     behavior.setup({
       lib,
-      setState: (s) => { if (s !== state) { state = s; animTime = 0; last = 0; } },
+      setState: (s) => {
+        if (s !== state) {
+          state = s; animTime = 0; last = 0;
+          // 强制同步第一帧:窗口显示瞬间必须已是新状态的帧(否则显示旧帧=破壳前闪鸟本体)
+          const seq0 = lib.sequence(s);
+          const f0 = lib.frame(seq0[0]);
+          if (f0) { currentFrame = seq0[0]; img.src = f0.img.src; }
+        }
+      },
       setFacing: (r) => { facingRight = r; img.style.transform = r ? "scaleX(-1)" : "none"; },
       playPeep: playPeep,
       onMoved: (x: number, y: number) => { updateShadow(x, y); updateHitOrigin(x, y); },   // 同步喂 hittest 缓存(零 IPC)
