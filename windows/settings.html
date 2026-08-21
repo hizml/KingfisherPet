@@ -41,14 +41,21 @@
   </div>
   <script type="module">
     import { emit, listen } from "@tauri-apps/api/event";
-    // 数值持久化在主窗 localStorage(main.ts 的 setting 监听负责落盘+生效);
-    // 本窗只发指令 + 接收同步(主窗 ui-state / 主题事件驱动勾选态)
+    // 初始值直接读共享 localStorage(与主窗同源互通,无竞态——之前页面写死默认值
+    // 靠事件推送初始化,关掉重开时推送已被错过 = 滑杆"自动还原");
+    // 语言/自启是 Rust 侧状态,打开时主动拉
+    const savedAct = Number(localStorage.getItem("kf_activity") ?? 0.5);
+    const savedSpd = Number(localStorage.getItem("kf_speed") ?? 1);
+    const savedSnd = localStorage.getItem("kf_sound") !== "0";
     const act = document.getElementById("act"), spd = document.getElementById("spd"),
           snd = document.getElementById("snd"), actV = document.getElementById("actV"),
           spdV = document.getElementById("spdV"), themesEl = document.getElementById("themes"),
           langsEl = document.getElementById("langs"), autoEl = document.getElementById("auto");
     const NAMES = [["flat","扁平"],["clay","粘土"],["pixel","像素"],["neon","霓虹"],["ink","水墨"],["watercolor","水彩"]];
     let curTheme = localStorage.getItem("kf_theme") || "flat";
+    act.value = savedAct; actV.textContent = savedAct.toFixed(2);
+    spd.value = savedSpd; spdV.textContent = savedSpd.toFixed(2);
+    snd.checked = savedSnd;
     for (const [id, name] of NAMES) {
       const b = document.createElement("button");
       b.textContent = name; b.dataset.t = id;
@@ -74,6 +81,7 @@
     listen("lang", (e) => { curLang = e.payload; paintLang(); });
     autoEl.onchange = () => emit("autostart", autoEl.checked);
     listen("theme", (e) => { curTheme = e.payload; paintTheme(); });
+    emit("settings-need-state", null);   // 主动拉语言/自启(Rust 侧状态,localStorage 没有)
     act.oninput = () => { actV.textContent = Number(act.value).toFixed(2); emit("setting", "activity:" + act.value); };
     spd.oninput = () => { spdV.textContent = Number(spd.value).toFixed(2); emit("setting", "speed:" + spd.value); };
     snd.onchange = () => emit("setting", "sound:" + snd.checked);

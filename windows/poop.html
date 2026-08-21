@@ -82,6 +82,7 @@ listen("poop-drop", async (e) => {
   img.style.transition = `top ${fallSec / sp}s ease-in,opacity 1.2s`;
   document.body.appendChild(img);
   poopCount++;
+  void img.offsetHeight;   // 强制 reflow 钉住起点(单 rAF 与首帧同批会被合并,直接渲染在终点 = 看不到下落)
   requestAnimationFrame(() => { img.style.top = (landingY - spr.h) + "px"; });   // 落到表面(底边贴地)
   const sit = (8000 + Math.random() * 7000) / sp;
   const fadeAt = fallSec / sp * 1000 + sit;
@@ -115,6 +116,7 @@ listen("poop-drop", async (e) => {
           } catch { /* */ }
           const nlL = nl / DPR;
           img.style.transition = `top ${Math.max(0.2, (nlL - landingY) / 220 / sp)}s ease-in`;
+          void img.offsetHeight;   // 钉住起点再落(否则看不到下落)
           requestAnimationFrame(() => { img.style.top = (nlL - spr.h) + "px"; });
         }
       } catch { clearInterval(poll); }
@@ -180,7 +182,8 @@ listen("fx", (e) => {
     document.querySelector("div.fx-sun")?.remove();   // 单实例(防堆叠)
     const c = document.createElement("div");
     c.className = "fx fx-sun";   // 一行写全(classList 先加会被 className 覆盖 → 去重失效)
-    c.style.left = (x - 60) + "px"; c.style.top = (y - 60) + "px";
+    c.style.left = (x - 60) + "px";
+    c.style.top = Math.max(y - 60, -58) + "px";   // 鸟在屏顶时太阳至少露一半(舞台钳在屏内,对齐 Mac 越屏观感)
     c.style.width = "120px"; c.style.height = "120px";
     const rays = imgEl("sun_rays", 120, 120); rays.classList.add("kf-sun-rot");
     const disk = imgEl("sun_disk", 58, 58);

@@ -66,7 +66,9 @@ async function main() {
       else if (id === "show") { behavior.isVisible() ? behavior.fallAway() : behavior.hatchIn(); }   // 显示/隐藏 toggle
       else if (id === "repair") { clearCracks(); }   // 托盘"修复屏幕"
     });
-    listen<string>("theme", (e) => setTheme(e.payload));   // 托盘主题菜单 → 切换 + reload
+    listen<string>("theme", (e) => {   // 主题切换(托盘/设置窗)→ 原地换装 + 回推勾选状态
+      setTheme(e.payload).then(() => syncSettingsOutlets()).catch(() => {});
+    });
     listen<string>("setting", (e) => {
       const v = e.payload;
       if (v.startsWith("sound:")) { const on = v.split(":")[1] === "true"; setSound(on); setSoundOn(on); }
