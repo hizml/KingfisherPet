@@ -194,9 +194,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             behavior.exitDnd()
         }
         // ② 放音检测:默认输出设备有应用在出声 → 鸟不叫(只静叫声)
-        requestNowPlaying()
-        let playing = nowPlaying
-        if playing { mediaOnStreak += 1; mediaOffStreak = 0 } else { mediaOffStreak += 1; mediaOnStreak = 0 }
+        requestNowPlaying()   // 现为空操作(放音静音已撤,详见其注释)
         if !mediaMutedActive && mediaOnStreak >= 2 {
             mediaMutedActive = true
             kfLog("media: 检测到放音,鸟静音")
@@ -234,28 +232,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
-    // 系统媒体框架句柄(MediaRemote:控制中心"正在播放"的数据源,NowPlaying 类应用通用做法)
-    private var mrHandle: UnsafeMutableRawPointer?
-    private var nowPlaying = false   // 上一轮查询结果(异步回调写入)
-
-    /// 请求系统"正在播放"状态(异步,结果写 nowPlaying,下一轮巡检消费)。
-    /// ⚠️ 不能用 CoreAudio 的 DeviceIsRunningSomewhere——它的语义是"有进程占着
-    /// 音频设备",浏览器播过一次声音就永久占着 → 标志恒真 → 鸟被永久静音
-    /// (日志实证:静音反复触发,"恢复叫声"从未出现)。MediaRemote 才是真语义。
+    // 放音静音(Mac):已撤除。两次尝试都不可用——
+    // ① CoreAudio DeviceIsRunningSomewhere:语义是"设备被占用",浏览器播过一次
+    //   声音就恒真 → 鸟永久静音(v1.4.31 实测)
+    // ② MediaRemote 私有 API:真实签名是双参数(ForOrigin),按单参数调用
+    //   → SIGSEGV 闪退(3 份崩溃报告实锤)。私有 API 签名不可赌,整个撤掉。
+    // Windows 端用公开 API(WASAPI 峰值)不受影响;Mac 后续如需此功能,
+    // 等 Apple 提供公开的 Now Playing 查询接口再上。
     private func requestNowPlaying() {
-        if mrHandle == nil {
-            mrHandle = dlopen("/System/Library/PrivateFrameworks/MediaRemote.framework/MediaRemote", RTLD_LAZY)
-        }
-        guard let h = mrHandle,
-              let sym = dlsym(h, "MRMediaRemoteGetNowPlayingApplicationIsPlaying") else {
-            nowPlaying = false   // 框架不可用:宁可漏静音,不可错静音(fail-open)
-            return
-        }
-        typealias MRIsPlayingFn = @convention(c) (@escaping @convention(block) (Bool) -> Void) -> Void
-        let f = unsafeBitCast(sym, to: MRIsPlayingFn.self)
-        f { [weak self] playing in
-            self?.nowPlaying = playing
-        }
+        SpriteLibrary.shared.mediaMuted = false
     }
 
     private var watchdogTimer: Timer?
