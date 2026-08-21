@@ -652,9 +652,31 @@ export async function callOver() {
   } catch (e) { startFly(); }
 }
 /// 菜单动作:隐藏时先完整破壳再执行(一次点击=显示+动作;Mac 同款缺失一并修)
-function withVisible(action: () => void) {
+/// 隐藏时点动作:先"替用户点一下显示"再执行(用户方案)。
+/// 关键实现:显示走 Rust 直操(show_window_bottom_right),不依赖可能被
+/// WebView2 挂起的 JS 定时器——之前 hatchIn().await 在窗口隐藏后 hold 的
+/// setTimeout 不回调,Promise 永不 resolve → 动作链断裂 → 鸟"运动中消失"
+/// + 看门狗 busy 熔断(日志实证:开始破壳×4 无完成,2min 后熔断×2)。
+/// 流程:Rust 置右下角+显示 → JS 切蛋帧跑破壳动画 → 1.4s 真实定时器完成后执行动作。
+async function withVisible(action: () => void) {
   if (onScreen) { action(); return; }
-  hatchIn().then(() => { if (onScreen && !dndActive) action(); }).catch(() => {});
+  if (dndActive) return;   // 勿扰中不复活
+  try {
+    await invoke("show_window_bottom_right");   // Rust 直操:右下角+显示+置顶(等价"先点显示")
+    onScreen = true;
+    beginAction();
+    enter("egg");
+    stageVis("poop", true);
+    emit("log", "withVisible: 已显示,破壳中…");
+    window.setTimeout(() => {   // 真实定时器(窗口已可见,不会被挂起)
+      enter("idle");
+      scheduleThink();
+      emit("log", "withVisible: 破壳完成,执行动作");
+      action();
+    }, 1400 / settings.speed * 1000);
+  } catch (e) {
+    warnOnce("withVisible", e);
+  }
 }
 export function doSing() { withVisible(() => startSing()); }   // 用户操作永远最高优先级:无条件打断
 export function doEat() { withVisible(() => startEat()); }
@@ -805,5 +827,5 @@ export async function hatchIn() {
     await invoke("show_no_activate");   // 显示但不抢前台焦点(此刻已是蛋)
     stageVis("poop", true);   // 裂纹舞台不跟显隐(用户定)
   } catch { /* */ }
-  hold(1.4, () => { enter("idle"); scheduleThink(); });
+  hold(1.4, () => { enter("idle"); scheduleThink(); emit("log", "hatchIn: 破壳完成"); });
 }
