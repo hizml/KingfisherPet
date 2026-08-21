@@ -134,6 +134,7 @@ fn recall_cmd(app: tauri::AppHandle) {
 fn diag_run(app: &tauri::AppHandle) {
     let mut rpt = String::new();
     rpt.push_str("=== KingfisherPet 坐标诊断 ===\n");
+    rpt.push_str(&format!("version: {}\n", app.package_info().version));   // 版本戳:报告先对版本(本轮用户回传了 v1.4.16 的旧报告)
     rpt.push_str(&format!("dpi_awareness(0=unaware/1=system/2=per-monitor): {}\n",
         crate::windows::dpi_awareness()));
     rpt.push_str("monitors[rcMonitor l,t,r,b | rcWork l,t,r,b | dpi](物理):\n");
