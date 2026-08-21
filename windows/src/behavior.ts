@@ -787,11 +787,17 @@ export async function fallAway() {
     const a = await area();
     // 掉出屏幕底(线性下坠)后隐藏窗口
     animateMove({ x: o.x, y: a.maxY + SIZE_P() + 40 * _scale }, 0.85, async () => {
+      // 【根修】隐藏前把最后一帧画成蛋:WebView2 挂起时合成器冻结保留
+      // "隐藏前最后画的那帧"——之前保留的是死亡动画的鸟本体,显示瞬间先亮鸟
+      // 再画蛋 = "先见鸟后破壳"。隐藏期间 JS 完全暂停,显示前不可能改这帧,
+      // 唯一时机就是现在(窗口已在屏外,重绘无人看见)。macOS fallAway 一直
+      // 有同款(applyNow egg)。
+      enter("egg");
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));   // 等两帧,确保合成器拿到蛋帧
       await setMainVisible(false, "fallAway");
       hideShadow();
       stageVis("poop", false);   // 隐藏鸟:特效舞台挂起(零耗);裂纹不动——屏幕裂纹与鸟无关(用户定)
-      enter("idle");
-      busy = false;
+      busy = false;   // 状态保持 egg(保留帧一致),不回 idle
     });
   } catch { onScreen = true; finish(); }
 }
