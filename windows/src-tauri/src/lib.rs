@@ -138,6 +138,29 @@ fn show_window_bottom_right(app: tauri::AppHandle) {
     let _ = assert_z_cmd(app.clone());
 }
 
+/// JS 动画守护:死亡下坠等"故意出屏"的动画期间,出屏看门狗不找回(否则动画
+/// 中途被拽回,与随后的 hide 竞速 = 鸟闪现/消失乱跳)。4s 覆盖 0.85s 下坠绰绰有余。
+#[tauri::command]
+fn anim_guard() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static UNTIL: AtomicU64 = AtomicU64::new(0);
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs()).unwrap_or(0);
+    UNTIL.store(now + 4, Ordering::Relaxed);
+    ANIM_GUARD_UNTIL.with(|g| g.set(now + 4));
+}
+
+thread_local! {
+    static ANIM_GUARD_UNTIL: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// 出屏看门狗是否应跳过(动画守护期内)
+pub fn anim_guard_active() -> bool {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs()).unwrap_or(0);
+    ANIM_GUARD_UNTIL.with(|g| g.get()) > now
+}
+
 /// z 序断言:收敛到 poop(树枝/阴影/屎/特效) > main(鸟) > crack(裂纹)。
 /// ⚠️ SetWindowPos(TOPMOST) 每次把窗口提到置顶带【最顶】——调用顺序必须反过来:
 /// 先提 crack、再提 main、最后提 poop。之前 main→poop→crack,收敛后 crack 反而
@@ -318,7 +341,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, diag_append, assert_z_cmd, show_window_bottom_right])
+        .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, diag_append, assert_z_cmd, show_window_bottom_right, anim_guard])
         .setup(|app| {
             crate::system::setup_power(app.handle().clone());   // 睡眠/锁屏/唤醒/会话 → emit sleep/wake/session-change
             // 设置窗主动拉状态(打开时):回语言/自启
@@ -395,7 +418,7 @@ pub fn run() {
                                     p.x >= m.position().x - 40 && p.x <= m.position().x + m.size().width as i32 + 40 &&
                                     p.y >= m.position().y - 40 && p.y <= m.position().y + m.size().height as i32 + 40);
                                 let vis = w.is_visible().unwrap_or(true);
-                                if !inside && vis && now.saturating_sub(healed) > 60 {   // 隐藏=用户意图(fallAway),不找回
+                                if !inside && vis && !anim_guard_active() && now.saturating_sub(healed) > 60 {   // 隐藏/动画下坠中不找回
                                     crate::kflog::kflog(&format!("rust-watchdog: 主窗出屏({},{}) → 找回", p.x, p.y));
                                     LAST_HEAL.store(now, Ordering::Relaxed);
                                     let _ = crate::windows::recall_show(&w);
