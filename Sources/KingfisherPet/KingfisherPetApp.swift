@@ -194,7 +194,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             behavior.exitDnd()
         }
         // ② 放音检测:默认输出设备有应用在出声 → 鸟不叫(只静叫声)
-        let playing = defaultOutputActive()
+        requestNowPlaying()
+        let playing = nowPlaying
         if playing { mediaOnStreak += 1; mediaOffStreak = 0 } else { mediaOffStreak += 1; mediaOnStreak = 0 }
         if !mediaMutedActive && mediaOnStreak >= 2 {
             mediaMutedActive = true
@@ -233,20 +234,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
-    /// 默认输出设备是否有应用在出声(CoreAudio 设备运行中)
-    private func defaultOutputActive() -> Bool {
-        var devID: AudioDeviceID = 0
-        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
-        var addr = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain)
-        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &devID) == noErr else { return false }
-        var running: UInt32 = 0
-        size = UInt32(MemoryLayout<UInt32>.size)
-        addr.mSelector = kAudioDevicePropertyDeviceIsRunningSomewhere
-        guard AudioObjectGetPropertyData(devID, &addr, 0, nil, &size, &running) == noErr else { return false }
-        return running != 0
+    // 系统媒体框架句柄(MediaRemote:控制中心"正在播放"的数据源,NowPlaying 类应用通用做法)
+    private var mrHandle: UnsafeMutableRawPointer?
+    private var nowPlaying = false   // 上一轮查询结果(异步回调写入)
+
+    /// 请求系统"正在播放"状态(异步,结果写 nowPlaying,下一轮巡检消费)。
+    /// ⚠️ 不能用 CoreAudio 的 DeviceIsRunningSomewhere——它的语义是"有进程占着
+    /// 音频设备",浏览器播过一次声音就永久占着 → 标志恒真 → 鸟被永久静音
+    /// (日志实证:静音反复触发,"恢复叫声"从未出现)。MediaRemote 才是真语义。
+    private func requestNowPlaying() {
+        if mrHandle == nil {
+            mrHandle = dlopen("/System/Library/PrivateFrameworks/MediaRemote.framework/MediaRemote", RTLD_LAZY)
+        }
+        guard let h = mrHandle,
+              let sym = dlsym(h, "MRMediaRemoteGetNowPlayingApplicationIsPlaying") else {
+            nowPlaying = false   // 框架不可用:宁可漏静音,不可错静音(fail-open)
+            return
+        }
+        typealias MRIsPlayingFn = @convention(c) (@escaping @convention(block) (Bool) -> Void) -> Void
+        let f = unsafeBitCast(sym, to: MRIsPlayingFn.self)
+        f { [weak self] playing in
+            self?.nowPlaying = playing
+        }
     }
 
     private var watchdogTimer: Timer?
