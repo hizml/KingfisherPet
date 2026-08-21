@@ -713,7 +713,7 @@ export async function start() {
   } catch (e) { console.error("start", e); }
   // 破壳登场:整蛋→裂纹→探头(macOS hatchIn 同款)再开始活动
   enter("egg");
-  await new Promise<void>(r => hold(1.4, () => { enter("idle"); scheduleThink(); r(); }));   // 破壳完成才 resolve
+  await new Promise<void>(r => hold(1.4, () => { enter("idle"); scheduleThink(); emit("log", "hatchIn: 破壳完成"); r(); }));   // 破壳完成才 resolve
 }
 
 /// 点击(非拖拽)→ 啾一声 + 心眼害羞 0.8s(macOS petViewWasClicked)
@@ -797,6 +797,7 @@ export async function hatchIn() {
   if (dndActive) return;   // 勿扰中不复活(同 recall)
   onScreen = true;
   beginAction();
+  emit("log", "hatchIn: 开始破壳(隐藏后复活/召唤)");
   enter("egg");   // 先切蛋帧再显示——之前先亮窗(上一帧 idle)再变蛋,"先出来再破壳"的错序
   try {
     const a = await area();

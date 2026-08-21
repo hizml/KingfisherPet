@@ -74,7 +74,9 @@ pub fn setup_power(app: tauri::AppHandle) {
             wts_tick += 1;
             if wts_tick % 4 == 0 {
                 let st = wts_connect_state();
-                if st != last_wts {
+                if last_wts == -1 {
+                    last_wts = st;   // 首次只记基线(初始 -1 若触发会把"首查 Active"误判成恢复 → 启动 8s 后误 reload 重新破壳)
+                } else if st != last_wts {
                     crate::kflog::kflog(&format!("wts: 会话状态 {last_wts} → {st}"));
                     last_wts = st;
                     if st == 0 {   // WTSActive:从断开/连接中恢复 → 合成器可能已丢,前端重载贴图自愈
