@@ -125,7 +125,9 @@ let lastPerchRect: { x: number; y: number } | null = null;
 let perchMoving = false, lastPerchMove = 0;
 export function getPerchedHwnd(): number | null { return perchedHwnd; }   // 诊断用:当前栖的窗口
 function startPerchCheck() {
-  stopPerchCheck();
+  // ⚠️ 只清计时器,不碰 perchedHwnd——stopPerchCheck() 会把它置 null,
+  // 之前先调 stop 再判空 = 永远直接返回,栖窗跟随从未启动过
+  if (perchTimer) { clearInterval(perchTimer); perchTimer = null; }
   if (perchedHwnd == null) return;
   const hwnd = perchedHwnd;
   perchTimer = setInterval(async () => {

@@ -7,6 +7,8 @@ img,div.fx{position:fixed;pointer-events:none}
 .kf-sun-pulse{animation:kf-sun-pulse 1.4s ease-in-out infinite alternate}
 @keyframes kf-sun-rot{from{transform:rotate(0)}to{transform:rotate(360deg)}}
 @keyframes kf-sun-pulse{from{transform:scale(0.95)}to{transform:scale(1.1)}}
+@keyframes kf-zzz{0%{opacity:0;transform:translate(0,0)}12%{opacity:1}70%{opacity:1}100%{opacity:0;transform:translate(var(--dx,0px),-80px)}}
+@keyframes kf-note{0%{opacity:0;transform:translateY(0)}12%{opacity:1}70%{opacity:1}100%{opacity:0;transform:translateY(-40px)}}
 </style>
 </head><body>
 <script>
@@ -128,6 +130,7 @@ function imgEl(name, w, h) {
   return img;
 }
 let fxSpd = 1;   // 动画速度(1=正常);时长 = 基准 / fxSpd(快→短)
+let zzzEl = null;   // zzz 单实例(macOS 池化单窗同款:每次 tick 替换,不堆叠)
 listen("fx", (e) => {
   const { kind, x: px, y: py, dur, spd } = e.payload;
   fxSpd = spd ?? 1;
@@ -153,25 +156,26 @@ listen("fx", (e) => {
       setTimeout(() => d.remove(), 650 * sp2);
     }
   } else if (kind === "notes") {
+    // macOS 同款:3 个音符,40px,梯次 0.25s,上浮 40px,keyframe 曲线 0/12%/70%/100%
     for (let i = 0; i < 3; i++) {
-      const n = imgEl("note", 32, 32);
-      n.style.left = (x + (i - 1) * 14) + "px"; n.style.top = y + "px";
+      const n = imgEl("note", 40, 40);
+      n.style.left = (x - 20 + (i - 1) * 14) + "px"; n.style.top = (y - 20) + "px";
       n.style.opacity = "0";
-      n.style.transition = `transform 1.2s ease-out ${i * 0.25}s,opacity 1.2s ${i * 0.25}s`;
+      n.style.animation = `kf-note ${1.2 / fxSpd}s ease-out ${i * 0.25 / fxSpd}s forwards`;
       document.body.appendChild(n);
-      requestAnimationFrame(() => { n.style.transform = "translateY(-40px)"; n.style.opacity = "1"; });
-      setTimeout(() => { n.style.opacity = "0"; }, 800 + i * 250);
-      setTimeout(() => n.remove(), 1700);
+      setTimeout(() => n.remove(), ((i * 0.25 + 1.2) / fxSpd) * 1000 + 150);
     }
   } else if (kind === "zzz") {
-    const z = imgEl("zzz", 28, 28);
-    z.style.left = x + "px"; z.style.top = y + "px";
-    z.style.opacity = "0";
-    z.style.transition = "transform 1.8s ease-out,opacity 1.8s ease-out";
-    document.body.appendChild(z);
-    requestAnimationFrame(() => { z.style.transform = "translateY(-80px)"; z.style.opacity = "1"; });
-    setTimeout(() => { z.style.opacity = "0"; }, 1200);
-    setTimeout(() => z.remove(), 1900);
+    // macOS 同款:【单实例替换】——每次 tick 替换上一个,28-40px 随机,
+    // 1.8s 完整生命周期(12% 淡入,70% 前保持,100% 淡尽),不再堆叠多个慢慢消失
+    if (!zzzEl) { zzzEl = imgEl("zzz", 28, 28); zzzEl.style.opacity = "0"; document.body.appendChild(zzzEl); }
+    const sz = 28 + Math.random() * 12;
+    zzzEl.style.width = sz + "px"; zzzEl.style.height = sz + "px";
+    zzzEl.style.left = (x - sz / 2 + (Math.random() * 24 - 12)) + "px";
+    zzzEl.style.top = y + "px";
+    zzzEl.style.setProperty("--dx", (Math.random() * 36 - 18) + "px");
+    zzzEl.style.animation = "none"; void zzzEl.offsetWidth;   // 重启动画
+    zzzEl.style.animation = `kf-zzz ${1.8 / fxSpd}s ease-out forwards`;
   } else if (kind === "sun") {
     document.querySelector("div.fx-sun")?.remove();   // 单实例(防堆叠)
     const c = document.createElement("div");

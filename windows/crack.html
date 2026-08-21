@@ -39,40 +39,73 @@ loadThemeColors(theme);
 listen("theme", (e) => { theme = e.payload; loadThemeColors(theme); });
 
 const MAX_CRACKS = 8;                        // 上限(macOS maxCracks=8)
-let cracks = [];                             // {x,y,r}
-const DPR = window.devicePixelRatio || 1;
-listen("crack-at", (e) => {
-  const { x: cx0, y: cy0 } = e.payload;
-  const x = cx0 / DPR, y = cy0 / DPR;   // 物理 → CSS
-  // 55px 内已有裂纹 → 扩大;否则新建(到上限不建)。macOS peck 合并/生长
-  let near = null;
-  for (let i = cracks.length - 1; i >= 0; i--) {
-    if (Math.hypot(cracks[i].x - x, cracks[i].y - y) < 55) { near = cracks[i]; break; }
+const cracks = [];                          // {x, y, r, polys: [[{x,y}...], ...]} 累积(旧痕保留)
+// macOS CrackController 同款累积式:每次啄击【追加】——
+// 锯齿射线×2(中段偶分叉+末端须)+ 同心环裂(9 段抖动折线)+ 偶发中心碎屑;
+// 双描边(暗粗 2.2 / 亮细 0.8)。之前画的是"重画 7 根直辐条",与 Mac 完全不同。
+function grow(c) {
+  c.r = Math.min(180, c.r + 18);
+  const R = c.r;
+  const ray = (len) => {
+    const ang = Math.random() * Math.PI * 2;
+    const segs = 2 + Math.floor(Math.random() * 3);
+    const pts = [{ x: c.x, y: c.y }];
+    let px = c.x, py = c.y;
+    for (let s2 = 1; s2 <= segs; s2++) {
+      px += Math.cos(ang) * (len / segs) + (Math.random() * 12 - 6);
+      py += Math.sin(ang) * (len / segs) + (Math.random() * 12 - 6);
+      pts.push({ x: px, y: py });
+      if (s2 === Math.floor(segs / 2) && Math.random() < 0.5) {   // 中段分叉
+        const ba = ang + (Math.random() * 2 - 1);
+        pts.push({ x: px + Math.cos(ba) * 12, y: py + Math.sin(ba) * 12 }, { x: px, y: py });
+      }
+    }
+    const br = ang + (Math.random() * 1.2 - 0.6);   // 末端须
+    pts.push({ x: px + Math.cos(br) * 16, y: py + Math.sin(br) * 16 });
+    c.polys.push(pts);
+  };
+  ray(R); ray(R * 0.8);
+  const start = Math.random() * Math.PI * 2, span = 0.7 + Math.random() * 0.9, steps = 9, ar = R * 0.62;
+  const ring = [];
+  for (let i = 0; i <= steps; i++) {
+    const a = start + span * i / steps, j = Math.random() * 6 - 3;
+    ring.push({ x: c.x + Math.cos(a) * (ar + j), y: c.y + Math.sin(a) * (ar + j) });
   }
-  if (near) {
-    near.r = Math.min(180, near.r + 18);
-    drawC(near);
-    return;
+  c.polys.push(ring);
+  if (Math.random() < 0.5) {   // 中心碎屑(小三角)
+    const ang = Math.random() * Math.PI * 2, d = Math.random() * R * 0.5;
+    const cx = c.x + Math.cos(ang) * d, cy = c.y + Math.sin(ang) * d;
+    c.polys.push([{ x: cx, y: cy }, { x: cx + 6, y: cy - 4 }, { x: cx + 2, y: cy + 6 }, { x: cx, y: cy }]);
   }
-  if (cracks.length >= MAX_CRACKS) return;
-  const c = { x, y, r: 44 };
-  cracks.push(c);
-  drawC(c);
-});
-function drawC(c) {
-  // 双描边:暗粗 + 亮细(macOS dark 2.2 / light 0.8)
+  drawPolys(c, c.polys.length - 4);   // 只画新增
+}
+function drawPolys(c, from = 0) {
   for (const [style, w] of [[crackDark, 2.2], [crackLight, 0.8]]) {
-    ctx.strokeStyle = style;
-    ctx.lineWidth = w; ctx.lineCap = "round";
-    for (let i = 0; i < 7; i++) {
-      const a = i / 7 * Math.PI * 2 + Math.random() * 0.3;
-      ctx.beginPath(); ctx.moveTo(c.x, c.y);
-      ctx.lineTo(c.x + Math.cos(a) * (c.r * (0.7 + Math.random() * 0.3)),
-                 c.y + Math.sin(a) * (c.r * (0.7 + Math.random() * 0.3)));
+    ctx.strokeStyle = style; ctx.lineWidth = w; ctx.lineCap = "round"; ctx.lineJoin = "round";
+    for (let i = from; i < c.polys.length; i++) {
+      ctx.beginPath();
+      c.polys[i].forEach((p, j) => (j ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
       ctx.stroke();
     }
   }
 }
+listen("crack-at", (e) => {
+  const { x: cx0, y: cy0 } = e.payload;
+  const x = cx0 / DPR, y = cy0 / DPR;   // 物理 → CSS
+  let near = null;
+  for (let i = cracks.length - 1; i >= 0; i--) {
+    if (Math.hypot(cracks[i].x - x, cracks[i].y - y) < 55) { near = cracks[i]; break; }
+  }
+  if (near) { grow(near); return; }
+  if (cracks.length >= MAX_CRACKS) return;
+  const c = { x, y, r: 44, polys: [] };
+  cracks.push(c);
+  grow(c);
+});
+// resize(DPR 变化)后全量重画
+window.addEventListener("resize", () => {
+  for (const c of cracks) drawPolys(c, 0);
+});
 listen("crack-clear", () => { cracks = []; ctx.clearRect(0, 0, cv.width, cv.height); });
 listen("stage-origin", (e) => {   // 舞台建在虚拟桌面原点,body 平移回 (0,0) 语义
   const { x, y } = e.payload;
