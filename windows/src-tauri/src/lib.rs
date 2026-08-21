@@ -178,16 +178,20 @@ fn diag_run(app: &tauri::AppHandle) {
     let _ = open::that(&path);
 }
 
-/// z 序断言:main → poop → crack(舞台在鸟上,树枝盖脚)。看门狗周期调用。
+/// z 序断言:收敛到 poop(树枝/阴影/屎/特效) > main(鸟) > crack(裂纹)。
+/// ⚠️ SetWindowPos(TOPMOST) 每次把窗口提到置顶带【最顶】——调用顺序必须反过来:
+/// 先提 crack、再提 main、最后提 poop。之前 main→poop→crack,收敛后 crack 反而
+/// 最顶(第二次啄的裂纹盖住鸟——用户报告)。看门狗周期调用。
 #[tauri::command]
 fn assert_z_cmd(app: tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("crack") {
+        crate::windows::raise_no_show(&w);
+    }
     if let Some(w) = app.get_webview_window("main") {
         crate::windows::raise_no_show(&w);
     }
-    for label in ["poop", "crack"] {
-        if let Some(w) = app.get_webview_window(label) {
-            crate::windows::raise_no_show(&w);
-        }
+    if let Some(w) = app.get_webview_window("poop") {
+        crate::windows::raise_no_show(&w);
     }
 }
 

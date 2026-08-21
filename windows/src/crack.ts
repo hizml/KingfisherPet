@@ -83,6 +83,9 @@ export function setupCrack() { ensure().catch(e => warnOnce("crack setup", e)); 
 
 export async function crackAt(x: number, y: number) {
   await ensure();
+  // 先收敛 z 序:裂纹必须被鸟盖住(poop>main>crack)——舞台窗显示/召回会把
+  // crack 提到置顶带顶,不收敛的话啄出的裂纹盖在鸟上(用户报告第二次啄)
+  try { await invoke("assert_z_cmd"); } catch { /* */ }
   await emit("crack-at", { x, y });
 }
 
