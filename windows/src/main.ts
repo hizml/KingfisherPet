@@ -130,7 +130,13 @@ async function main() {
   }
 }
 
+let tickCount = 0; let lastTickLog = 0;
 function tick(now?: number) {
+  tickCount++;
+  if (performance.now() - lastTickLog > 60000) {   // 活体证据:每 60s 一行(贴图消失排障:消失时刻=断流时刻)
+    emit("log", `tick-alive: frames=${tickCount} state=${state} dpr=${window.devicePixelRatio} vis=${document.visibilityState}`);
+    lastTickLog = performance.now();
+  }
   if (behavior.isSleeping()) {   // 睡眠:停 RAF,降为 1Hz 慢轮询(省电;wake 时 RAF 自然恢复)
     last = 0;
     setTimeout(tick, 1000);
