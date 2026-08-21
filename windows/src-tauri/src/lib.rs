@@ -279,12 +279,23 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
 }
 
 /// 重建托盘菜单(切换勾选/语言后)
+/// 托盘菜单重建:延迟 250ms + 防抖(多次触发合并)。
+/// 菜单刚被点击关闭时立即 set_menu 会导致下次打开显示异常(用户报告
+/// "菜单缩成很小一块,再点一次才出来")——延迟到菜单完全关闭后再换。
 fn refresh_menu(app: &tauri::AppHandle<tauri::Wry>) {
-    if let Some(tray) = app.tray_by_id("main") {
-        if let Ok(m) = build_menu(app) {
-            let _ = tray.set_menu(Some(m));
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static PENDING: AtomicBool = AtomicBool::new(false);
+    if PENDING.swap(true, Ordering::Relaxed) { return; }   // 已有重建在途,合并
+    let app2 = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        if let Some(tray) = app2.tray_by_id("main") {
+            if let Ok(m) = build_menu(&app2) {
+                let _ = tray.set_menu(Some(m));
+            }
         }
-    }
+        PENDING.store(false, Ordering::Relaxed);
+    });
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
