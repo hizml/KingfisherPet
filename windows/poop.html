@@ -74,13 +74,15 @@ listen("poop-drop", async (e) => {
   const fadeAt = fallSec / sp * 1000 + sit;
   setTimeout(() => { img.style.opacity = "0"; }, fadeAt);
   setTimeout(() => { img.remove(); poopCount--; }, fadeAt + 1400);
-  // 承载面监测(3fps):窗口移走/消失 → 重新下落到下一表面(macOS resumeFall)
-  // 迟滞:连续 3 次坏判定(≈1s)才重落;唤醒宽限 3s 内不判
+  // 承载面监测:窗口移走/消失 → 重新下落到下一表面(macOS resumeFall)
+  // 节能:查询每 3 跳一次(≈1 IPC/s;macOS 同哲学——查询帧 1/10 采样,不逐帧查);
+  // 迟滞:连续 3 次坏查询(≈3s)才重落;唤醒宽限 3s 内不判
   if (hwnd) {
-    let bad = 0;
+    let bad = 0, tick = 0;
     const poll = setInterval(async () => {
       if (!img.isConnected) { clearInterval(poll); return; }
       if (stageDormant) return;                        // 睡眠:不轮询(夜里 IPC 零)
+      if (++tick % 3 !== 0) return;                    // 门控:3 跳一查
       if (performance.now() < fadeAt - 500) return;   // 落定前不查
       if (performance.now() < graceState.until) return;   // 唤醒宽限
       try {

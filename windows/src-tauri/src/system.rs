@@ -21,8 +21,16 @@ pub fn setup_power(app: tauri::AppHandle) {
             let gap = now - last_tick;
             last_tick = now;
             if gap > 15_000 {
+                crate::kflog::kflog(&format!("power: 系统睡眠唤醒(间隔 {}s),sleep 即发、wake 延迟 3s(系统未稳不动,Mac 同款保守性)", gap / 1000));
                 let _ = app.emit("sleep", ());
-                let _ = app.emit("wake", ());
+                // wake 延迟 3s:唤醒瞬间层级/输入未稳,别抢(对齐 macOS resumeAfterWake 的 3s 延迟哲学)
+                let h = app.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(3));
+                    crate::kflog::kflog("power: 延迟 wake 已发");
+                    use tauri::Emitter;
+                    let _ = h.emit("wake", ());
+                });
                 continue;
             }
 
@@ -35,9 +43,11 @@ pub fn setup_power(app: tauri::AppHandle) {
             };
             if is_locked && !locked {
                 locked = true;
+                crate::kflog::kflog("power: 锁屏 → sleep");
                 let _ = app.emit("sleep", ());
             } else if !is_locked && locked {
                 locked = false;
+                crate::kflog::kflog("power: 解锁 → wake");
                 let _ = app.emit("wake", ());
             }
         }

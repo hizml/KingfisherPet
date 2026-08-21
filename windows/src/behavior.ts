@@ -40,6 +40,7 @@ let onMoved: (x: number, y: number) => void;
 
 let gen = 0;
 let busy = false;
+let busySince: number | null = null;   // 本次动作开始时刻(看门狗卡死检测)
 let thinkTimer: ReturnType<typeof setTimeout> | null = null;
 let perchTimer: ReturnType<typeof setInterval> | null = null;   // 栖窗跟随轮询
 
@@ -103,6 +104,7 @@ let savePosAt: ReturnType<typeof setTimeout> | null = null;
 function beginAction() {
   gen++;
   busy = true;
+  busySince = performance.now();
   if (thinkTimer) { clearTimeout(thinkTimer); thinkTimer = null; }
   stopZzzInterval();   // 无条件停打盹 zzz(macOS 同款;之前只在 userSleeping 时停会泄漏)
   // 惊醒:赖床中被新动作打断要清睡眠标志,否则 userSleeping 永久卡 true
@@ -147,7 +149,7 @@ function startPerchCheck() {
 
 function enter(s: string) { setState(s); }
 function finish() {
-  busy = false; stopZzzInterval(); enter("idle"); scheduleThink();
+  busy = false; busySince = null; stopZzzInterval(); enter("idle"); scheduleThink();
   if (perchedHwnd != null && perchTimer == null) startPerchCheck();   // 静态动作后恢复栖窗跟随
 }
 
@@ -173,17 +175,18 @@ async function think() {
   const idleBand = Math.round((1 - a) * 22);            // 0→22, 1→0
   const walkEnd = idleBand + Math.max(1, Math.round((1 - a) * 20));   // idle+walk 带
   const r = Math.random() * 100;   // 带宽是 0-100 的计数,不是 0-1 概率(之前忘乘,鸟只发呆)
+  // 权重带逐项对齐 macOS think():fly 7 / fish 8 / sing 7 / dart 7 / watch 7 / sun 7 / peck 7 / perch 6 / poop 6
   if (r < idleBand) { enter("idle"); scheduleThink(); }
   else if (r < walkEnd) startWalk();
-  else if (r < walkEnd + 8) startFish();
-  else if (r < walkEnd + 15) startFly();
+  else if (r < walkEnd + 7) startFly();
+  else if (r < walkEnd + 15) startFish();
   else if (r < walkEnd + 22) startSing();
   else if (r < walkEnd + 29) startDart();
   else if (r < walkEnd + 36) startWatch();
-  else if (r < walkEnd + 41) startSun();
-  else if (r < walkEnd + 46) startPeck();
-  else if (r < walkEnd + 51) startPoop();
-  else if (r < walkEnd + 55) startPerchWindow();
+  else if (r < walkEnd + 43) startSun();
+  else if (r < walkEnd + 50) startPeck();
+  else if (r < walkEnd + 56) startPerchWindow();
+  else if (r < walkEnd + 62) startPoop();
   else startSleep();
 }
 
@@ -267,7 +270,7 @@ async function startFly(minDist = 0) {
 let facingRight = false;   // 朝向(effects/poop/crack 出口随朝向偏移,macOS 同款)
 function startSing() {
   beginAction(); enter("sing"); playPeep();
-  effects.notes(facingRight ? 110 : 50, 50);   // 音符从头侧上方出(macOS 同款)
+  effects.notes(facingRight ? 110 : 50, 34);   // 音符从头上方出(macOS 同款:距顶 34)
   hold(1.2 + Math.random() * 0.4, () => finish());
 }
 function startSleep() {   // 打盹持续飘 zzz(macOS 每 0.9s,从头上方出)
@@ -370,6 +373,10 @@ async function startDart() {
     const toLeft = Math.random() < 0.5;
     const tx = toLeft ? a.minX + 20 : a.maxX - SIZE_P() - 20;
     setFacing(!toLeft);
+    // 落点悬空 → 树枝先到(macOS perchBranchIfNeeded;之前掠飞后旧枝留在原地成"幽灵枝")
+    const feetY = o.y + FEET_TOP_P();
+    if (feetY < a.maxY - 40 * _scale) branch.showBranchAt(tx + SIZE_P() / 2, feetY);
+    else branch.hideBranch();
     animateMove({ x: tx, y: o.y }, 0.55, () => finish());
   } catch (e) { finish(); }
 }
@@ -390,7 +397,7 @@ async function startFish() {
       enter("hover");                                   // 悬停瞄准(macOS 同款)
       hold(0.7, () => {
         enter("dive");
-        animateMove({ x: targetX, y: a.maxY - FEET_TOP_P() }, 0.5, () => {  // 俯冲到地面
+        animateMove({ x: targetX, y: a.maxY - FEET_TOP_P() }, 0.45, () => {  // 俯冲到地面(macOS 0.45)
           enter("fly_fish");
           effects.splash(80, 140);                        // 水花(鸟嘴 local)
           hold(0.5, () => {
@@ -399,7 +406,7 @@ async function startFish() {
             const perchY = high ? a.minY : (a.maxY - FEET_TOP_P());   // 随机高度歇脚
             setFacing(perchX > targetX);   // 叼鱼返航朝向落点(macOS 同款;之前漏了 → 倒着飞)
             if (high) branch.showBranchAt(perchX + half, perchY + FEET_TOP_P());   // 高处 → 树枝先到
-            animateFlight({ x: perchX, y: perchY }, 1.0, () => {
+            animateFlight({ x: perchX, y: perchY }, 0.95, () => {   // macOS 0.95
               enter("eat");
               playPeep();
               hold(1.1, () => {
@@ -673,6 +680,22 @@ export function happyAction() {
 let onScreen = true;
 export function isVisible() { return onScreen; }
 export function isSleeping() { return userSleeping; }   // main.ts 睡眠时跳过渲染用
+
+// ── 看门狗暴露(main.ts 15s 巡检;macOS watchdog 同款哲学:假设自己会坏)──
+export function watchdogState() {
+  return { busy, busySince, thinkArmed: thinkTimer != null, userSleeping, onScreen };
+}
+/// 强制复位(卡死熔断):等价"惊醒+回 idle",不清位置
+export function watchdogKick() {
+  emit("log", "watchdog: 强制复位(busy 卡死或心跳丢失)");
+  userSleeping = false;
+  setSleepMuted(false);
+  stopZzzInterval();
+  busy = false;
+  busySince = null;
+  enter("idle");
+  scheduleThink();
+}
 export async function fallAway() {
   if (!onScreen) return;
   onScreen = false;
