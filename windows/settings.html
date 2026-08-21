@@ -32,13 +32,21 @@
     <div class="lbl"><span>主题 Theme</span></div>
     <div class="themes" id="themes"></div>
   </div>
+  <div class="row">
+    <div class="lbl"><span>语言 Language</span></div>
+    <div class="themes" id="langs"></div>
+  </div>
+  <div class="row">
+    <label class="chk"><input id="auto" type="checkbox" /><span>开机自启 Launch at Login</span></label>
+  </div>
   <script type="module">
     import { emit, listen } from "@tauri-apps/api/event";
     // 数值持久化在主窗 localStorage(main.ts 的 setting 监听负责落盘+生效);
     // 本窗只发指令 + 接收同步(主窗 ui-state / 主题事件驱动勾选态)
     const act = document.getElementById("act"), spd = document.getElementById("spd"),
           snd = document.getElementById("snd"), actV = document.getElementById("actV"),
-          spdV = document.getElementById("spdV"), themesEl = document.getElementById("themes");
+          spdV = document.getElementById("spdV"), themesEl = document.getElementById("themes"),
+          langsEl = document.getElementById("langs"), autoEl = document.getElementById("auto");
     const NAMES = [["flat","扁平"],["clay","粘土"],["pixel","像素"],["neon","霓虹"],["ink","水墨"],["watercolor","水彩"]];
     let curTheme = localStorage.getItem("kf_theme") || "flat";
     for (const [id, name] of NAMES) {
@@ -51,6 +59,20 @@
       for (const b of themesEl.children) b.classList.toggle("on", b.dataset.t === curTheme);
     }
     paintTheme();
+    // 语言 + 自启(设置收纳:托盘不再重复列子菜单)
+    let curLang = "system";
+    for (const [id, name] of [["system","跟随系统"],["zh","中文"],["en","English"]]) {
+      const b = document.createElement("button");
+      b.textContent = name; b.dataset.l = id;
+      b.onclick = () => emit("lang", id);
+      langsEl.appendChild(b);
+    }
+    function paintLang() {
+      for (const b of langsEl.children) b.classList.toggle("on", b.dataset.l === curLang);
+    }
+    paintLang();
+    listen("lang", (e) => { curLang = e.payload; paintLang(); });
+    autoEl.onchange = () => emit("autostart", autoEl.checked);
     listen("theme", (e) => { curTheme = e.payload; paintTheme(); });
     act.oninput = () => { actV.textContent = Number(act.value).toFixed(2); emit("setting", "activity:" + act.value); };
     spd.oninput = () => { spdV.textContent = Number(spd.value).toFixed(2); emit("setting", "speed:" + spd.value); };
@@ -62,6 +84,8 @@
       spd.value = v.speed; spdV.textContent = Number(v.speed).toFixed(2);
       snd.checked = v.sound;
       curTheme = v.theme; paintTheme();
+      if (v.lang !== undefined) { curLang = v.lang; paintLang(); }
+      if (v.autostart !== undefined) autoEl.checked = v.autostart;
     });
   </script>
 </body>

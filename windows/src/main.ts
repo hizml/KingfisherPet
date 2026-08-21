@@ -99,7 +99,13 @@ async function main() {
         await collectDiagnostics();
         const { stageError } = await import("./poop");
         const po = await WebviewWindow.getByLabel("poop");
-        emit("log", `DEV diag: stage_poop=${po ? "EXISTS" : "NULL"} stageError=${stageError ?? "none"}`);
+        const po2 = await import("./poop");
+        const pong = await new Promise<string>((res) => {
+          const un = listen<string>("stage-pong", (e) => { un.then(f => f()); res(e.payload); });
+          emit("stage-ping", null);
+          setTimeout(() => { un.then(f => f()); res("TIMEOUT"); }, 1500);
+        });
+        emit("log", `DEV diag: stage_poop=${po ? "EXISTS" : "NULL"} stageError=${stageError ?? "none"} handshaken=${po2.stageHandshaken} pong=${pong} probe=${localStorage.getItem("kf_poop_probe")} err=${localStorage.getItem("kf_poop_err")}`);
       }, 8000);
     }
     setupWatchdog();
@@ -238,6 +244,8 @@ async function collectDiagnostics() {
     const h = behavior.getPerchedHwnd();
     report.perched = h == null ? null : await g("perched", () => invoke("window_rect_cmd", { hwndVal: h }));
   }
+  report.stage_probe = { poop: localStorage.getItem("kf_poop_probe"), poop_err: localStorage.getItem("kf_poop_err"),
+                         crack: localStorage.getItem("kf_crack_probe"), crack_err: localStorage.getItem("kf_crack_err") };
   report.saved_pos = { x: localStorage.getItem("kf_x"), y: localStorage.getItem("kf_y") };
   try { await invoke("diag_append", { payload: JSON.stringify(report, null, 2) }); }
   catch (e: any) { emit("log", "diag append err: " + String(e)); }
