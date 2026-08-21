@@ -714,6 +714,7 @@ export async function start() {
   // 破壳登场:整蛋→裂纹→探头(macOS hatchIn 同款)再开始活动
   enter("egg");
   await new Promise<void>(r => hold(1.4, () => { enter("idle"); scheduleThink(); emit("log", "hatchIn: 破壳完成"); r(); }));   // 破壳完成才 resolve
+  emit("vis-changed", null);   // 托盘菜单重建(动作项恢复可用)
 }
 
 /// 点击(非拖拽)→ 啾一声 + 心眼害羞 0.8s(macOS petViewWasClicked)
@@ -755,6 +756,7 @@ export async function dndSet(on: boolean) {
     enter("idle");
     busy = false;
     scheduleThink();
+    emit("vis-changed", null);   // 托盘菜单重建(勿扰恢复后动作项可用)
   }
 }
 
@@ -789,6 +791,7 @@ export async function fallAway() {
       stageVis("poop", false);   // 隐藏鸟:特效舞台挂起(零耗);裂纹不动——屏幕裂纹与鸟无关(用户定)
       enter("idle");
       busy = false;
+      emit("vis-changed", null);   // 托盘菜单重建(动作项置灰)
     });
   } catch { onScreen = true; finish(); }
 }

@@ -18,6 +18,7 @@ pub fn setup_power(app: tauri::AppHandle) {
         let mut fs_on = 0u32; let mut fs_off = 0u32; let mut dnd = false;
         let mut au_on = 0u32; let mut au_off = 0u32; let mut media = false;
         let mut wts_tick = 0u32; let mut last_wts = -1i32;   // RDP 会话状态(轮询;隐藏消息窗方案不可靠)
+        let mut bg = false; let mut bg_ticks = 0u32;   // RDP 后台化(切走/最小化,无断连事件)检测
         loop {
             std::thread::sleep(std::time::Duration::from_secs(2));
 
@@ -85,6 +86,34 @@ pub fn setup_power(app: tauri::AppHandle) {
                 }
             }
 
+            // --- RDP 后台化检测:RDP 窗口切走/最小化时会话无前台窗口(且未锁屏)---
+            // 恢复前台 → 前端重载自愈(贴图消失第二场景:会话一直 Active,断连检测抓不到)
+            wts_tick += 1;
+            if wts_tick % 5 == 0 && !is_locked_here() {
+                let main_visible = app.get_webview_window("main")
+                    .map(|w| w.is_visible().unwrap_or(false))
+                    .unwrap_or(false);
+                if main_visible {   // 全屏游戏/勿扰时主窗隐藏,跳过(避免独占游戏误判)
+                    let fg_null = unsafe {
+                        use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+                        GetForegroundWindow().0.is_null()
+                    };
+                    if fg_null {
+                        bg_ticks += 1;
+                        if bg_ticks >= 3 && !bg {
+                            bg = true;
+                            crate::kflog::kflog("session: 会话转入后台(RDP 切走/最小化)");
+                        }
+                    } else if bg {
+                        bg = false; bg_ticks = 0;
+                        crate::kflog::kflog("session: 会话回前台,前端重载自愈");
+                        let _ = app.emit("session-change", ());
+                    } else {
+                        bg_ticks = 0;
+                    }
+                }
+            }
+
             // --- 锁屏探测 ---
             let is_locked = unsafe {
                 match OpenInputDesktop(DESKTOP_CONTROL_FLAGS(0), false, DESKTOP_READOBJECTS) {
@@ -132,3 +161,19 @@ fn wts_connect_state() -> i32 {
 
 #[cfg(not(windows))]
 fn wts_connect_state() -> i32 { -1 }
+
+
+/// 当前是否锁屏(OpenInputDesktop 打不开 = winlogon 桌面)。后台化检测需要排除锁屏。
+#[cfg(windows)]
+fn is_locked_here() -> bool {
+    use windows::Win32::System::StationsAndDesktops::{OpenInputDesktop, CloseDesktop, DESKTOP_READOBJECTS, DESKTOP_CONTROL_FLAGS};
+    unsafe {
+        match OpenInputDesktop(DESKTOP_CONTROL_FLAGS(0), false, DESKTOP_READOBJECTS) {
+            Ok(h) => { let _ = CloseDesktop(h); false }
+            Err(_) => true,
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn is_locked_here() -> bool { false }
