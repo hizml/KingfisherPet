@@ -1,6 +1,38 @@
 // Win32 栖窗:找最前面那个普通窗口,返回 (上沿中点 x, 上沿 y),物理坐标。
 // mac/linux 走 stub(None)。对应 macOS WindowTracker.frontPerch(CGWindowList)。
 
+
+/// "普通应用窗口"判定(front_perch 与 surfaces_below 共用):
+/// 类名黑名单(桌面/任务栏/托盘弹层)+ TOOLWINDOW(系统弹层宿主)+ DWM 隐身。
+/// 幽灵栖窗事故:任务栏"显示隐藏的图标"弹层(TopLevelWindowForOverflowXamlIsland)
+/// 菜单关了仍以"可见"窗口存在 → 枚举把它当最顶合格窗 → 鸟停托盘区角落。
+#[cfg(windows)]
+unsafe fn shell_junk_or_cloaked(hwnd: windows::Win32::Foundation::HWND) -> bool {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+    use windows::Win32::UI::WindowsAndMessaging::{GetClassNameW, GetWindowLongPtrW, GWL_EXSTYLE, WS_EX_TOOLWINDOW};
+    const BAD: [&str; 9] = [
+        "Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd",
+        "NotifyIconOverflowWindow", "TrayNotifyWnd", "TopLevelWindowForOverflowXamlIsland",
+        "XamlExplorerHostIslandWindow", "Windows.UI.Core.CoreWindow",
+    ];
+    let mut cls = [0u16; 64];
+    let n = GetClassNameW(hwnd, &mut cls).max(0) as usize;
+    let name = String::from_utf16_lossy(&cls[..n.min(cls.len())]);
+    if BAD.contains(&name.as_str()) { return true; }
+    // 工具窗:系统弹层/托盘宿主都是 TOOLWINDOW,普通应用主窗口不是(Mac layer-0 同语义)
+    let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+    if (ex & WS_EX_TOOLWINDOW.0 as isize) != 0 { return true; }
+    // DWM 隐身(UWP 挂起等:窗口在、IsWindowVisible 真、视觉上不在)
+    let mut cloaked: u32 = 0;
+    if DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED,
+        &mut cloaked as *mut u32 as *mut core::ffi::c_void, 4).is_ok() {
+        if cloaked != 0 { return true; }
+    }
+    let _ = HWND::default();
+    false
+}
+
 /// 窗口【可见】矩形(物理)。GetWindowRect 对最大化窗口返回含隐形调整边框的
 /// 矩形(典型上/左/右各多 7-8px),鸟停上去脚下悬空;DWM 扩展边框才是真可见区。
 /// DWM 查询失败(极少数窗口)退回 GetWindowRect。
@@ -22,7 +54,7 @@ unsafe fn visible_rect(hwnd: windows::Win32::Foundation::HWND) -> Option<windows
 
 #[cfg(windows)]
 pub fn front_perch(bird_w: f64) -> Option<(f64, f64, isize)> {
-    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId, EnumWindows, GetClassNameW};
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId, EnumWindows};
     use windows::Win32::Foundation::{HWND, LPARAM, RECT};
     use windows::Win32::System::Threading::GetCurrentProcessId;
     use std::cell::{Cell, RefCell};
@@ -39,10 +71,7 @@ pub fn front_perch(bird_w: f64) -> Option<(f64, f64, isize)> {
         let mut pid: u32 = 0;
         GetWindowThreadProcessId(hwnd, Some(&mut pid));
         if pid == my_pid { return None; }
-        let mut cls = [0u16; 64];
-        let n = GetClassNameW(hwnd, &mut cls).max(0) as usize;
-        let name = String::from_utf16_lossy(&cls[..n.min(cls.len())]);
-        if matches!(name.as_str(), "Progman" | "WorkerW" | "Shell_TrayWnd") { return None; }   // 桌面/任务栏
+        if shell_junk_or_cloaked(hwnd) { return None; }   // 统一"普通应用窗口"判定
         let r: RECT = visible_rect(hwnd)?;
         if (r.right - r.left) < 260 || (r.bottom - r.top) < 160 { return None; }
         Some(((r.left + r.right) as f64 / 2.0 - bird_w / 2.0, r.top as f64, hwnd.0 as isize))
@@ -137,6 +166,7 @@ pub fn surfaces_below(x: f64) -> Vec<(f64, f64, f64, isize)> {
         GetWindowThreadProcessId(hwnd, Some(&mut pid));
         if pid == GetCurrentProcessId() { return windows::core::BOOL(1); }   // 排除自己
         if !IsWindowVisible(hwnd).as_bool() { return windows::core::BOOL(1); }
+        if shell_junk_or_cloaked(hwnd) { return windows::core::BOOL(1); }   // 托盘弹层/工具窗/UWP 隐身窗不当表面
         // 最小化窗口位置在 (-32000,-32000),先粗滤掉再进 DWM 查询
         let mut raw = RECT::default();
         if windows::Win32::UI::WindowsAndMessaging::GetWindowRect(hwnd, &mut raw).is_err() { return windows::core::BOOL(1); }
