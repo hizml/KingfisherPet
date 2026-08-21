@@ -140,25 +140,24 @@ fn show_window_bottom_right(app: tauri::AppHandle) {
 
 /// JS 动画守护:死亡下坠等"故意出屏"的动画期间,出屏看门狗不找回(否则动画
 /// 中途被拽回,与随后的 hide 竞速 = 鸟闪现/消失乱跳)。4s 覆盖 0.85s 下坠绰绰有余。
+/// 动画守护到期时刻(共享原子:anim_guard 在 IPC 线程设置,看门狗线程读取
+/// —— 之前用 thread_local 跨线程不可见,守护从未生效,下坠动画仍被拽回)
+static ANIM_GUARD_UNTIL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 #[tauri::command]
 fn anim_guard() {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static UNTIL: AtomicU64 = AtomicU64::new(0);
+    use std::sync::atomic::Ordering;
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs()).unwrap_or(0);
-    UNTIL.store(now + 4, Ordering::Relaxed);
-    ANIM_GUARD_UNTIL.with(|g| g.set(now + 4));
-}
-
-thread_local! {
-    static ANIM_GUARD_UNTIL: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    ANIM_GUARD_UNTIL.store(now + 4, Ordering::Relaxed);
 }
 
 /// 出屏看门狗是否应跳过(动画守护期内)
 pub fn anim_guard_active() -> bool {
+    use std::sync::atomic::Ordering;
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs()).unwrap_or(0);
-    ANIM_GUARD_UNTIL.with(|g| g.get()) > now
+    ANIM_GUARD_UNTIL.load(Ordering::Relaxed) > now
 }
 
 /// z 序断言:收敛到 poop(树枝/阴影/屎/特效) > main(鸟) > crack(裂纹)。

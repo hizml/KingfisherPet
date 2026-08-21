@@ -667,11 +667,11 @@ async function withVisible(action: () => void) {
   if (onScreen) { action(); return; }
   if (hatching) { emit("log", "withVisible: 破壳进行中,忽略连点"); return; }   // 连点不再排队(之前多个 1.4s 定时器到点各自执行动作 = 破壳死循环)
   hatching = true;
-  const g = gen;   // 代际快照:期间用户又点了显示/隐藏等,beginAction 会 gen++,本破壳作废
   try {
     await invoke("show_window_bottom_right");   // Rust 直操:右下角+显示+置顶(等价"先点显示")
     onScreen = true;
     beginAction();
+    const g = gen;   // 代际快照必须在 beginAction 之后拍(它自己会 gen++,之前拍在前面 → 定时器永远误判"被取代" → 动作全被丢弃 + busy 永卡 → 看门狗熔断,日志实锤)
     enter("egg");
     stageVis("poop", true);
     emit("log", "withVisible: 已显示,破壳中…");
