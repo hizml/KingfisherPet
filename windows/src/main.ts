@@ -94,6 +94,7 @@ async function main() {
     listen("sleep", () => behavior.sleepForUserAbsence());   // Rust 监听到睡眠 → 鸟睡
     listen("wake", () => behavior.wakeFromUserAbsence());     // 唤醒 → 赖床 2–4 秒
     listen("session-change", () => location.reload());   // RDP 会话恢复 → 重载自愈(贴图/合成器丢失)
+    listen("vis-changed", () => syncSettingsOutlets());   // 显隐变化 → 回推 ui-state → 托盘菜单重建(动作项置灰/恢复)
     listen<boolean>("dnd", (e) => behavior.dndSet(e.payload));         // 全屏应用 → 鸟隐身+静音
     listen<boolean>("media", (e) => setMediaMuted(e.payload));         // 放音中 → 不叫
     await behavior.start();
