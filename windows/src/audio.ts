@@ -11,7 +11,7 @@ export function setupAudio() {
 }
 
 export function playPeep() {
-  if (!enabled || sleepMuted || players.length === 0) return;
+  if (!enabled || sleepMuted || mediaMuted || players.length === 0) return;
   const p = players[Math.floor(Math.random() * players.length)];
   p.currentTime = 0;
   p.play().catch(() => {});
@@ -22,3 +22,7 @@ export function setSoundOn(on: boolean) { enabled = on; }
 // 睡眠静音:锁屏/系统睡眠期间不叫(macOS mutedForSleep 同款)
 let sleepMuted = false;
 export function setSleepMuted(m: boolean) { sleepMuted = m; if (m) players.forEach(p => p.pause()); }
+
+// 媒体静音:听歌/看片时鸟不叫(勿扰之二;只影响叫声,其他行为正常)
+let mediaMuted = false;
+export function setMediaMuted(m: boolean) { mediaMuted = m; if (m) players.forEach(p => p.pause()); }

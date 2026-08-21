@@ -11,7 +11,7 @@ import { setupPoop } from "./poop";
 import { clearCracks } from "./crack";   // crack 窗懒创建:首次 crackAt 才建(省一个常驻全屏层)
 import { setupBranch } from "./branch";
 import { setupTheme, setTheme } from "./theme";
-import { setupAudio, playPeep, setSoundOn } from "./audio";
+import { setupAudio, playPeep, setSoundOn, setMediaMuted } from "./audio";
 import { settings, setSound, setActivity, setSpeed } from "./settings";
 import * as behavior from "./behavior";
 
@@ -88,6 +88,8 @@ async function main() {
                       activity: settings.activity, speed: settings.speed, sound: settings.soundOn });
     listen("sleep", () => behavior.sleepForUserAbsence());   // Rust 监听到睡眠 → 鸟睡
     listen("wake", () => behavior.wakeFromUserAbsence());     // 唤醒 → 赖床 2–4 秒
+    listen<boolean>("dnd", (e) => behavior.dndSet(e.payload));         // 全屏应用 → 鸟隐身+静音
+    listen<boolean>("media", (e) => setMediaMuted(e.payload));         // 放音中 → 不叫
     await behavior.start();
     requestAnimationFrame(tick);
     // 跨不同 DPI 显示器:窗口物理尺寸不会自动跟着变(160 物理 ≠ 新屏的 160 逻辑),
@@ -283,6 +285,7 @@ function setupWatchdog() {
         behavior.watchdogKick();
         wdLastAlive = performance.now();
       }
+      invoke("assert_z_cmd").catch(() => {});   // z 序断言:舞台(树枝)稳定在鸟之上
       if (performance.now() > wdLeakCooldownUntil) {
         const all: any[] = await WebviewWindow.getAll();
         const legal = new Set(["main", "poop", "crack", "settings"]);

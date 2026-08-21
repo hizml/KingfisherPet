@@ -13,6 +13,9 @@ pub fn setup_power(app: tauri::AppHandle) {
         use windows::Win32::System::StationsAndDesktops::{OpenInputDesktop, CloseDesktop, DESKTOP_READOBJECTS, DESKTOP_CONTROL_FLAGS};
         let mut last_tick = unsafe { GetTickCount64() };
         let mut locked = false;
+        // 勿扰检测(去抖计数):全屏应用 → dnd(鸟隐身+静音);系统在放声音 → media(不叫)
+        let mut fs_on = 0u32; let mut fs_off = 0u32; let mut dnd = false;
+        let mut au_on = 0u32; let mut au_off = 0u32; let mut media = false;
         loop {
             std::thread::sleep(std::time::Duration::from_secs(2));
 
@@ -32,6 +35,31 @@ pub fn setup_power(app: tauri::AppHandle) {
                     let _ = h.emit("wake", ());
                 });
                 continue;
+            }
+
+            // --- 勿扰:全屏应用(视频/游戏全屏,鸟不能盖上去也不能叫) ---
+            let fs = crate::windows::fullscreen_app_present();
+            if fs { fs_on += 1; fs_off = 0; } else { fs_off += 1; fs_on = 0; }
+            if !dnd && fs_on >= 2 {
+                dnd = true;
+                crate::kflog::kflog("dnd: 全屏应用,进入勿扰");
+                let _ = app.emit("dnd", true);
+            } else if dnd && fs_off >= 2 {
+                dnd = false;
+                crate::kflog::kflog("dnd: 全屏退出,恢复");
+                let _ = app.emit("dnd", false);
+            }
+            // --- 勿扰:系统在放声音(听歌/看片,鸟不叫) ---
+            let au = crate::windows::audio_active();
+            if au { au_on += 1; au_off = 0; } else { au_off += 1; au_on = 0; }
+            if !media && au_on >= 3 {
+                media = true;
+                crate::kflog::kflog("media: 检测到放音,鸟静音");
+                let _ = app.emit("media", true);
+            } else if media && au_off >= 3 {
+                media = false;
+                crate::kflog::kflog("media: 放音结束,恢复叫声");
+                let _ = app.emit("media", false);
             }
 
             // --- 锁屏探测 ---
