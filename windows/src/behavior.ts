@@ -623,7 +623,7 @@ export async function dragDidEnd() {
 // MARK: 外部控制(菜单)
 /// 召唤:飞向鼠标位置(水平对齐,高度取屏中;macOS 同款)
 export async function callOver() {
-  beginAction();
+  if (dndActive) return;   // 勿扰中不召唤(窗口已隐藏,召唤=在全屏上飞)
   leavePerchWin();
   enter("fly");
   try {
@@ -649,6 +649,7 @@ export function doFish() { startFish(); }
 /// 找回小鸟:光标所在屏右下角安全位重置(坐标 bug 逃生口)。
 /// 主链路在 Rust(recall_cmd,Win32 直操不依赖前端);这里处理延迟发来的状态复位。
 export async function recallToScreen() {
+  if (dndActive) return;   // 勿扰中(全屏应用):绝不把鸟拉回全屏之上,退出勿扰自然恢复
   beginAction();
   leavePerchWin();
   branch.hideBranch();
@@ -792,6 +793,7 @@ export async function fallAway() {
 }
 export async function hatchIn() {
   if (onScreen) return;
+  if (dndActive) return;   // 勿扰中不复活(同 recall)
   onScreen = true;
   beginAction();
   enter("egg");   // 先切蛋帧再显示——之前先亮窗(上一帧 idle)再变蛋,"先出来再破壳"的错序
