@@ -672,6 +672,7 @@ final class Behavior: PetViewDelegate {
 
     // MARK: - 显示:破壳而出
     func hatchIn() {
+        guard !dndActive else { return }   // 勿扰中:鸟绝不盖全屏
         beginAction()
         onScreen = true
         enter("egg")
@@ -688,9 +689,12 @@ final class Behavior: PetViewDelegate {
     }
 
     var isOnScreen: Bool { onScreen }   // 勿扰巡检用(隐身意图判断)
+    var isSleeping: Bool { userSleeping }   // 锁屏/睡眠中(勿扰巡检需跳过)
 
     // MARK: - 勿扰(全屏应用):静默隐身——不播任何动画(动画本身也会盖在视频上)
+    private(set) var dndActive = false   // 勿扰中(守卫:唤醒/破壳都不能把鸟拉回全屏上)
     func enterDnd() {
+        dndActive = true
         beginAction()
         userSleeping = false
         SpriteLibrary.shared.mutedForSleep = true
@@ -704,6 +708,7 @@ final class Behavior: PetViewDelegate {
         busy = false
     }
     func exitDnd() {
+        dndActive = false
         SpriteLibrary.shared.mutedForSleep = false
         window?.orderFrontRegardless()
         view?.resumeAnimation()
@@ -849,6 +854,14 @@ final class Behavior: PetViewDelegate {
     /// 赖床期间用户点击/菜单操作会走 beginAction 惊醒打断(见 beginAction)。
     func wakeFromUserAbsence() {
         guard userSleeping else { return }
+        // 勿扰中(全屏应用)唤醒:窗口隐藏着,只清睡眠状态——zzz/恢复会把鸟画到全屏视频上
+        if dndActive {
+            userSleeping = false
+            SpriteLibrary.shared.mutedForSleep = false
+            busy = false
+            enter("idle")
+            return
+        }
         perchGraceUntil = CACurrentMediaTime() + 6.0   // 唤醒宽限 6s:检查器 3s 后才恢复,且系统层级稳定要几秒
         perchBadStreak = 0
         // 鸟隐藏着(fallAway 后)不能复活:不 zzz、不 finish 重启行为,

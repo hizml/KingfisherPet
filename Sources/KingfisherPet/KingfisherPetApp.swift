@@ -180,6 +180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func dndCheck() {
         guard let behavior = petController?.behavior, behavior.isOnScreen else { return }
+        guard !behavior.isSleeping else { return }   // 锁屏/睡眠中不处理勿扰(exitDnd 会把鸟显示在锁屏上)
         // ① 全屏应用检测:最前面的普通窗口(非本应用)矩形 == 鸟所在屏整屏
         let fs = fullscreenAppOnBirdScreen()
         if fs { fsOnStreak += 1; fsOffStreak = 0 } else { fsOffStreak += 1; fsOnStreak = 0 }

@@ -545,6 +545,13 @@ export function sleepForUserAbsence() {
 
 export async function wakeFromUserAbsence() {
   if (!userSleeping) return;
+  if (dndActive) {   // 勿扰中(全屏应用):只清睡眠状态,不 zzz 不恢复——zzz 会盖在视频上
+    userSleeping = false;
+    setSleepMuted(false);
+    busy = false;
+    enter("idle");
+    return;
+  }
   if (!onScreen) { userSleeping = false; return; }   // 隐藏鸟不复活(macOS 同款守卫)
   wakeGraceUntil = performance.now() + 2000;   // 唤醒宽限:窗口层级未稳,先别急着动作
   setSleepMuted(false);
