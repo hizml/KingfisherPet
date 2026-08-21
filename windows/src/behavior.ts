@@ -779,6 +779,7 @@ export async function fallAway() {
   if (!onScreen) return;
   onScreen = false;
   beginAction(); leavePerchWin();
+  const g = gen;   // 代际快照:隐藏链任何 await 之后都要复查——被显示抢进就让位(见动画完成处)
   invoke("anim_guard").catch(() => {});   // 通知 Rust 看门狗:死亡下坠中(4s 内不做出屏找回——否则动画期间被拽回,和 hide 打架)
   enter("dead");
   try {
@@ -794,6 +795,10 @@ export async function fallAway() {
       // 有同款(applyNow egg)。
       enter("egg");
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));   // 等两帧,确保合成器拿到蛋帧
+      // 竞态关键点:这 2 帧窗口(~33ms)内若用户点了"显示",hatchIn 已显示窗口并接管状态
+      // ——此处隐藏再落地就会把窗口藏死而状态=可见 = 卡隐身(鸟隐形飞行"消失",用户实测)。
+      // 复查代际,被取代就让位(隐藏由对方拥有,不再执行)
+      if (gen !== g) { emit("log", "fallAway: 隐藏被显示抢进,让位"); return; }
       await setMainVisible(false, "fallAway");
       hideShadow();
       stageVis("poop", false);   // 隐藏鸟:特效舞台挂起(零耗);裂纹不动——屏幕裂纹与鸟无关(用户定)
@@ -834,11 +839,13 @@ export async function hatchIn() {
   if (dndActive) return;   // 勿扰中不复活(同 recall)
   onScreen = true;
   beginAction();
+  const g = gen;   // 代际快照:下方 await 之后复查(被隐藏抢进就让位,对称防竞态)
   emit("log", "hatchIn: 开始破壳(隐藏后复活/召唤)");
   enter("egg");   // 先切蛋帧再显示——之前先亮窗(上一帧 idle)再变蛋,"先出来再破壳"的错序
   try {
     const a = await area();
     await setOrigin(a.maxX - SIZE_P() - 30 * _scale, a.maxY - FEET_TOP_P());
+    if (gen !== g) { emit("log", "hatchIn: 显示被隐藏抢进,让位"); return; }   // fallAway 已接管,窗口将由它隐藏
     await setMainVisible(true, "hatchIn");   // 显示+验证(之前失败被静默吞 → onScreen=true 但窗口隐藏 = 卡隐身,点动作全部隐形执行,"鸟消失")
     stageVis("poop", true);   // 裂纹舞台不跟显隐(用户定)
   } catch (e) { warnOnce("hatchIn", e); }
