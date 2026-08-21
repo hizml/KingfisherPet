@@ -687,6 +687,33 @@ final class Behavior: PetViewDelegate {
         }
     }
 
+    var isOnScreen: Bool { onScreen }   // 勿扰巡检用(隐身意图判断)
+
+    // MARK: - 勿扰(全屏应用):静默隐身——不播任何动画(动画本身也会盖在视频上)
+    func enterDnd() {
+        beginAction()
+        userSleeping = false
+        SpriteLibrary.shared.mutedForSleep = true
+        SpriteLibrary.shared.pauseAllPeeps()
+        window?.orderOut(nil)
+        shadow?.setVisible(false)
+        stopZzz()
+        view?.suspendAnimation()   // 停全部常驻 timer(零空转,Windows 同款)
+        branch?.suspend()
+        poopCtl?.suspend()
+        busy = false
+    }
+    func exitDnd() {
+        SpriteLibrary.shared.mutedForSleep = false
+        window?.orderFrontRegardless()
+        view?.resumeAnimation()
+        branch?.resume()
+        poopCtl?.resume()
+        shadow?.updateNow()
+        busy = false
+        finish()
+    }
+
     // MARK: - 隐藏:死掉 → 自由落体掉出屏幕
     func fallAway() {
         guard let window = window, let scr = screen else { onScreen = false; return }

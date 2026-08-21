@@ -116,6 +116,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        // 勿扰模式(3s 巡检):①其他应用全屏(视频/游戏)→ 鸟隐身+静音,
+        // 绝不盖在视频上;②系统在放声音(听歌/看片)→ 鸟不叫。
+        let dndTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+            self?.dndCheck()
+        }
+        RunLoop.main.add(dndTimer, forMode: .common)
+
         // 多屏:屏幕布局变化(插拔外接屏、分辨率变更)时,裂纹重定位 + 鸟钳制回当前屏
         NotificationCenter.default.addObserver(
             self, selector: #selector(screenParamsChanged),
@@ -164,6 +171,82 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// 看门狗:定期记录资源占用。卡死时日志里有铁证。
+    // MARK: - 勿扰模式(全屏应用隐身 / 放音静音)
+    private var dndActive = false
+    private var fsOnStreak = 0, fsOffStreak = 0
+    private var mediaOnStreak = 0, mediaOffStreak = 0
+    private var mediaMutedActive = false
+
+    private func dndCheck() {
+        guard let behavior = petController?.behavior, behavior.isOnScreen else { return }
+        // ① 全屏应用检测:最前面的普通窗口(非本应用)矩形 == 鸟所在屏整屏
+        let fs = fullscreenAppOnBirdScreen()
+        if fs { fsOnStreak += 1; fsOffStreak = 0 } else { fsOffStreak += 1; fsOnStreak = 0 }
+        if !dndActive && fsOnStreak >= 2 {
+            dndActive = true
+            kfLog("dnd: 全屏应用,鸟隐身+静音")
+            behavior.enterDnd()
+        } else if dndActive && fsOffStreak >= 2 {
+            dndActive = false
+            kfLog("dnd: 全屏退出,恢复")
+            behavior.exitDnd()
+        }
+        // ② 放音检测:默认输出设备有应用在出声 → 鸟不叫(只静叫声)
+        let playing = defaultOutputActive()
+        if playing { mediaOnStreak += 1; mediaOffStreak = 0 } else { mediaOffStreak += 1; mediaOnStreak = 0 }
+        if !mediaMutedActive && mediaOnStreak >= 2 {
+            mediaMutedActive = true
+            kfLog("media: 检测到放音,鸟静音")
+            SpriteLibrary.shared.mediaMuted = true
+        } else if mediaMutedActive && mediaOffStreak >= 2 {
+            mediaMutedActive = false
+            kfLog("media: 放音结束,恢复叫声")
+            SpriteLibrary.shared.mediaMuted = false
+        }
+    }
+
+    /// 最前面的普通窗口(非本应用)是否完整覆盖鸟所在的屏(全屏应用/视频)
+    private func fullscreenAppOnBirdScreen() -> Bool {
+        guard let scr = petController?.window?.screen ?? NSScreen.main else { return false }
+        let opts: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+        guard let infos = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]] else { return false }
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        let primaryH = NSScreen.screens.first?.frame.maxY ?? 0
+        let cgScreen = CGRect(x: scr.frame.origin.x,
+                              y: primaryH - scr.frame.maxY,
+                              width: scr.frame.width,
+                              height: scr.frame.height)
+        for w in infos {   // Z 序前到后:第一个普通窗口
+            let layer = w[kCGWindowLayer as String] as? Int ?? 99
+            guard layer == 0 else { continue }
+            let pid = w[kCGWindowOwnerPID as String] as? Int32 ?? 0
+            guard pid != myPID else { continue }
+            var b = CGRect.zero
+            if let r = w[kCGWindowBounds as String] as? CGRect { b = r }
+            else if let d = w[kCGWindowBounds as String] as? [String: CGFloat],
+                    let r = CGRect(dictionaryRepresentation: d as CFDictionary) { b = r }
+            else { continue }
+            return b == cgScreen   // 最顶普通窗 == 整屏 → 全屏应用
+        }
+        return false
+    }
+
+    /// 默认输出设备是否有应用在出声(CoreAudio 设备运行中)
+    private func defaultOutputActive() -> Bool {
+        var devID: AudioDeviceID = 0
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &devID) == noErr else { return false }
+        var running: UInt32 = 0
+        size = UInt32(MemoryLayout<UInt32>.size)
+        addr.mSelector = kAudioDevicePropertyDeviceIsRunningSomewhere
+        guard AudioObjectGetPropertyData(devID, &addr, 0, nil, &size, &running) == noErr else { return false }
+        return running != 0
+    }
+
     private var watchdogTimer: Timer?
 
     private func startWatchdog() {
