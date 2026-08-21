@@ -5,6 +5,9 @@ mod windows;
 mod system;
 mod kflog;
 
+/// 勿扰状态(全屏应用期间):Rust 侧逃生口(找回/显示)也要尊重——鸟绝不盖全屏
+pub static DND: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 use tauri::{
     tray::TrayIconBuilder,
     Emitter, Listener, Manager,
@@ -108,6 +111,7 @@ fn show_no_activate(app: tauri::AppHandle) {
 /// 找回后永远没树枝/阴影。最后延迟 emit 让前端复位状态(鸟窗刚恢复时事件会丢)。
 fn recall_internal(app: &tauri::AppHandle) {
     use tauri::Emitter;
+    if DND.load(std::sync::atomic::Ordering::Relaxed) { crate::kflog::kflog("recall: 勿扰中忽略"); return; }   // 鸟绝不盖全屏
     if let Some(w) = app.get_webview_window("main") {
         let _ = crate::windows::recall_show(&w);
     }
@@ -134,6 +138,7 @@ fn recall_cmd(app: tauri::AppHandle) {
 fn diag_run(app: &tauri::AppHandle) {
     let mut rpt = String::new();
     rpt.push_str("=== KingfisherPet 坐标诊断 ===\n");
+    rpt.push_str(&format!("version: {}\n", app.package_info().version));   // 版本戳:报告先对版本,不再猜装的是哪版
     rpt.push_str(&format!("dpi_awareness(0=unaware/1=system/2=per-monitor): {}\n",
         crate::windows::dpi_awareness()));
     rpt.push_str("monitors[rcMonitor l,t,r,b | rcWork l,t,r,b | dpi](物理):\n");
@@ -510,11 +515,15 @@ pub fn run() {
                         "show" => {
                             // 鸟窗隐藏时前端收不到事件(或不可靠):先 Rust 侧救回,
                             // 走 recall 链路(移安全位+恢复舞台+延迟复位);可见时正常走前端 toggle
-                            let hidden = app.get_webview_window("main")
-                                .map(|w| !w.is_visible().unwrap_or(true))
-                                .unwrap_or(false);
-                            if hidden { recall_internal(&handle); }
-                            else { let _ = app.emit("menu", "show"); }
+                            if DND.load(std::sync::atomic::Ordering::Relaxed) {
+                                crate::kflog::kflog("show: 勿扰中忽略");
+                            } else {
+                                let hidden = app.get_webview_window("main")
+                                    .map(|w| !w.is_visible().unwrap_or(true))
+                                    .unwrap_or(false);
+                                if hidden { recall_internal(&handle); }
+                                else { let _ = app.emit("menu", "show"); }
+                            }
                         }
                         _ if id.starts_with("theme_") => {
                             let t = id.trim_start_matches("theme_").to_string();

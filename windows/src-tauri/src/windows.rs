@@ -423,7 +423,8 @@ pub fn raise_no_show(w: &tauri::WebviewWindow) { let _ = w; }
 /// 全屏应用检测:前台窗是【普通应用窗口】且矩形与所在显示器的整屏矩形
 /// 完全一致(最大化窗口只盖工作区,不会命中)。视频/游戏全屏 → 勿扰。
 #[cfg(windows)]
-pub fn fullscreen_app_present() -> bool {
+pub fn fullscreen_app_present(bird_hwnd_val: isize) -> bool {
+    use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Gdi::{MonitorFromWindow, GetMonitorInfoW, MONITORINFO, MONITOR_DEFAULTTONEAREST};
     use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
     use windows::Win32::System::Threading::GetCurrentProcessId;
@@ -435,17 +436,21 @@ pub fn fullscreen_app_present() -> bool {
         if pid == GetCurrentProcessId() { return false; }
         if shell_junk_or_cloaked(fg) { return false; }
         let Some(r) = visible_rect(fg) else { return false; };
-        let mon = MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST);
-        if mon.is_invalid() { return false; }
+        let fg_mon = MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST);
+        if fg_mon.is_invalid() { return false; }
+        // 只看【鸟所在显示器】的全屏:多屏时副屏看片,主屏的鸟不该跟着消失
+        // (macOS 版即查鸟所在屏,此处对齐)
+        let bird_mon = MonitorFromWindow(HWND(bird_hwnd_val as *mut _), MONITOR_DEFAULTTONEAREST);
+        if !bird_mon.is_invalid() && bird_mon != fg_mon { return false; }
         let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
-        if !GetMonitorInfoW(mon, &mut mi).as_bool() { return false; }
+        if !GetMonitorInfoW(fg_mon, &mut mi).as_bool() { return false; }
         let m = mi.rcMonitor;
         r.left == m.left && r.top == m.top && r.right == m.right && r.bottom == m.bottom
     }
 }
 
 #[cfg(not(windows))]
-pub fn fullscreen_app_present() -> bool { false }
+pub fn fullscreen_app_present(_bird_hwnd_val: isize) -> bool { false }
 
 /// 系统有没有在放声音(WASAPI 默认输出设备峰值;>0 即有应用在出声)。
 /// 勿扰之一:听歌/看片时鸟不叫。
