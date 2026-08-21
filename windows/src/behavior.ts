@@ -632,7 +632,10 @@ export async function dragDidEnd() {
 /// 召唤:飞向鼠标位置(水平对齐,高度取屏中;macOS 同款)
 export async function callOver() {
   if (dndActive) return;   // 勿扰中不召唤(窗口已隐藏,召唤=在全屏上飞)
-  if (!onScreen) await hatchIn();   // 隐藏时先破壳再召唤
+  if (!onScreen) { withVisible(() => callOverCore()); return; }   // 隐藏时走统一破壳链(含并发锁;之前自带 hatchIn 绕锁)
+  callOverCore();
+}
+async function callOverCore() {
   leavePerchWin();
   enter("fly");
   try {
@@ -806,6 +809,7 @@ export async function fallAway() {
   if (!onScreen) return;
   onScreen = false;
   beginAction(); leavePerchWin();
+  invoke("anim_guard").catch(() => {});   // 通知 Rust 看门狗:死亡下坠中(4s 内不做出屏找回——否则动画期间被拽回,和 hide 打架)
   enter("dead");
   try {
     const o = await getOrigin();
