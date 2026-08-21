@@ -561,23 +561,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - 动作
     @objc private func callOver() {
-        petController.behavior.callOver()
+        let behavior = petController.behavior
+        behavior.runWhenVisible { behavior.callOver() }
     }
 
     @objc private func doFish() {
-        petController.behavior.startFish()
+        let behavior = petController.behavior
+        behavior.runWhenVisible { behavior.startFish() }
     }
 
     @objc private func doSing() {
-        petController.behavior.startSing()
+        let behavior = petController.behavior
+        behavior.runWhenVisible { behavior.startSing() }
     }
 
     @objc private func doPerch() {
-        petController.behavior.startPerchWindow()
+        let behavior = petController.behavior
+        behavior.runWhenVisible { behavior.startPerchWindow() }
     }
 
     @objc private func doPeck() {
-        petController.behavior.startPeck()
+        let behavior = petController.behavior
+        behavior.runWhenVisible { behavior.startPeck() }
     }
 
     @objc private func repairScreen() {
