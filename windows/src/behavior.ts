@@ -348,6 +348,7 @@ async function dropPoopAt(x: number, y: number) {
 // 栖窗:飞到最前窗口的上沿歇脚(Win32 front_perch;mac stub 返回 null → finish)
 async function startPerchWindow() {
   beginAction(); enter("fly");
+  branch.hideBranch();   // 目标是窗口上沿(不用枝):不收会留"幽灵树枝"(用户报告)
   try {
     const sc = await scale();
     const perch = await invoke<[number, number, number] | null>("front_perch_cmd", { birdW: SIZE * sc });   // Rust 收物理

@@ -224,8 +224,9 @@ type MenuResult = tauri::Result<tauri::menu::Menu<tauri::Wry>>;
 
 /// 构建托盘菜单(Mac 同构:动作平铺 + 设置子菜单带勾选)。
 fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
-    use tauri::menu::{Menu, MenuItem, IsMenuItem};
+    use tauri::menu::{Menu, MenuItem, CheckMenuItem, Submenu, IsMenuItem};
     let zh = ui_lang_zh();
+    let ui = UI.lock().unwrap();
 
     let t = |zh_txt: &str, en_txt: &str| -> String { (if zh { zh_txt } else { en_txt }).into() };
 
@@ -240,9 +241,22 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
     let diag = MenuItem::with_id(app, "diag", t("诊断信息", "Diagnostics"), true, None::<&str>)?;
     let repair = MenuItem::with_id(app, "repair", t("修复屏幕", "Repair Screen"), true, None::<&str>)?;
 
-    // ── 设置区已收纳进设置窗口(用户指令:外边不重复)。
-    // 托盘只留:动作 + 诊断 + 设置… + 关于 + 退出。以下子菜单仅用于构建后丢弃,
-    // 保留代码以便快速回退;直接跳过构建。
+    // ── 高频项放外边(用户指令:使用频率高的放外边,低的收设置窗):
+    // 主题(常换着玩)+ 声音开关留在托盘直达;活跃度/速度滑杆、语言、自启在设置窗
+    let themes: [(&str, &str, &str); 6] = [
+        ("theme_flat", "扁平", "Flat"), ("theme_clay", "粘土", "Clay"),
+        ("theme_pixel", "像素", "Pixel"), ("theme_neon", "霓虹", "Neon"),
+        ("theme_ink", "水墨", "Ink"), ("theme_watercolor", "水彩", "Watercolor"),
+    ];
+    let mut theme_items: Vec<Box<dyn IsMenuItem<tauri::Wry>>> = Vec::new();
+    for (id, zh_n, en_n) in themes {
+        let key = id.trim_start_matches("theme_");
+        theme_items.push(Box::new(CheckMenuItem::with_id(app, id, t(zh_n, en_n), true, ui.theme == key, None::<&str>)?));
+    }
+    let theme_refs: Vec<&dyn IsMenuItem<tauri::Wry>> = theme_items.iter().map(|b| b.as_ref()).collect();
+    let m_theme = Submenu::with_id(app, "m_theme", t("主题", "Theme"), true)?;
+    m_theme.append_items(&theme_refs)?;
+    let sound = CheckMenuItem::with_id(app, "sound", t("啾鸣声", "Chirp"), true, ui.sound, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", t("设置…", "Settings…"), true, None::<&str>)?;
     let about = MenuItem::with_id(app, "about", t("关于 翡", "About Fei"), true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", t("退出 翡", "Quit Fei"), true, None::<&str>)?;
@@ -253,7 +267,7 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
     let _ = menu; // 分隔符+设置区需要 append;改用一次性 with_items 全量
     let items: Vec<&dyn IsMenuItem<tauri::Wry>> = vec![
         &call, &fish, &sing, &perch, &peck, &show, &recall, &repair, &diag,
-        &settings, &about, &quit,
+        &m_theme, &sound, &settings, &about, &quit,
     ];
     Menu::with_items(app, &items)
 }
@@ -277,6 +291,19 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, recall_cmd, diag_append])
         .setup(|app| {
             crate::system::setup_power(app.handle().clone());   // 睡眠/锁屏/唤醒 → emit sleep/wake
+            // 设置窗主动拉状态(打开时):回语言/自启
+            {
+                let app2 = app.handle().clone();
+                app.listen("settings-need-state", move |_| {
+                    let (lang, auto) = {
+                        let l = UI.lock().unwrap().lang;
+                        use tauri_plugin_autostart::ManagerExt;
+                        (l, app2.autolaunch().is_enabled().unwrap_or(false))
+                    };
+                    use tauri::Emitter;
+                    let _ = app2.emit("settings-open", serde_json::json!({ "lang": lang, "autostart": auto }));
+                });
+            }
             // 设置窗事件:语言切换(持久化+整菜单换语言)/ 开机自启
             {
                 let app2 = app.handle().clone();
