@@ -88,6 +88,7 @@ async function main() {
                       activity: settings.activity, speed: settings.speed, sound: settings.soundOn });
     listen("sleep", () => behavior.sleepForUserAbsence());   // Rust 监听到睡眠 → 鸟睡
     listen("wake", () => behavior.wakeFromUserAbsence());     // 唤醒 → 赖床 2–4 秒
+    listen("session-change", () => location.reload());   // RDP 会话恢复 → 重载自愈(贴图/合成器丢失)
     listen<boolean>("dnd", (e) => behavior.dndSet(e.payload));         // 全屏应用 → 鸟隐身+静音
     listen<boolean>("media", (e) => setMediaMuted(e.payload));         // 放音中 → 不叫
     await behavior.start();
