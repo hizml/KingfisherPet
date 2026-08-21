@@ -3,6 +3,7 @@
 
 mod windows;
 mod system;
+mod kflog;
 
 use tauri::{
     tray::TrayIconBuilder,
@@ -119,6 +120,8 @@ fn diag_run(app: &tauri::AppHandle) {
     }
     let labels: Vec<String> = app.webview_windows().keys().cloned().collect();
     rpt.push_str(&format!("app windows(实际存在): {:?}\n", labels));
+    rpt.push_str("\n=== kf.log 尾部(最近 60 行) ===\n");
+    rpt.push_str(&kflog::tail(60));
 
     let dir = std::env::var("APPDATA")
         .map(|d| std::path::PathBuf::from(d))
@@ -186,6 +189,28 @@ struct UiState {
 static UI: std::sync::Mutex<UiState> = std::sync::Mutex::new(UiState {
     theme: "flat", activity: 0.5, speed: 1.0, sound: true, lang: "system",
 });
+
+/// 持久化小设置(Rust 侧目前只存语言;前端数值走 localStorage)
+fn prefs_file() -> std::path::PathBuf {
+    let dir = std::env::var("APPDATA")
+        .map(|d| std::path::PathBuf::from(d))
+        .unwrap_or_else(|_| std::env::temp_dir())
+        .join("KingfisherPet");
+    let _ = std::fs::create_dir_all(&dir);
+    dir.join("settings.json")
+}
+fn prefs_get(key: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(prefs_file()).unwrap_or_default()).ok()?;
+    v.get(key)?.as_str().map(|s| s.to_string())
+}
+fn prefs_set(key: &str, val: &str) {
+    let mut v: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(prefs_file()).unwrap_or_default())
+        .unwrap_or_else(|_| serde_json::json!({}));
+    v[key] = serde_json::json!(val);
+    let _ = std::fs::write(prefs_file(), serde_json::to_string(&v).unwrap_or_default());
+}
 
 fn ui_lang_zh() -> bool {
     match UI.lock().unwrap().lang {
@@ -265,6 +290,7 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
         CheckMenuItem::with_id(app, "login", t("开机自启", "Launch at Login"), true, on, None::<&str>)?
     };
 
+    let settings = MenuItem::with_id(app, "settings", t("设置…", "Settings…"), true, None::<&str>)?;
     let about = MenuItem::with_id(app, "about", t("关于 翡", "About Fei"), true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", t("退出 翡", "Quit Fei"), true, None::<&str>)?;
 
@@ -275,7 +301,7 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
     let items: Vec<&dyn IsMenuItem<tauri::Wry>> = vec![
         &call, &fish, &sing, &perch, &peck, &show, &recall, &repair, &diag,
         &m_theme, &m_act, &m_spd, &sound, &login, &m_lang,
-        &about, &quit,
+        &settings, &about, &quit,
     ];
     Menu::with_items(app, &items)
 }
@@ -299,8 +325,12 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, recall_cmd, diag_append])
         .setup(|app| {
             crate::system::setup_power(app.handle().clone());   // 睡眠/锁屏/唤醒 → emit sleep/wake
-            // 前端 log 事件 → 终端(调试 webview 错)
-            app.listen("log", |event| { println!("[webview] {}", event.payload()); });
+            // 前端 log 事件 → 终端 + 滚动日志文件(可观测性:排障不再依赖终端)
+            app.listen("log", |event| {
+                let line = event.payload().trim_matches('"').to_string();
+                println!("[webview] {}", line);
+                kflog::kflog(&line);
+            });
             // 前端启动同步状态(主题/活跃度/速度/声音)→ 菜单勾选反映真实值
             let state_handle = app.handle().clone();
             app.listen("ui-state", move |event| {
@@ -317,6 +347,12 @@ pub fn run() {
                 refresh_menu(app);
             });
 
+            // 启动恢复持久化的语言(之前重启丢回跟随系统)
+            if let Some(l) = prefs_get("lang") {
+                if matches!(l.as_str(), "zh" | "en" | "system") {
+                    UI.lock().unwrap().lang = Box::leak(l.into_boxed_str());
+                }
+            }
             // 托盘:子菜单化菜单(勾选当前项),左键直接打开
             let menu = build_menu(app.handle())?;
             let _ = TrayIconBuilder::with_id("main")
@@ -327,6 +363,23 @@ pub fn run() {
                     let id = event.id.as_ref().to_string();
                     let handle = app.clone();
                     match id.as_str() {
+                        "settings" => {
+                            // 设置窗(macOS 设置窗口同款:普通小窗带标题栏,常驻复用)
+                            match app.get_webview_window("settings") {
+                                Some(w) => { let _ = w.show(); let _ = w.set_focus(); }
+                                None => {
+                                    let zh = ui_lang_zh();
+                                    let _ = tauri::WebviewWindowBuilder::new(
+                                        app, "settings",
+                                        tauri::WebviewUrl::App("settings.html".into()))
+                                        .title(if zh { "翡 · 设置" } else { "Fei · Settings" })
+                                        .inner_size(300.0, 330.0)
+                                        .resizable(false)
+                                        .build();
+                                }
+                            }
+                            let _ = app.emit("settings-open", ());   // 主窗回推当前值给设置窗
+                        }
                         "about" => { let _ = open::that("https://github.com/hizml/KingfisherPet"); }
                         "quit" => app.exit(0),
                         "login" => {
@@ -379,6 +432,7 @@ pub fn run() {
                         _ if id.starts_with("lang_") => {
                             let l = match id.as_str() { "lang_zh" => "zh", "lang_en" => "en", _ => "system" };
                             UI.lock().unwrap().lang = l;
+                            prefs_set("lang", l);   // 持久化(macOS UserDefaults 同款:重启不丢)
                             refresh_menu(&handle);   // 整菜单换语言
                         }
                         _ => { let _ = app.emit("menu", id); }

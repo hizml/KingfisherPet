@@ -72,7 +72,15 @@ async function main() {
       if (v.startsWith("sound:")) { const on = v.split(":")[1] === "true"; setSound(on); setSoundOn(on); }
       else if (v.startsWith("activity:")) { setActivity(Number(v.split(":")[1])); }
       else if (v.startsWith("speed:")) { setSpeed(Number(v.split(":")[1])); }
+      syncSettingsOutlets();   // 回推:托盘勾选(Rust ui-state)+ 设置窗滑杆
     });
+    listen("settings-open", () => syncSettingsOutlets());   // 设置窗打开/已开 → 推当前真实值
+    function syncSettingsOutlets() {
+      const snap = { theme: localStorage.getItem("kf_theme") || "flat",
+                     activity: settings.activity, speed: settings.speed, sound: settings.soundOn };
+      emit("ui-state", snap);
+      emit("settings-sync", snap);
+    }
     // 启动上报状态 → Rust 菜单勾选反映真实值
     emit("ui-state", { theme: localStorage.getItem("kf_theme") || "flat",
                       activity: settings.activity, speed: settings.speed, sound: settings.soundOn });
@@ -94,6 +102,7 @@ async function main() {
         emit("log", `DEV diag: stage_poop=${po ? "EXISTS" : "NULL"} stageError=${stageError ?? "none"}`);
       }, 8000);
     }
+    setupWatchdog();
   } catch (e: any) {
     emit("log", "main err: " + (e?.stack || String(e)));
   }
@@ -232,6 +241,45 @@ async function collectDiagnostics() {
   report.saved_pos = { x: localStorage.getItem("kf_x"), y: localStorage.getItem("kf_y") };
   try { await invoke("diag_append", { payload: JSON.stringify(report, null, 2) }); }
   catch (e: any) { emit("log", "diag append err: " + String(e)); }
+}
+
+/// 看门狗(15s 巡检;macOS watchdog 同款自愈哲学:假设自己会坏)
+/// 1) busy 卡死:动作最长 ~9s,>120s 必是卡死 → 熔断复位
+/// 2) 心跳丢失:不 busy 且无排程持续 >60s(思考链断了)→ 重排
+/// 3) 窗口数熔断:常驻 main/poop/crack(+settings),>8 或出现陌生窗 → 关掉(5min 冷却)
+let wdLastAlive = 0;
+let wdLeakCooldownUntil = 0;
+function setupWatchdog() {
+  wdLastAlive = performance.now();
+  setInterval(async () => {
+    try {
+      if (behavior.isSleeping() || !behavior.isVisible()) { wdLastAlive = performance.now(); return; }   // 睡眠/隐藏是正常静止
+      const st = behavior.watchdogState();
+      if (st.busy && st.busySince && performance.now() - st.busySince > 120_000) {
+        emit("log", "watchdog: busy 卡死 >120s,熔断复位");
+        behavior.watchdogKick();
+        wdLastAlive = performance.now();
+        return;
+      }
+      if (st.busy || st.thinkArmed) {
+        wdLastAlive = performance.now();   // 行为链正常运转
+      } else if (performance.now() - wdLastAlive > 60_000) {
+        emit("log", "watchdog: 思考心跳丢失 >60s,重排");
+        behavior.watchdogKick();
+        wdLastAlive = performance.now();
+      }
+      if (performance.now() > wdLeakCooldownUntil) {
+        const all: any[] = await WebviewWindow.getAll();
+        const legal = new Set(["main", "poop", "crack", "settings"]);
+        const stray = all.filter(w => !legal.has(w.label));
+        if (all.length > 8 || stray.length > 0) {
+          emit("log", `watchdog: 窗口异常(共 ${all.length},陌生 ${stray.length}),关闭泄漏窗`);
+          for (const w of stray) { w.close().catch(() => {}); }
+          wdLeakCooldownUntil = performance.now() + 300_000;
+        }
+      }
+    } catch { /* */ }
+  }, 15000);
 }
 
 main();
