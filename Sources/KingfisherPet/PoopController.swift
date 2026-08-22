@@ -7,6 +7,12 @@ import QuartzCore
 final class PoopController {
 
     private var poops: [Poop] = []
+    /// 勿扰(全屏应用):屎窗口全部撤下(否则全屏看片时屎盖在视频上);退出恢复
+    func setAllHidden(_ hidden: Bool) {
+        for p in poops {
+            if hidden { p.window.orderOut(nil) } else { p.window.orderFrontRegardless() }
+        }
+    }
     private var timer: Timer?
     private var lastTime: CFTimeInterval = 0
     /// 鸟所在窗口,用来确定屎落在哪个屏(多屏时屎跟随鸟的屏,而非死主屏)
