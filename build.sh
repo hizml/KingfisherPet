@@ -99,8 +99,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-echo "==> 5/6 ad-hoc 签名"
-codesign -s - --force --deep "$APP" >/dev/null 2>&1 || echo "    (codesign 跳过)"
+echo "==> 5/6 签名(优先固定自签证书:辅助功能授权不随重打包失效;无则 ad-hoc)"
+if ! codesign -s "KingfisherPet Dev" --force --deep "$APP" >/dev/null 2>&1; then
+    codesign -s - --force --deep "$APP" >/dev/null 2>&1 || echo "    (codesign 跳过)"
+fi
 
 echo "==> 6/6 启动"
 # 若已在运行先关掉
