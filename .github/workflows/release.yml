@@ -57,7 +57,7 @@ jobs:
           <key>CFBundleShortVersionString</key><string>1.3.0</string>
           <key>CFBundlePackageType</key><string>APPL</string>
           <key>CFBundleExecutable</key><string>KingfisherPet</string>
-          <key>CFBundleInfoDictionaryVersion</key><string>6.0</key>
+          <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
           <key>LSMinimumSystemVersion</key><string>13.0</string>
           <key>LSUIElement</key><true/>
           <key>NSHighResolutionCapable</key><true/>
