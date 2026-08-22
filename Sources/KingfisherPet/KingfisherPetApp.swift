@@ -214,34 +214,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 全屏 Space 残影问题影响);拖拽最大化的窗口不含菜单栏/Dock → 不误触发。
     private func fullscreenAppOnBirdScreen(_ screen: NSScreen? = nil) -> Bool {
         let scrFrame = screen?.frame ?? NSScreen.main?.frame ?? .zero
-        let sys = AXUIElementCreateSystemWide()
-        var appRef: CFTypeRef?
-        let err = AXUIElementCopyAttributeValue(sys, kAXFocusedApplicationAttribute as CFString, &appRef)
-        guard err == .success, let appRaw = appRef else {
-            // AX 失败诊断:系统通道(NSWorkspace,无需权限)对照——前台明明有 App
-            // 而 AX 拿不到 ⇒ 授权未生效(本机 macOS 26 上表现为 -25212 NoValue,
-            // 而非教科书的 -25211);连续 5 拍如此则弹窗引导用户开辅助功能。
-            let frontApp = NSWorkspace.shared.frontmostApplication
-            // 前台=自己(启动破壳激活/弹窗激活):AX 对自引用返回 NoValue 属正常,不计数不弹窗
-            if frontApp?.processIdentifier == ProcessInfo.processInfo.processIdentifier { axFailStreak = 0; return false }
+        // v6 前台来源改 NSWorkspace 取 pid + AXUIElementCreateApplication 直连:
+        // systemWide 的 focusedApplication 对 Chromium 系(Edge/Electron)实测恒返回
+        // -25212 NoValue(原生 App 正常)——用户全屏看片恰是浏览器,检测从未生效。
+        // NSWorkspace 免权限不挑内核;按 pid 直连查窗口是 AltTab 等工具的同款做法。
+        guard let frontApp = NSWorkspace.shared.frontmostApplication,
+              frontApp.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return false }
+        let appEl = AXUIElementCreateApplication(frontApp.processIdentifier)
+        var winsRef: CFTypeRef?
+        let werr = AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &winsRef)
+        guard werr == .success, let wins = winsRef as? [AXUIElement] else {
+            // 授权未生效时此查询失败(本机 macOS 26 表现 -25204/-25212,非教科书 -25211);
+            // 连续 5 拍失败 → 弹窗引导开辅助功能(前台=自己的窗口激活场景除外)
             axFailStreak += 1
             if axFailStreak % 5 == 1 {
-                kfLog("ax: 失败 err=\(err.rawValue) 连续\(axFailStreak)拍,系统通道前台=\(frontApp?.localizedName ?? "nil")")
+                kfLog("ax: 取窗口失败 err=\(werr.rawValue) 连续\(axFailStreak)拍,前台=\(frontApp.localizedName ?? "nil")")
             }
             if axFailStreak >= 5 { promptAccessibilityOnce() }
             return false
         }
         axFailStreak = 0
-        let appEl = unsafeBitCast(appRaw, to: AXUIElement.self)
-        var pid: pid_t = 0
-        AXUIElementGetPid(appEl, &pid)
-        guard pid != ProcessInfo.processInfo.processIdentifier else { return false }   // 自己不算
-        var winsRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &winsRef) == .success,
-              let wins = winsRef as? [AXUIElement] else {
-            axWarnOnce("取前台 App 窗口列表失败(辅助功能权限?)")
-            return false
-        }
         for win in wins {
             var fsRef: CFTypeRef?
             if AXUIElementCopyAttributeValue(win, "AXFullScreen" as CFString, &fsRef) == .success,
@@ -271,15 +263,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 全屏检测诊断快照(低频):前台 App 名 + 每窗 AXFullScreen 的错误码/值
     private func fsDiagSnapshot() {
-        let sys = AXUIElementCreateSystemWide()
-        var appRef: CFTypeRef?
-        let diagErr = AXUIElementCopyAttributeValue(sys, kAXFocusedApplicationAttribute as CFString, &appRef)
-        guard diagErr == .success, let appRaw = appRef else {
-            kfLog("fsDiag: 取前台 App 失败 err=\(diagErr.rawValue)(-25211未授权/-25207忙)"); return
-        }
-        let appEl = unsafeBitCast(appRaw, to: AXUIElement.self)
-        var pid: pid_t = 0; AXUIElementGetPid(appEl, &pid)
-        let name = NSRunningApplication(processIdentifier: pid)?.localizedName ?? "pid:\(pid)"
+        // 与检测同源:NSWorkspace pid 直连(systemWide 对 Chromium 系 NoValue)
+        guard let frontApp = NSWorkspace.shared.frontmostApplication else {
+            kfLog("fsDiag: frontmostApplication=nil"); return }
+        guard frontApp.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
+            kfLog("fsDiag: 前台=自己(忽略)"); return }
+        let appEl = AXUIElementCreateApplication(frontApp.processIdentifier)
+        let name = frontApp.localizedName ?? "pid:\(frontApp.processIdentifier)"
         var winsRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &winsRef) == .success,
             let wins = winsRef as? [AXUIElement] else {
