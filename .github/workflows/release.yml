@@ -84,7 +84,7 @@ jobs:
             security list-keychains -s /tmp/kf-ci.keychain-db
             security set-key-partition-list -S apple-tool:,apple: -k ci /tmp/kf-ci.keychain-db
             codesign -s "KingfisherPet Dev" --force --deep "$APP" || codesign -s - --force --deep "$APP"
-            security list-keychains -r ~/Library/Keychains/login.keychain-db
+            security list-keychains -s ~/Library/Keychains/login.keychain-db || true
             rm -f /tmp/kf.p12 /tmp/kf-ci.keychain-db*
           else
             codesign -s - --force --deep "$APP"
