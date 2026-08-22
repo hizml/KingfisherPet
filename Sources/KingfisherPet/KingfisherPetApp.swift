@@ -212,6 +212,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let opts: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
         guard let infos = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]] else { return false }
         let myPID = ProcessInfo.processInfo.processIdentifier
+        var anyFull = false   // 任一普通窗盖满整屏(不只最顶)
         let primaryH = NSScreen.screens.first?.frame.maxY ?? 0
         let cgScreen = CGRect(x: scr.frame.origin.x,
                               y: primaryH - scr.frame.maxY,
@@ -227,17 +228,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             else if let d = w[kCGWindowBounds as String] as? [String: CGFloat],
                     let r = CGRect(dictionaryRepresentation: d as CFDictionary) { b = r }
             else { continue }
-            // 最顶普通窗 ≈ 整屏 → 全屏应用(±2pt 容差:全屏窗偶尔与屏框差 1px;
-            // 之前严格相等在全屏视频下从未触发——用户实测小鸟仍盖在视频上)
+            // 【任一】普通窗盖满整屏 → 全屏应用。诊断实锤:Chrome 全屏视频在独立
+            // Space,窗口列表排第一的普通窗是别的窗口(1200x800)——之前"只看最顶"
+            // 永远拿不到全屏窗;列表包含其他 Space 的窗口,全屏窗在靠后位置。
             let full = abs(b.minX - cgScreen.minX) <= 2 && abs(b.maxX - cgScreen.maxX) <= 2
                 && abs(b.minY - cgScreen.minY) <= 2 && abs(b.maxY - cgScreen.maxY) <= 2
+            if full { return true }
+            anyFull = anyFull || full
             dndDiagTick += 1
             if dndDiagTick % 20 == 0 {   // 每分钟一行:最顶普通窗 vs 屏矩形(全屏检测不触发时拿数据定位)
-                kfLog("dnd-diag: front=\(Int(b.minX)),\(Int(b.minY)) \(Int(b.width))x\(Int(b.height)) screen=\(Int(cgScreen.minX)),\(Int(cgScreen.minY)) \(Int(cgScreen.width))x\(Int(cgScreen.height)) full=\(full)")
+                kfLog("dnd-diag: front=\(Int(b.minX)),\(Int(b.minY)) \(Int(b.width))x\(Int(b.height)) screen=\(Int(cgScreen.minX)),\(Int(cgScreen.minY)) \(Int(cgScreen.width))x\(Int(cgScreen.height))")
             }
-            return full
         }
-        return false
+        return anyFull
     }
     private var dndDiagTick = 0
 
