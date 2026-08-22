@@ -19,6 +19,7 @@ pub fn setup_power(app: tauri::AppHandle) {
         let mut au_on = 0u32; let mut au_off = 0u32; let mut media = false;
         let mut wts_tick = 0u32; let mut last_wts = -1i32;   // RDP 会话状态(轮询;隐藏消息窗方案不可靠)
         let mut bg = false; let mut bg_ticks = 0u32;   // RDP 后台化(切走/最小化,无断连事件)检测
+        let mut main_vis = true;   // 主窗可见性监视:翻转即记日志(抓"无声隐藏者"——JS 全部隐藏路径已留痕,仍有无日志的隐藏发生)
         loop {
             std::thread::sleep(std::time::Duration::from_secs(2));
 
@@ -69,6 +70,15 @@ pub fn setup_power(app: tauri::AppHandle) {
                 media = false;
                 crate::kflog::kflog("media: 放音结束,恢复叫声");
                 let _ = app.emit("media", false);
+            }
+
+            // --- 主窗可见性监视:任何隐藏者(含系统/wry 内部)都会在此留下时间点 ---
+            if let Some(w) = app.get_webview_window("main") {
+                let v = w.is_visible().unwrap_or(true);
+                if v != main_vis {
+                    main_vis = v;
+                    crate::kflog::kflog(&format!("winvis: 主窗 → {}", if v { "可见" } else { "隐藏(!)" }));
+                }
             }
 
             // --- RDP 会话状态(断开/重连):ConnectState 变化 → 恢复时前端重载自愈 ---

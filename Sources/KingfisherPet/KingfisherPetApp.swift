@@ -227,10 +227,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             else if let d = w[kCGWindowBounds as String] as? [String: CGFloat],
                     let r = CGRect(dictionaryRepresentation: d as CFDictionary) { b = r }
             else { continue }
-            return b == cgScreen   // 最顶普通窗 == 整屏 → 全屏应用
+            // 最顶普通窗 ≈ 整屏 → 全屏应用(±2pt 容差:全屏窗偶尔与屏框差 1px;
+            // 之前严格相等在全屏视频下从未触发——用户实测小鸟仍盖在视频上)
+            let full = abs(b.minX - cgScreen.minX) <= 2 && abs(b.maxX - cgScreen.maxX) <= 2
+                && abs(b.minY - cgScreen.minY) <= 2 && abs(b.maxY - cgScreen.maxY) <= 2
+            dndDiagTick += 1
+            if dndDiagTick % 20 == 0 {   // 每分钟一行:最顶普通窗 vs 屏矩形(全屏检测不触发时拿数据定位)
+                kfLog("dnd-diag: front=\(Int(b.minX)),\(Int(b.minY)) \(Int(b.width))x\(Int(b.height)) screen=\(Int(cgScreen.minX)),\(Int(cgScreen.minY)) \(Int(cgScreen.width))x\(Int(cgScreen.height)) full=\(full)")
+            }
+            return full
         }
         return false
     }
+    private var dndDiagTick = 0
 
     // 放音静音(Mac):已撤除。两次尝试都不可用——
     // ① CoreAudio DeviceIsRunningSomewhere:语义是"设备被占用",浏览器播过一次
