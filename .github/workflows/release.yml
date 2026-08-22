@@ -76,9 +76,10 @@ jobs:
           if [ -n "$KF_SIGN_P12_B64" ]; then
             echo "$KF_SIGN_P12_B64" | base64 -d > /tmp/kf.p12
             security create-keychain -p ci /tmp/kf-ci.keychain-db
+            security unlock-keychain -p ci /tmp/kf-ci.keychain-db
             security import /tmp/kf.p12 -k /tmp/kf-ci.keychain-db -P "$KF_SIGN_P12_PASS" -T /usr/bin/codesign
             security list-keychains -s /tmp/kf-ci.keychain-db
-            security set-key-partition-list -S apple-tool:,apple: -s -k ci /tmp/kf-ci.keychain-db >/dev/null 2>&1 || true
+            security set-key-partition-list -S apple-tool:,apple: -k ci /tmp/kf-ci.keychain-db
             codesign -s "KingfisherPet Dev" --force --deep "$APP" || codesign -s - --force --deep "$APP"
             security list-keychains -r ~/Library/Keychains/login.keychain-db
             rm -f /tmp/kf.p12 /tmp/kf-ci.keychain-db*
