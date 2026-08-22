@@ -179,9 +179,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var mediaOnStreak = 0, mediaOffStreak = 0
     private var mediaMutedActive = false
 
+    private var dndSkipLast = ""
     private func dndCheck() {
-        guard let behavior = petController?.behavior, behavior.isOnScreen else { return }
-        guard !behavior.isSleeping else { return }   // 锁屏/睡眠中不处理勿扰(exitDnd 会把鸟显示在锁屏上)
+        guard let behavior = petController?.behavior, behavior.isOnScreen else {
+            dndSkip("offscreen"); return }
+        guard !behavior.isSleeping else {   // 锁屏/睡眠中不处理勿扰(exitDnd 会把鸟显示在锁屏上)
+            dndSkip("sleeping"); return }
+        dndSkip("")
         // ① 全屏应用检测:最前面的普通窗口(非本应用)矩形 == 鸟所在屏整屏
         let fs = fullscreenAppOnBirdScreen()
         if fs { fsOnStreak += 1; fsOffStreak = 0 } else { fsOffStreak += 1; fsOnStreak = 0 }
@@ -194,9 +198,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             kfLog("dnd: 全屏退出,恢复")
             behavior.exitDnd()
         }
-        // ② 放音检测:默认输出设备有应用在出声 → 鸟不叫(只静叫声)
-        requestNowPlaying()   // 现为空操作(放音静音已撤,详见其注释)
-        if !mediaMutedActive && mediaOnStreak >= 2 {
+        // ② 放音检测:子进程探针每 3 拍(9s)采样一次;静音单样本(快)、恢复双样本(稳)
+        mediaTickCount += 1
+        let playing = mediaTickCount % 3 == 1 ? nowPlayingActive() : mediaPlayingLatest
+        if playing { mediaOnStreak += 1; mediaOffStreak = 0 } else { mediaOffStreak += 1; mediaOnStreak = 0 }
+        if !mediaMutedActive && mediaOnStreak >= 1 {
             mediaMutedActive = true
             kfLog("media: 检测到放音,鸟静音")
             SpriteLibrary.shared.mediaMuted = true
@@ -247,15 +253,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var axWarned = false
     private var dndDiagTick = 0
 
-    // 放音静音(Mac):已撤除。两次尝试都不可用——
-    // ① CoreAudio DeviceIsRunningSomewhere:语义是"设备被占用",浏览器播过一次
-    //   声音就恒真 → 鸟永久静音(v1.4.31 实测)
-    // ② MediaRemote 私有 API:真实签名是双参数(ForOrigin),按单参数调用
-    //   → SIGSEGV 闪退(3 份崩溃报告实锤)。私有 API 签名不可赌,整个撤掉。
-    // Windows 端用公开 API(WASAPI 峰值)不受影响;Mac 后续如需此功能,
-    // 等 Apple 提供公开的 Now Playing 查询接口再上。
-    private func requestNowPlaying() {
-        SpriteLibrary.shared.mediaMuted = false
+    // 放音静音(Mac)第三次尝试:MediaRemote 走【ObjC 类加载】而非 C 函数。
+    // 前两次失败:①设备占用信号恒真;②dlsym 猜 C 签名 → SIGSEGV(寄存器垃圾)。
+    // 本次按社区验证的用法(macOS 15.4+/26 可用,SKaplanOfficial gist):
+    // NSBundle 加载框架后走 ObjC 消息(selector 运行时解析,无签名可猜错),
+    // 读 nowPlayingInfo 的 PlaybackRate,1=在播。任何一步拿不到 → 不静音(fail-open)。
+    // 放音检测终版:spawn osascript JXA 子进程代查(照抄 SKaplanOfficial gist 逻辑)。
+    // 探索史(全在本机实锤):①设备占用信号恒真;②class 路径 localNowPlayingItem
+    //   在 CLI 正常、在【本 app 进程】恒 nil;③C 函数 MRMediaRemoteGetNowPlaying
+    //   ApplicationIsPlaying(正确双参 ABI)同样只在 CLI 有回调。结论:macOS 15.4+
+    //   mediaremoted 只给"无 bundle 身份"的进程全局数据;GUI app 一律拿不到。
+    //   ⇒ 让无身份的 osascript 代查,读 PlaybackRate(1=在播)。
+    // 每 3 拍(9s)spawn 一次、异步收结果;失败/超时/输出异常 → 不静音(fail-open)。
+    // 静音单样本即触发(别盖视频开头),恢复双样本(防抖)。
+    private static let mediaProbeJS = """
+        const b = $.NSBundle.bundleWithPath("/System/Library/PrivateFrameworks/MediaRemote.framework");
+        b.load;
+        const item = $.NSClassFromString("MRNowPlayingRequest").localNowPlayingItem;
+        item ? (item.nowPlayingInfo.valueForKey("kMRMediaRemoteNowPlayingInfoPlaybackRate")).js + "" : "nil"
+        """
+    private static var mrProbeOK = false
+    private var mediaProbeBusy = false
+    private var mediaPlayingLatest = false
+    private var mediaTickCount = 0
+    private func nowPlayingActive() -> Bool {
+        guard !mediaProbeBusy else { return mediaPlayingLatest }
+        mediaProbeBusy = true
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        p.arguments = ["-l", "JavaScript", "-e", AppDelegate.mediaProbeJS]
+        let out = Pipe(); p.standardOutput = out
+        p.standardError = Pipe()   // stderr 别泄进控制台
+        do {
+            try p.run()
+            let h = out.fileHandleForReading
+            p.terminationHandler = { [weak self] _ in
+                let txt = (try? h.readToEnd()).flatMap { String(data: $0, encoding: .utf8) }?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                DispatchQueue.main.async {
+                    guard let self = self else { return }
+                    self.mediaProbeBusy = false
+                    if !AppDelegate.mrProbeOK {
+                        AppDelegate.mrProbeOK = true
+                        kfLog("media: 子进程探针可用(首值=\(txt.isEmpty ? "(空)" : txt))")
+                    }
+                    self.mediaPlayingLatest = (txt == "1")
+                }
+            }
+        } catch {
+            mediaProbeBusy = false
+        }
+        return mediaPlayingLatest
+    }
+
+    private func dndSkip(_ why: String) {
+        if why != dndSkipLast { if !why.isEmpty { kfLog("dndCheck 跳过: \(why)") }; dndSkipLast = why }
     }
 
     private var watchdogTimer: Timer?
