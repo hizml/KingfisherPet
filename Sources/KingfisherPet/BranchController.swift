@@ -13,6 +13,8 @@ final class BranchController {
     private let branchLayer = CALayer()
     private var timer: Timer?
     private var shown = false
+    /// 勿扰(全屏应用):立刻撤树枝(tick 已 suspend,不会自动撤);恢复由 tick 重算
+    func hideNow() { overlay.orderOut(nil); shown = false }
     private var eligibleAt: CFTimeInterval = 0
     private var preview: CGPoint?
     private var previewUntil: CFTimeInterval = 0

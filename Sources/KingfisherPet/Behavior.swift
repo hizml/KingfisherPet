@@ -704,6 +704,11 @@ final class Behavior: PetViewDelegate {
         SpriteLibrary.shared.pauseAllPeeps()
         window?.orderOut(nil)
         shadow?.setVisible(false)
+        // 全屏看片时任何贴图都不能盖视频:树枝/屎/裂纹窗口全撤(Windows dndSet 同款清单,
+        // 之前只撤了鸟+阴影,其余贴图全屏时仍浮在视频上)
+        branch?.hideNow()
+        poopCtl?.setAllHidden(true)
+        crack?.setVisible(false)
         stopZzz()
         view?.suspendAnimation()   // 停全部常驻 timer(零空转,Windows 同款)
         branch?.suspend()
@@ -713,6 +718,9 @@ final class Behavior: PetViewDelegate {
     func exitDnd() {
         dndActive = false
         SpriteLibrary.shared.mutedForSleep = false
+        // 恢复顺序从低到高:裂纹 → 屎 → 鸟(树枝由 tick 按需自动回来)
+        crack?.setVisible(true)
+        poopCtl?.setAllHidden(false)
         window?.orderFrontRegardless()
         view?.resumeAnimation()
         branch?.resume()
