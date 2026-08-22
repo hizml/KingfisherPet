@@ -184,8 +184,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !behavior.isSleeping else {   // 锁屏/睡眠中不处理勿扰(exitDnd 会把鸟显示在锁屏上)
             dndSkip("sleeping"); return }
         dndSkip("")
-        // ① 全屏应用检测:最前面的普通窗口(非本应用)矩形 == 鸟所在屏整屏
-        let fs = fullscreenAppOnBirdScreen()
+        // ① 全屏应用检测:AX "AXFullScreen" 窗口属性(授权已通但判定过 false,
+        // 铺观测定位:每 10 拍记前台 App/窗口数/每窗属性原始错误码,切一次全屏即可对账)
+        let fs = fullscreenAppOnBirdScreen(behavior.birdScreen)
+        dndDiagTick += 1
+        if !fs && dndDiagTick % 10 == 0 { fsDiagSnapshot() }
         if fs { fsOnStreak += 1; fsOffStreak = 0 } else { fsOffStreak += 1; fsOnStreak = 0 }
         if !dndActive && fsOnStreak >= 2 {
             dndActive = true
@@ -205,7 +208,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Events 同款;该属性不在公开 SDK 常量(仅运行时字符串"AXFullScreen")。
     /// 遍历前台 App 的【全部】窗口,任一全屏即判定(macOS 全屏=整个 App 独占 Space)。
     /// 需要辅助功能权限,未授权时 fail-open 并提示一次。
-    private func fullscreenAppOnBirdScreen() -> Bool {
+    /// v5 混合判定:原生全屏(AXFullScreen)或自绘全屏(无边框窗口盖满整屏)。
+    /// v4 只看 AXFullScreen,对咪咕等"自绘全屏"视频 App 失效(实测:AX 链路通、
+    /// 判定恒 false)。AX 的窗口矩形是真实 frame(含菜单栏区,不受 CGWindowList
+    /// 全屏 Space 残影问题影响);拖拽最大化的窗口不含菜单栏/Dock → 不误触发。
+    private func fullscreenAppOnBirdScreen(_ screen: NSScreen? = nil) -> Bool {
+        let scrFrame = screen?.frame ?? NSScreen.main?.frame ?? .zero
         let sys = AXUIElementCreateSystemWide()
         var appRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(sys, kAXFocusedApplicationAttribute as CFString, &appRef) == .success,
@@ -227,10 +235,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             var fsRef: CFTypeRef?
             if AXUIElementCopyAttributeValue(win, "AXFullScreen" as CFString, &fsRef) == .success,
                let fs = fsRef, (fs as? Bool) == true {
-                return true   // 任一窗口全屏 = 该 App 全屏
+                return true   // ① 原生全屏
+            }
+            if let f = axFrame(win), scrFrame.width > 0,
+               abs(f.origin.x - scrFrame.origin.x) <= 4, abs(f.origin.y - scrFrame.origin.y) <= 4,
+               f.width >= scrFrame.width - 4, f.height >= scrFrame.height - 4 {
+                return true   // ② 自绘全屏:窗口盖满整屏
             }
         }
         return false
+    }
+
+    /// AX 窗口矩形(kAXPosition + kAXSize,AXValue 解包)
+    private func axFrame(_ win: AXUIElement) -> CGRect? {
+        var posRef: CFTypeRef?; var sizeRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(win, kAXPositionAttribute as CFString, &posRef) == .success,
+              AXUIElementCopyAttributeValue(win, kAXSizeAttribute as CFString, &sizeRef) == .success,
+              let pr = posRef, let sr = sizeRef else { return nil }
+        var p = CGPoint.zero; var sz = CGSize.zero
+        guard AXValueGetValue(pr as! AXValue, .cgPoint, &p),
+              AXValueGetValue(sr as! AXValue, .cgSize, &sz) else { return nil }
+        return CGRect(origin: p, size: sz)
+    }
+
+    /// 全屏检测诊断快照(低频):前台 App 名 + 每窗 AXFullScreen 的错误码/值
+    private func fsDiagSnapshot() {
+        let sys = AXUIElementCreateSystemWide()
+        var appRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(sys, kAXFocusedApplicationAttribute as CFString, &appRef) == .success,
+            let appRaw = appRef else {
+            kfLog("fsDiag: 取前台 App 失败 err"); return
+        }
+        let appEl = unsafeBitCast(appRaw, to: AXUIElement.self)
+        var pid: pid_t = 0; AXUIElementGetPid(appEl, &pid)
+        let name = NSRunningApplication(processIdentifier: pid)?.localizedName ?? "pid:\(pid)"
+        var winsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &winsRef) == .success,
+            let wins = winsRef as? [AXUIElement] else {
+            kfLog("fsDiag: 前台=\(name) 取窗口列表失败"); return
+        }
+        var parts: [String] = []
+        for (i, win) in wins.enumerated() {
+            var v: CFTypeRef?
+            let err = AXUIElementCopyAttributeValue(win, "AXFullScreen" as CFString, &v)
+            let val = err == .success ? "\(v as? Bool ?? false)" : "err\(err.rawValue)"
+            let fr = axFrame(win).map { String(format: "[%.0f,%.0f %.0fx%.0f]", $0.origin.x, $0.origin.y, $0.width, $0.height) } ?? "noFrame"
+            parts.append("w\(i):fs=\(val) \(fr)")
+        }
+        kfLog("fsDiag: 前台=\(name) 窗口\(wins.count)个 [\(parts.joined(separator: " "))]")
     }
 
     private func axWarnOnce(_ msg: String) {

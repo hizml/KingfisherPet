@@ -64,6 +64,7 @@ final class Behavior: PetViewDelegate {
 
     // MARK: - 几何
     private var screen: NSScreen? { window?.screen ?? NSScreen.main }
+    var birdScreen: NSScreen? { screen }   // 外部(勿扰全屏检测)取鸟所在屏
     private var area: CGRect { screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero }
 
     /// 把窗口原点限制在屏内:脚不低于 Dock 顶、头不超菜单栏下、横向不出界。
