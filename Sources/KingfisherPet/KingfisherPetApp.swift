@@ -218,11 +218,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var appRef: CFTypeRef?
         let err = AXUIElementCopyAttributeValue(sys, kAXFocusedApplicationAttribute as CFString, &appRef)
         guard err == .success, let appRaw = appRef else {
-            // -25212 NoValue=无前台 App 的正常瞬态(切桌面/过渡),静默;
-            // -25211 才是未授权
-            if err.rawValue != -25212 { axWarnOnce("取前台 App 失败 err=\(err.rawValue)——-25211 请授权:系统设置→隐私与安全性→辅助功能→添加 翡") }
+            // AX 失败诊断:系统通道(NSWorkspace,无需权限)对照——前台明明有 App
+            // 而 AX 拿不到 ⇒ 授权未生效(本机 macOS 26 上表现为 -25212 NoValue,
+            // 而非教科书的 -25211);连续 5 拍如此则弹窗引导用户开辅助功能。
+            let frontApp = NSWorkspace.shared.frontmostApplication
+            // 前台=自己(启动破壳激活/弹窗激活):AX 对自引用返回 NoValue 属正常,不计数不弹窗
+            if frontApp?.processIdentifier == ProcessInfo.processInfo.processIdentifier { axFailStreak = 0; return false }
+            axFailStreak += 1
+            if axFailStreak % 5 == 1 {
+                kfLog("ax: 失败 err=\(err.rawValue) 连续\(axFailStreak)拍,系统通道前台=\(frontApp?.localizedName ?? "nil")")
+            }
+            if axFailStreak >= 5 { promptAccessibilityOnce() }
             return false
         }
+        axFailStreak = 0
         let appEl = unsafeBitCast(appRaw, to: AXUIElement.self)
         var pid: pid_t = 0
         AXUIElementGetPid(appEl, &pid)
@@ -285,6 +294,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             parts.append("w\(i):fs=\(val) \(fr)")
         }
         kfLog("fsDiag: 前台=\(name) 窗口\(wins.count)个 [\(parts.joined(separator: " "))]")
+    }
+
+    private var axFailStreak = 0
+    private var axPromptShown = false
+    /// AX 持续失败(授权未生效)→ 弹窗引导用户开辅助功能(用户要求:需要权限必须明示)
+    private func promptAccessibilityOnce() {
+        guard !axPromptShown else { return }
+        axPromptShown = true
+        kfLog("ax: 弹窗引导开启辅助功能")
+        NSApp.activate(ignoringOtherApps: true)
+        let a = NSAlert()
+        a.alertStyle = .informational
+        a.messageText = "翡 需要辅助功能权限"
+        a.informativeText = "勿扰模式(全屏看片/放音时鸟自动隐身静音)依赖辅助功能。\n\n请到 系统设置 → 隐私与安全性 → 辅助功能,删除旧的「翡」后重新添加并勾选(选择 ~/Developer/KingfisherPet/build/KingfisherPet.app)。"
+        a.addButton(withTitle: "打开系统设置")
+        a.addButton(withTitle: "稍后")
+        if a.runModal() == .alertFirstButtonReturn {
+            // 新版系统设置的辅助功能深链;打不开则退到隐私面板
+            let deep = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility")!
+            if !NSWorkspace.shared.open(deep) {
+                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+            }
+        }
     }
 
     private func axWarnOnce(_ msg: String) {
