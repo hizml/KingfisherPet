@@ -176,8 +176,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - 勿扰模式(全屏应用隐身 / 放音静音)
     private var dndActive = false
     private var fsOnStreak = 0, fsOffStreak = 0
-    private var mediaOnStreak = 0, mediaOffStreak = 0
-    private var mediaMutedActive = false
 
     private var dndSkipLast = ""
     private func dndCheck() {
@@ -198,19 +196,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             kfLog("dnd: 全屏退出,恢复")
             behavior.exitDnd()
         }
-        // ② 放音检测:子进程探针每 3 拍(9s)采样一次;静音单样本(快)、恢复双样本(稳)
-        mediaTickCount += 1
-        let playing = mediaTickCount % 3 == 1 ? nowPlayingActive() : mediaPlayingLatest
-        if playing { mediaOnStreak += 1; mediaOffStreak = 0 } else { mediaOffStreak += 1; mediaOnStreak = 0 }
-        if !mediaMutedActive && mediaOnStreak >= 1 {
-            mediaMutedActive = true
-            kfLog("media: 检测到放音,鸟静音")
-            SpriteLibrary.shared.mediaMuted = true
-        } else if mediaMutedActive && mediaOffStreak >= 2 {
-            mediaMutedActive = false
-            kfLog("media: 放音结束,恢复叫声")
-            SpriteLibrary.shared.mediaMuted = false
-        }
+
     }
 
     /// 全屏应用检测 v4(最终方案):AX 辅助功能的 "AXFullScreen" 窗口属性。
@@ -253,59 +239,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var axWarned = false
     private var dndDiagTick = 0
 
-    // 放音静音(Mac)第三次尝试:MediaRemote 走【ObjC 类加载】而非 C 函数。
-    // 前两次失败:①设备占用信号恒真;②dlsym 猜 C 签名 → SIGSEGV(寄存器垃圾)。
-    // 本次按社区验证的用法(macOS 15.4+/26 可用,SKaplanOfficial gist):
-    // NSBundle 加载框架后走 ObjC 消息(selector 运行时解析,无签名可猜错),
-    // 读 nowPlayingInfo 的 PlaybackRate,1=在播。任何一步拿不到 → 不静音(fail-open)。
-    // 放音检测终版:spawn osascript JXA 子进程代查(照抄 SKaplanOfficial gist 逻辑)。
-    // 探索史(全在本机实锤):①设备占用信号恒真;②class 路径 localNowPlayingItem
-    //   在 CLI 正常、在【本 app 进程】恒 nil;③C 函数 MRMediaRemoteGetNowPlaying
-    //   ApplicationIsPlaying(正确双参 ABI)同样只在 CLI 有回调。结论:macOS 15.4+
-    //   mediaremoted 只给"无 bundle 身份"的进程全局数据;GUI app 一律拿不到。
-    //   ⇒ 让无身份的 osascript 代查,读 PlaybackRate(1=在播)。
-    // 每 3 拍(9s)spawn 一次、异步收结果;失败/超时/输出异常 → 不静音(fail-open)。
-    // 静音单样本即触发(别盖视频开头),恢复双样本(防抖)。
-    private static let mediaProbeJS = """
-        const b = $.NSBundle.bundleWithPath("/System/Library/PrivateFrameworks/MediaRemote.framework");
-        b.load;
-        const item = $.NSClassFromString("MRNowPlayingRequest").localNowPlayingItem;
-        item ? (item.nowPlayingInfo.valueForKey("kMRMediaRemoteNowPlayingInfoPlaybackRate")).js + "" : "nil"
-        """
-    private static var mrProbeOK = false
-    private var mediaProbeBusy = false
-    private var mediaPlayingLatest = false
-    private var mediaTickCount = 0
-    private func nowPlayingActive() -> Bool {
-        guard !mediaProbeBusy else { return mediaPlayingLatest }
-        mediaProbeBusy = true
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        p.arguments = ["-l", "JavaScript", "-e", AppDelegate.mediaProbeJS]
-        let out = Pipe(); p.standardOutput = out
-        p.standardError = Pipe()   // stderr 别泄进控制台
-        do {
-            try p.run()
-            let h = out.fileHandleForReading
-            p.terminationHandler = { [weak self] _ in
-                let txt = (try? h.readToEnd()).flatMap { String(data: $0, encoding: .utf8) }?
-                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                DispatchQueue.main.async {
-                    guard let self = self else { return }
-                    self.mediaProbeBusy = false
-                    if !AppDelegate.mrProbeOK {
-                        AppDelegate.mrProbeOK = true
-                        kfLog("media: 子进程探针可用(首值=\(txt.isEmpty ? "(空)" : txt))")
-                    }
-                    self.mediaPlayingLatest = (txt == "1")
-                }
-            }
-        } catch {
-            mediaProbeBusy = false
-        }
-        return mediaPlayingLatest
-    }
-
+    // 放音静音已迁 SpriteLibrary.playPeep(叫前查;勿扰段只留全屏检测)。
+    // MediaRemote 探索史详见 SpriteLibrary.playPeep 注释。
     private func dndSkip(_ why: String) {
         if why != dndSkipLast { if !why.isEmpty { kfLog("dndCheck 跳过: \(why)") }; dndSkipLast = why }
     }
