@@ -14,6 +14,9 @@ jobs:
   # 原生 Mac 版(Swift + AppKit):build.sh 的打包步骤(去掉启动)
   native-mac:
     runs-on: macos-latest
+    env:
+      KF_SIGN_P12_B64: ${{ secrets.KF_SIGN_P12_B64 }}
+      KF_SIGN_P12_PASS: ${{ secrets.KF_SIGN_P12_PASS }}
     steps:
       - uses: actions/checkout@v7
 
