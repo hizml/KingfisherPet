@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import ServiceManagement
 import Foundation
 import QuartzCore
@@ -206,42 +207,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// 全屏应用检测 v3:【前台 App + 该 App 全部窗口(含屏外)】有盖满鸟所在屏的普通窗。
-    /// v1(最顶普通窗)/v2(任一屏上普通窗)均失败——诊断实锤:Chrome 全屏视频期间,
-    /// 从本进程枚举的"屏上"窗口列表里根本不存在盖满屏幕的窗口(全屏 Space 的窗口
-    /// 对屏上枚举不可见),几何法走不通。改查前台 App(全屏视频时必为前台)的
-    /// 全部窗口(含屏外),全屏窗在那里带 PID 出现;最大化窗口(只盖工作区)不会误报。
+    /// 全屏应用检测 v4(最终方案):AX 辅助功能的 "AXFullScreen" 窗口属性。
+    /// 几何法 v1-v3 全部失败(自机实验实锤:全屏窗在 CGWindowList 只剩 33px 条状残影,
+    /// 任何基于窗口矩形的判定都不可能)。AX 是系统权威信号,Rectaangle/AltTab/System
+    /// Events 同款;该属性不在公开 SDK 常量(仅运行时字符串"AXFullScreen")。
+    /// 遍历前台 App 的【全部】窗口,任一全屏即判定(macOS 全屏=整个 App 独占 Space)。
+    /// 需要辅助功能权限,未授权时 fail-open 并提示一次。
     private func fullscreenAppOnBirdScreen() -> Bool {
-        guard let frontApp = NSWorkspace.shared.frontmostApplication,
-              frontApp.processIdentifier != ProcessInfo.processInfo.processIdentifier,
-              let scr = petController?.window?.screen ?? NSScreen.main,
-              let infos = CGWindowListCopyWindowInfo([], kCGNullWindowID) as? [[String: Any]]   // 全部窗口(含屏外)
-        else { return false }
-        let pid = frontApp.processIdentifier
-        let primaryH = NSScreen.screens.first?.frame.maxY ?? 0
-        let cgScreen = CGRect(x: scr.frame.origin.x,
-                              y: primaryH - scr.frame.maxY,
-                              width: scr.frame.width,
-                              height: scr.frame.height)
-        for w in infos {
-            let layer = w[kCGWindowLayer as String] as? Int ?? 99
-            guard layer == 0 else { continue }
-            guard w[kCGWindowOwnerPID as String] as? Int32 == pid else { continue }
-            var b = CGRect.zero
-            if let r = w[kCGWindowBounds as String] as? CGRect { b = r }
-            else if let d = w[kCGWindowBounds as String] as? [String: CGFloat],
-                    let r = CGRect(dictionaryRepresentation: d as CFDictionary) { b = r }
-            else { continue }
-            let full = abs(b.minX - cgScreen.minX) <= 2 && abs(b.maxX - cgScreen.maxX) <= 2
-                && abs(b.minY - cgScreen.minY) <= 2 && abs(b.maxY - cgScreen.maxY) <= 2
-            if full { return true }
+        let sys = AXUIElementCreateSystemWide()
+        var appRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(sys, kAXFocusedApplicationAttribute as CFString, &appRef) == .success,
+              let appRaw = appRef else {
+            axWarnOnce("取前台 App 失败——请授权:系统设置→隐私与安全性→辅助功能→添加 翡(勿扰全屏检测需要)")
+            return false
         }
-        dndDiagTick += 1
-        if dndDiagTick % 20 == 0 {   // 每分钟一行:前台 App 名(检测仍失败时定位用)
-            kfLog("dnd-diag: front-app=\(frontApp.localizedName ?? "?") pid=\(pid)")
+        let appEl = unsafeBitCast(appRaw, to: AXUIElement.self)
+        var pid: pid_t = 0
+        AXUIElementGetPid(appEl, &pid)
+        guard pid != ProcessInfo.processInfo.processIdentifier else { return false }   // 自己不算
+        var winsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &winsRef) == .success,
+              let wins = winsRef as? [AXUIElement] else {
+            axWarnOnce("取前台 App 窗口列表失败(辅助功能权限?)")
+            return false
+        }
+        for win in wins {
+            var fsRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(win, "AXFullScreen" as CFString, &fsRef) == .success,
+               let fs = fsRef, (fs as? Bool) == true {
+                return true   // 任一窗口全屏 = 该 App 全屏
+            }
         }
         return false
     }
+
+    private func axWarnOnce(_ msg: String) {
+        if !axWarned { axWarned = true; kfLog("dnd-ax: \(msg)") }
+    }
+    private var axWarned = false
     private var dndDiagTick = 0
 
     // 放音静音(Mac):已撤除。两次尝试都不可用——
