@@ -216,9 +216,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let scrFrame = screen?.frame ?? NSScreen.main?.frame ?? .zero
         let sys = AXUIElementCreateSystemWide()
         var appRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(sys, kAXFocusedApplicationAttribute as CFString, &appRef) == .success,
-              let appRaw = appRef else {
-            axWarnOnce("取前台 App 失败——请授权:系统设置→隐私与安全性→辅助功能→添加 翡(勿扰全屏检测需要)")
+        let err = AXUIElementCopyAttributeValue(sys, kAXFocusedApplicationAttribute as CFString, &appRef)
+        guard err == .success, let appRaw = appRef else {
+            // -25212 NoValue=无前台 App 的正常瞬态(切桌面/过渡),静默;
+            // -25211 才是未授权
+            if err.rawValue != -25212 { axWarnOnce("取前台 App 失败 err=\(err.rawValue)——-25211 请授权:系统设置→隐私与安全性→辅助功能→添加 翡") }
             return false
         }
         let appEl = unsafeBitCast(appRaw, to: AXUIElement.self)
@@ -262,9 +264,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func fsDiagSnapshot() {
         let sys = AXUIElementCreateSystemWide()
         var appRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(sys, kAXFocusedApplicationAttribute as CFString, &appRef) == .success,
-            let appRaw = appRef else {
-            kfLog("fsDiag: 取前台 App 失败 err"); return
+        let diagErr = AXUIElementCopyAttributeValue(sys, kAXFocusedApplicationAttribute as CFString, &appRef)
+        guard diagErr == .success, let appRaw = appRef else {
+            kfLog("fsDiag: 取前台 App 失败 err=\(diagErr.rawValue)(-25211未授权/-25207忙)"); return
         }
         let appEl = unsafeBitCast(appRaw, to: AXUIElement.self)
         var pid: pid_t = 0; AXUIElementGetPid(appEl, &pid)
