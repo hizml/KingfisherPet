@@ -40,7 +40,6 @@ final class SpriteLibrary {
     var soundOn = true
     /// 睡眠(锁屏/系统睡眠)期间临时禁声;不影响用户设置 soundOn。由 Behavior 在入睡/醒来时切换。
     var mutedForSleep = false
-    var mediaMuted = false   // 听歌/看片时鸟不叫(勿扰;只静叫声,行为正常)
 
     /// 主题变化时回调(PetView/控制器重取帧、重置贴图)。可多个监听者。
     private var themeObservers: [() -> Void] = []
@@ -186,9 +185,57 @@ final class SpriteLibrary {
     }
 
     func playPeep() {
-        guard soundOn, !mutedForSleep, !mediaMuted, !peepPlayers.isEmpty else { return }
+        guard soundOn, !mutedForSleep, !peepPlayers.isEmpty else { return }
+        // 放音勿扰·叫前查:鸟想叫这一刻 spawn osascript 问一次 Now Playing,
+        // 在播就吞掉这声。不轮询——spawn 有成本,叫的频率分钟级,150ms 探针延迟无感,
+        // 零空转(此前 9s 轮询方案被否:太激进)。
+        // 为什么子进程代查:GUI app 进程内所有 MediaRemote 路径拿不到全局状态
+        // (macOS 15.4+ 本机实测),无 bundle 身份的 osascript 才能拿到。
+        // 失败/超时/探针未回 → 照叫(fail-open,勿扰优先级低于功能可用)。
+        guard !peepProbeBusy else { peepPlay(); return }
+        peepProbeBusy = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            if self?.peepProbeBusy == true { self?.peepProbeBusy = false }   // 探针挂死自愈
+        }
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        proc.arguments = ["-l", "JavaScript", "-e", SpriteLibrary.mediaProbeJS]
+        let out = Pipe(); proc.standardOutput = out; proc.standardError = Pipe()
+        do {
+            try proc.run()
+            let h = out.fileHandleForReading
+            proc.terminationHandler = { [weak self] _ in
+                let txt = (try? h.readToEnd()).flatMap { String(data: $0, encoding: .utf8) }?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                DispatchQueue.main.async {
+                    self?.peepProbeBusy = false
+                    if txt == "1" {
+                        kfLog("media: 系统在播,吞掉这声叫")
+                    } else {
+                        if !SpriteLibrary.probeOK { SpriteLibrary.probeOK = true; kfLog("media: 叫前探针链路可用") }
+                        self?.peepPlay()
+                    }
+                }
+            }
+        } catch {
+            peepProbeBusy = false
+            peepPlay()
+        }
+    }
+
+    private func peepPlay() {
+        guard soundOn, !mutedForSleep, !peepPlayers.isEmpty else { return }
         let p = peepPlayers.randomElement()!
         p.currentTime = 0
         p.play()
     }
+
+    private static let mediaProbeJS = """
+        const b = $.NSBundle.bundleWithPath("/System/Library/PrivateFrameworks/MediaRemote.framework");
+        b.load;
+        const item = $.NSClassFromString("MRNowPlayingRequest").localNowPlayingItem;
+        item ? (item.nowPlayingInfo.valueForKey("kMRMediaRemoteNowPlayingInfoPlaybackRate")).js + "" : "nil"
+        """
+    private static var probeOK = false
+    private var peepProbeBusy = false
 }
