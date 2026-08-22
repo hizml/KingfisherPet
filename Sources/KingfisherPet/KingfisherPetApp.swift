@@ -206,41 +206,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// 最前面的普通窗口(非本应用)是否完整覆盖鸟所在的屏(全屏应用/视频)
+    /// 全屏应用检测 v3:【前台 App + 该 App 全部窗口(含屏外)】有盖满鸟所在屏的普通窗。
+    /// v1(最顶普通窗)/v2(任一屏上普通窗)均失败——诊断实锤:Chrome 全屏视频期间,
+    /// 从本进程枚举的"屏上"窗口列表里根本不存在盖满屏幕的窗口(全屏 Space 的窗口
+    /// 对屏上枚举不可见),几何法走不通。改查前台 App(全屏视频时必为前台)的
+    /// 全部窗口(含屏外),全屏窗在那里带 PID 出现;最大化窗口(只盖工作区)不会误报。
     private func fullscreenAppOnBirdScreen() -> Bool {
-        guard let scr = petController?.window?.screen ?? NSScreen.main else { return false }
-        let opts: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
-        guard let infos = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]] else { return false }
-        let myPID = ProcessInfo.processInfo.processIdentifier
-        var anyFull = false   // 任一普通窗盖满整屏(不只最顶)
+        guard let frontApp = NSWorkspace.shared.frontmostApplication,
+              frontApp.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+              let scr = petController?.window?.screen ?? NSScreen.main,
+              let infos = CGWindowListCopyWindowInfo([], kCGNullWindowID) as? [[String: Any]]   // 全部窗口(含屏外)
+        else { return false }
+        let pid = frontApp.processIdentifier
         let primaryH = NSScreen.screens.first?.frame.maxY ?? 0
         let cgScreen = CGRect(x: scr.frame.origin.x,
                               y: primaryH - scr.frame.maxY,
                               width: scr.frame.width,
                               height: scr.frame.height)
-        for w in infos {   // Z 序前到后:第一个普通窗口
+        for w in infos {
             let layer = w[kCGWindowLayer as String] as? Int ?? 99
             guard layer == 0 else { continue }
-            let pid = w[kCGWindowOwnerPID as String] as? Int32 ?? 0
-            guard pid != myPID else { continue }
+            guard w[kCGWindowOwnerPID as String] as? Int32 == pid else { continue }
             var b = CGRect.zero
             if let r = w[kCGWindowBounds as String] as? CGRect { b = r }
             else if let d = w[kCGWindowBounds as String] as? [String: CGFloat],
                     let r = CGRect(dictionaryRepresentation: d as CFDictionary) { b = r }
             else { continue }
-            // 【任一】普通窗盖满整屏 → 全屏应用。诊断实锤:Chrome 全屏视频在独立
-            // Space,窗口列表排第一的普通窗是别的窗口(1200x800)——之前"只看最顶"
-            // 永远拿不到全屏窗;列表包含其他 Space 的窗口,全屏窗在靠后位置。
             let full = abs(b.minX - cgScreen.minX) <= 2 && abs(b.maxX - cgScreen.maxX) <= 2
                 && abs(b.minY - cgScreen.minY) <= 2 && abs(b.maxY - cgScreen.maxY) <= 2
             if full { return true }
-            anyFull = anyFull || full
-            dndDiagTick += 1
-            if dndDiagTick % 20 == 0 {   // 每分钟一行:最顶普通窗 vs 屏矩形(全屏检测不触发时拿数据定位)
-                kfLog("dnd-diag: front=\(Int(b.minX)),\(Int(b.minY)) \(Int(b.width))x\(Int(b.height)) screen=\(Int(cgScreen.minX)),\(Int(cgScreen.minY)) \(Int(cgScreen.width))x\(Int(cgScreen.height))")
-            }
         }
-        return anyFull
+        dndDiagTick += 1
+        if dndDiagTick % 20 == 0 {   // 每分钟一行:前台 App 名(检测仍失败时定位用)
+            kfLog("dnd-diag: front-app=\(frontApp.localizedName ?? "?") pid=\(pid)")
+        }
+        return false
     }
     private var dndDiagTick = 0
 
