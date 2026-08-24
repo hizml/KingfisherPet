@@ -36,7 +36,9 @@ Mac 原生 Swift + Windows Tauri 双平台,行为照着当年的它比着做,再
 | macOS(Tauri 版) | `.dmg` / `.app.tar.gz` |
 | Windows | `x64-setup.exe`(NSIS,中/英可选)或 `zh-CN.msi` / `en-US.msi` |
 
-> 首次运行 macOS 版若提示"无法验证开发者",右键 App → 打开;Windows SmartScreen 同理(详见仓库未签名说明)。
+> **签名**:本地与 CI 用同一张自签证书(非 Apple Developer ID)——首次运行若提示"无法验证开发者",右键 App → 打开;Windows SmartScreen 选"仍要运行"。签名固定意味着辅助功能授权一次、升级不失效。
+>
+> **辅助功能授权(Mac 可选)**:勿扰模式(全屏看片鸟自动隐身)需要;未授权时鸟会弹窗引导,一键直达系统设置。不给也能用,只是没有勿扰。
 
 
 ## 预览
@@ -60,14 +62,19 @@ Mac 原生 Swift + Windows Tauri 双平台,行为照着当年的它比着做,再
 - 走和飞自动转向
 - 叫声有 4 种(短啾 / 长颤 / 低咕 / 兴奋),每次随机
 
+**勿扰模式(全自动)**
+- **全屏看片/游戏**:检测到全屏应用,鸟带着树枝、鸟屎、裂纹一起消失,绝不盖视频;退出全屏按层级原样恢复(Mac 用辅助功能的窗口属性 + pid 直连判定;Windows 比对前台窗口与屏幕矩形)
+- **系统在放音**:听歌/看片时鸟不叫——想叫的那一刻先查一次系统播放状态,在播就吞掉这声(Mac 查 Now Playing;Windows 查音频输出峰值),放完自动恢复
+- 鸟隐藏/勿扰期间,菜单动作一律不响应(不会对着空屏唱歌)
+
 **交互**
 - 点击 → 啾一声 + 心眼害羞反应
-- 拖拽 → 移动位置;半空松手会自己飞走落下
+- 拖拽 → 移动位置;半空松手会自己飞走落下;靠近窗口上沿 / Dock(±70px)松手会精准吸附
 - 透明区域点击穿透,不挡后面 App
 - 支持多屏 / 外接屏:鸟跨屏移动,屎/裂纹/阴影跟随鸟所在屏
 
 **菜单栏控制(右上角翠鸟图标)**
-- 召唤过来 / 去抓条鱼 / 唱一个 / 停到窗口上 / 啄一下 / 显示·隐藏 / 啾鸣声开关 / 开机自启 / 修复屏幕 / **设置…** / 关于 / 退出
+- 召唤过来 / 去抓条鱼 / 唱一个 / 停到窗口上 / 啄一下 / 显示·隐藏 / 啾鸣声开关 / 开机自启 / 修复屏幕 / **设置…** / 语言(跟随系统 / 中文 / English)/ 关于 / 退出
 - 显示 = 破壳而出(整蛋→裂纹→探头);隐藏 = 死掉(✕眼翻肚)从天上掉出屏幕
 - 记住上次位置与声音设置;可选开机自启
 
@@ -90,7 +97,7 @@ python3 -m venv .venv && .venv/bin/pip install pillow
 ./build.sh
 ```
 
-产物:`build/KingfisherPet.app`,直接双击或 `open` 即可。已 ad-hoc 签名。
+产物:`build/KingfisherPet.app`,直接双击或 `open` 即可。签名:优先用钥匙串里的"KingfisherPet Dev"自签证书(签名固定,辅助功能授权不随重打包失效),没有则回退 ad-hoc。
 
 ## 目录结构
 
@@ -129,6 +136,8 @@ KingfisherPet/
 - **设置**:`Settings` 单例持久化到 UserDefaults,变化发通知;活跃度影响思考节奏、速度影响所有动画时长。
 - **不占 Dock**:`LSUIElement=true` + `setActivationPolicy(.accessory)`,仅留菜单栏图标。
 - **多屏**:窗口/屎/裂纹跟随鸟所在屏,`didChangeScreenParametersNotification` 监听插拔屏自动钳位。
+- **全屏检测**:NSWorkspace 取前台 pid 后 `AXUIElementCreateApplication` 直连查窗口(原生全屏属性 + 盖屏几何双判定)。不走 systemWide 的 `focusedApplication`——它对 Chromium 系(Edge/Chrome/Electron)恒返回空值,原生 App 却正常,是个伪装成授权问题的系统坑。
+- **放音检测**:GUI 进程内 MediaRemote(macOS 15.4+)拿不到全局播放状态,由无身份子进程(osascript)代查;只在鸟想叫的那一刻查一次,零轮询。
 
 ## License
 
@@ -177,7 +186,9 @@ Grab the latest from [Releases](https://github.com/hizml/KingfisherPet/releases/
 | macOS (Tauri) | `.dmg` / `.app.tar.gz` |
 | Windows | `x64-setup.exe` (NSIS, zh/en selectable) or `zh-CN.msi` / `en-US.msi` |
 
-> Unsigned builds (ad-hoc): on macOS right-click → Open on first run; on Windows see SmartScreen "More info → Run anyway".
+> **Signing**: local and CI builds share one self-signed certificate (not an Apple Developer ID) — on macOS right-click → Open on first run; on Windows SmartScreen "More info → Run anyway". The signature is stable, so a one-time Accessibility grant survives upgrades.
+>
+> **Accessibility (optional, macOS)**: the DND mode (auto-hide during fullscreen video) needs it; if missing, the bird pops a dialog with a shortcut to System Settings. Everything else works without it.
 
 
 ## Preview
@@ -200,6 +211,11 @@ different palette + post-processing, switchable live from the settings panel.
 - Auto-turns when walking/flying
 - 4 chirp variants (short/long-trill/low/excited), random each time
 
+**Do-not-disturb (all automatic)**
+- **Fullscreen video/games**: on detecting a fullscreen app, the bird vanishes together with its branch, poops and screen cracks — nothing floats over your video; everything is restored by layer on exit. (macOS: AX window attribute + pid-direct lookup; Windows: foreground window vs. monitor rect)
+- **While audio is playing**: no chirping — at the moment it wants to sing, it checks the system playing state once and swallows that chirp if something is playing (macOS: Now Playing; Windows: audio output peak). Resumes when quiet.
+- While hidden / in DND, menu actions are ignored (no singing to an empty screen)
+
 **Interactions**
 - Click → chirp + shy heart-eyes
 - Drag to move; release mid-air and it flies off; drop near a window top / the Dock (±70px) and it snaps on precisely
@@ -207,7 +223,7 @@ different palette + post-processing, switchable live from the settings panel.
 - Multi-display: poops/cracks/effects follow the bird's screen
 
 **Menu bar control (kingfisher icon, top-right)**
-- Call Over / Catch a Fish / Sing / Perch on a Window / Peck / Show·Hide / Repair Screen / **Settings…** / About / Quit
+- Call Over / Catch a Fish / Sing / Perch on a Window / Peck / Show·Hide / Sound / Launch at Login / Repair Screen / **Settings…** / Language / About / Quit
 - Show = hatch from an egg; Hide = plays dead and falls off-screen
 - Remembers last position & sound; optional launch-at-login
 
@@ -230,13 +246,13 @@ python3 -m venv .venv && .venv/bin/pip install pillow
 ./build.sh
 ```
 
-Output: `build/KingfisherPet.app` — double-click or `open`. Ad-hoc signed.
+Output: `build/KingfisherPet.app` — double-click or `open`. Signed with a stable self-signed identity when present (falls back to ad-hoc).
 
 ## Windows
 
 A Tauri 2 port lives in `windows/`: same behaviors (walking/fishing/sleeping/poop physics/
 cracks/themes/tray with checkable submenus, language switch, lock-screen detection,
-recall-bird escape hatch). Build with `cd windows && npm install && npm run tauri build`.
+plus DND: fullscreen-app hide & audio-playing mute). Build with `cd windows && npm install && npm run tauri build`.
 
 ## Robustness
 
