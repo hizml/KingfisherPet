@@ -70,6 +70,9 @@ fi
 echo "==> 4/6 写 Info.plist"
 ICON_LINE=""
 [[ -n "$ICON_NAME" ]] && ICON_LINE="<key>CFBundleIconFile</key><string>${ICON_NAME}</string>"
+APP_VER=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')
+[[ -z "$APP_VER" ]] && APP_VER="dev"   # 无 tag 环境(检查更新对 dev 恒提示新版)
+
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -79,7 +82,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleDisplayName</key><string>翡</string>
   <key>CFBundleIdentifier</key><string>${BUNDLE_ID}</string>
   <key>CFBundleVersion</key><string>1</string>
-  <key>CFBundleShortVersionString</key><string>1.0.0</string>
+  <key>CFBundleShortVersionString</key><string>${APP_VER}</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleSignature</key><string>????</string>
   <key>CFBundleExecutable</key><string>${EXEC}</string>

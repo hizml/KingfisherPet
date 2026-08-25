@@ -603,6 +603,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         langItem.submenu = langMenu
         menu.addItem(langItem)
         menu.addItem(.separator())
+        menu.addItem(item(Language.t("menu.checkUpdate"), action: #selector(checkUpdate)))
         menu.addItem(item(Language.t("menu.about"), action: #selector(showAbout)))
         menu.addItem(item(Language.t("menu.quit"), action: #selector(quit)))
         statusItem.menu = menu
@@ -812,6 +813,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         petController?.behavior.savePosition()
     }
 
+    @objc private func checkUpdate() {
+        let cur = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "dev"
+        let cur2 = cur
+        let url = URL(string: "https://api.github.com/repos/hizml/KingfisherPet/releases/latest")!
+        URLSession.shared.dataTask(with: url) { data, _, _ in
+            var latest: String?
+            if let data, let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                latest = obj["tag_name"] as? String
+            }
+            DispatchQueue.main.async { self.updateAlert(latest: latest, current: cur2) }
+        }.resume()
+    }
+    private func updateAlert(latest: String?, current: String) {
+        let a = NSAlert()
+        if latest == nil {
+            a.messageText = "检查更新失败"
+            a.informativeText = "无法访问 GitHub(网络原因)。可手动前往 Releases 页面查看。"
+            a.addButton(withTitle: "打开 Releases 页")
+            if a.runModal() == .alertFirstButtonReturn {
+                NSWorkspace.shared.open(URL(string: "https://github.com/hizml/KingfisherPet/releases")!)
+            }
+            return
+        }
+        if latest == "v" + current {
+            a.messageText = "已是最新版本"
+            a.informativeText = "v\(current)"
+            _ = a.runModal()
+        } else {
+            a.messageText = "发现新版本 \(latest!)"
+            a.informativeText = "当前 v\(current)。前往下载?"
+            a.addButton(withTitle: "前往下载")
+            a.addButton(withTitle: "稍后")
+            if a.runModal() == .alertFirstButtonReturn {
+                NSWorkspace.shared.open(URL(string: "https://github.com/hizml/KingfisherPet/releases/latest")!)
+            }
+        }
+    }
+    
     @objc private func showAbout() {
         let alert = NSAlert()
         alert.messageText = Language.t("about.title")

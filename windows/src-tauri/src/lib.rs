@@ -336,6 +336,7 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
     m_theme.append_items(&theme_refs)?;
     let sound = CheckMenuItem::with_id(app, "sound", t("啾鸣声", "Chirp"), true, ui.sound, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", t("设置…", "Settings…"), true, None::<&str>)?;
+    let checkupd = MenuItem::with_id(app, "checkupdate", t("检查更新…", "Check for Updates…"), true, None::<&str>)?;
     let about = MenuItem::with_id(app, "about", t("关于 翡", "About Fei"), true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", t("退出 翡", "Quit Fei"), true, None::<&str>)?;
 
@@ -345,7 +346,7 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
     let _ = menu; // 分隔符+设置区需要 append;改用一次性 with_items 全量
     let items: Vec<&dyn IsMenuItem<tauri::Wry>> = vec![
         &call, &fish, &sing, &perch, &peck, &show, &repair, &diag,
-        &m_theme, &sound, &settings, &about, &quit,
+        &m_theme, &sound, &settings, &checkupd, &about, &quit,
     ];
     Menu::with_items(app, &items)
 }
@@ -370,6 +371,22 @@ fn refresh_menu(app: &tauri::AppHandle<tauri::Wry>) {
     });
 }
 
+
+/// 打开外部 URL(检查更新跳转下载页;Windows 用 ShellExecuteW,其余平台空壳)
+#[cfg(windows)]
+#[tauri::command]
+fn open_url(url: String) {
+    use ::windows::core::PCWSTR;
+    use ::windows::Win32::UI::Shell::ShellExecuteW;
+    use ::windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    let wide = |s: &str| -> Vec<u16> { s.encode_utf16().chain(std::iter::once(0)).collect() };
+    let vw = wide("open"); let uw = wide(&url);
+    unsafe { let _ = ShellExecuteW(None, PCWSTR(vw.as_ptr()), PCWSTR(uw.as_ptr()), None, None, SW_SHOWNORMAL); }
+}
+#[cfg(not(windows))]
+#[tauri::command]
+fn open_url(_url: String) {}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -377,7 +394,10 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .invoke_handler(tauri::generate_handler![front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, diag_append, assert_z_cmd, show_window_bottom_right, anim_guard])
+        
+
+.invoke_handler(tauri::generate_handler![
+        open_url,front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, diag_append, assert_z_cmd, show_window_bottom_right, anim_guard])
         .setup(|app| {
             crate::system::setup_power(app.handle().clone());   // 睡眠/锁屏/唤醒/会话 → emit sleep/wake/session-change
             // 设置窗主动拉状态(打开时):回语言/自启
@@ -511,6 +531,11 @@ pub fn run() {
                     let id = event.id.as_ref().to_string();
                     let handle = app.clone();
                     match id.as_str() {
+                        "checkupdate" => {
+                            // 检查更新:前端 fetch GitHub API 对比版本(CORS 允许),结果弹窗
+                            use tauri::Emitter;
+                            let _ = handle.emit("check-update", ());
+                        }
                         "settings" => {
                             // 设置窗(macOS 设置窗口同款:普通小窗带标题栏,常驻复用)
                             match app.get_webview_window("settings") {
