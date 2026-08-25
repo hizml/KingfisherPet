@@ -34,6 +34,10 @@
       latestM: (c) => zh ? `当前 v${c},已是最新。` : `You are on v${c}, the latest.`,
       errT: zh ? "检查更新失败" : "Update Check Failed",
       errM: zh ? "无法访问 GitHub(网络原因)。\n可手动前往 Releases 页查看。" : "Cannot reach GitHub (network).\nYou can check the Releases page manually.",
+      aboutT: "翡 · KingfisherPet",
+      aboutM: zh ? "一只住在你 Windows 上的小生灵。\n它会自己活动,也会回应你——\n至于它都会些什么,养着养着就知道了。\n\n点它、拖它,或者就让它待着。"
+                 : "A little creature living on your Windows.\nIt does its own thing, and answers to you—\nwhat it can do, you'll discover as you keep it around.\n\nClick it, drag it, or just let it be.",
+      githubB: zh ? "GitHub 主页" : "GitHub Page",
       guideT: zh ? "翠鸟已住进任务栏" : "Fei Is Now in Your Taskbar",
       guideM: zh ? "Windows 默认会把新图标收进任务栏右下角的 ^ 溢出区。\n想让它常驻可见:设置 → 个性化 → 任务栏 → 其他系统托盘图标 → 打开「翡」。"
                   : "Windows hides new tray icons in the ^ overflow flyout by default.\nTo keep it visible: Settings → Personalization → Taskbar →\nOther system tray icons → turn on Fei.",
@@ -51,8 +55,16 @@
     else if (t === "latest") { elT.textContent = L.latestT; elM.textContent = L.latestM(cur); btn(L.ok, true, close); }
     else if (t === "error") { elT.textContent = L.errT; elM.textContent = L.errM;
       btn(L.openRel, true, () => { open(REL); close(); }); btn(L.closeB, false, close); }
-    else { elT.textContent = L.guideT; elM.textContent = L.guideM;
+    else if (t === "guide") { elT.textContent = L.guideT; elM.textContent = L.guideM;
       btn(L.openSet, true, () => { open("ms-settings:taskbar"); close(); }); btn(L.later, false, close); }
+    else { elT.textContent = L.aboutT; elM.textContent = L.aboutM;
+      // 鸟图标(关于窗专属,Mac NSAlert.icon 同款)
+      const img = document.createElement("img");
+      img.src = new URL("Sprites/flat/idle_0.png", import.meta.env.BASE_URL).href;
+      img.style.cssText = "position:absolute;top:14px;right:16px;width:52px;image-rendering:pixelated;";
+      document.body.style.position = "relative";
+      document.body.appendChild(img);
+      btn(L.githubB, true, () => { open("https://github.com/hizml/KingfisherPet"); close(); }); btn(L.ok, false, close); }
   </script>
 </body>
 </html>

@@ -567,7 +567,13 @@ pub fn run() {
                             };
                             let _ = app.emit("settings-open", serde_json::json!({ "lang": lang, "autostart": auto }));
                         }
-                        "about" => { let _ = open::that("https://github.com/hizml/KingfisherPet"); }
+                        "about" => {
+                            use tauri::Emitter;
+                            // 关于弹窗(前端自绘,Mac NSAlert 同款:文案+鸟图+GitHub 按钮)
+                            if let Some(w) = handle.get_webview_window("main") {
+                                let _ = w.emit("show-about", ());
+                            }
+                        }
                         "quit" => app.exit(0),
                         "login" => {
                             use tauri_plugin_autostart::ManagerExt;

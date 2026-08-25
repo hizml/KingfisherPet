@@ -96,10 +96,10 @@ async function main() {
     // 检查更新:GitHub latest 对比当前版本(api.github.com 允许 CORS,零后端)
     // 手动(菜单):总是给反馈;自动(启动 30s + 每 24h):静默,有新版且没提示过才弹一次
     // 自绘弹窗(update.html,设置窗同风格):WebView2 原生 alert/confirm 丑且糊在鸟窗口上,弃用
-    async function openUpdateDialog(qs: string, title: string) {
+    async function openUpdateDialog(qs: string, title: string, h = 210) {
       const ex = await WebviewWindow.getByLabel("update");   // 单例:旧的先关(参数在 URL 上,复用拿不到新参)
       if (ex) { await ex.close().catch(() => {}); }
-      new WebviewWindow("update", { url: `update.html?${qs}`, title, width: 380, height: 210,
+      new WebviewWindow("update", { url: `update.html?${qs}`, title, width: 380, height: h,
                                      resizable: false });
     }
     const zhUI = () => (localStorage.getItem("kf_lang") || "system") === "zh"
@@ -120,6 +120,10 @@ async function main() {
         await openUpdateDialog(`t=found&latest=${encodeURIComponent(latest)}&cur=${cur}`, tt);
       } catch { if (!silent) await openUpdateDialog("t=error", zhUI() ? "翡 · 检查更新" : "Fei · Update"); }
     }
+    // 关于(Mac NSAlert 同款:文案+鸟图标+GitHub 按钮;之前直接跳网页,弃)
+    listen("show-about", () => {
+      openUpdateDialog("t=about", zhUI() ? "关于 翡" : "About Fei", 250).catch(() => {});
+    });
     // 首启托盘常显引导(Rust emit;原系统 MessageBox 丑且盖鸟,统一自绘)
     listen("tray-guide", () => {
       openUpdateDialog("t=guide", zhUI() ? "翡 · KingfisherPet" : "Fei · KingfisherPet").catch(() => {});
