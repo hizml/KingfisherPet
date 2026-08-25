@@ -216,13 +216,6 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         root.addSubview(peckBtn)
         peckButton = peckBtn
 
-        // TEMP-VERIFY(勿提交):6 个假项把内容顶超窗高,验证滚动
-        for i in 1...6 {
-            y -= 26
-            let b = NSButton(checkboxWithTitle: "验证项 \(i)", target: nil, action: nil)
-            b.frame = NSRect(x: margin, y: y, width: 320 - margin * 2, height: 22)
-            root.addSubview(b)
-        }
         // Y 轴滚动(几何全部钉常量,不从 contentView.bounds 取值——它实测返回过
         // 640×560 的 2× 假值,前两轮滚动全毁在它手里):
         // ①内容高度按真实布局收口;②frame 变高后平移全部子视图(坐标系不会自动重映射);

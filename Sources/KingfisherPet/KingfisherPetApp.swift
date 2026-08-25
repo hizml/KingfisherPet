@@ -170,8 +170,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // CPU 自监控:每 5 秒记录进程 CPU% + 线程数 + effect 数 + 当前状态,定位唤醒卡死
         startWatchdog()
-        // TEMP-VERIFY(勿提交):启动 3s 自动开设置窗供截图验证
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.showSettings() }
     }
 
     /// 看门狗:定期记录资源占用。卡死时日志里有铁证。
