@@ -216,11 +216,33 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         root.addSubview(peckBtn)
         peckButton = peckBtn
 
-        // 固定窗直接装下全部内容(实测内容 294 高),不再用滚动:
-        // v1.4.51 两轮滚动实现均被 w.contentView!.bounds 的 2× 假值坑(640 宽
-        // 布局→横向可拖;该值在窗口布局早期不可信,几何一律钉常量)。
-        root.frame.origin = .zero
-        w.contentView = root
+        // TEMP-VERIFY(勿提交):6 个假项把内容顶超窗高,验证滚动
+        for i in 1...6 {
+            y -= 26
+            let b = NSButton(checkboxWithTitle: "验证项 \(i)", target: nil, action: nil)
+            b.frame = NSRect(x: margin, y: y, width: 320 - margin * 2, height: 22)
+            root.addSubview(b)
+        }
+        // Y 轴滚动(几何全部钉常量,不从 contentView.bounds 取值——它实测返回过
+        // 640×560 的 2× 假值,前两轮滚动全毁在它手里):
+        // ①内容高度按真实布局收口;②frame 变高后平移全部子视图(坐标系不会自动重映射);
+        // ③只开纵向滚动,内容宽钉 320;④非 flipped document 默认显示底部,显式滚回顶部。
+        let viewH: CGFloat = 308
+        let contentH = max((viewH - margin) - y + margin, viewH)
+        let grow = contentH - viewH
+        if grow != 0 { for sv in root.subviews { sv.frame.origin.y += grow } }
+        root.frame = NSRect(x: 0, y: 0, width: 320, height: contentH)
+        let scroll = NSScrollView()
+        scroll.frame = NSRect(x: 0, y: 0, width: 320, height: viewH)   // 钉常量
+        scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = false
+        scroll.scrollerStyle = .overlay
+        scroll.drawsBackground = false
+        scroll.documentView = root
+        scroll.autoresizingMask = [.width, .height]
+        w.contentView = scroll
+        scroll.contentView.scroll(NSPoint(x: 0, y: max(0, contentH - viewH)))   // 初始置顶
+        kfLog("settings 几何: root=\(Int(root.bounds.width))x\(Int(root.bounds.height)) view=320x\(Int(viewH)) 最后控件top=\(Int(y + grow))")
         window = w
 
         // 监听外部变化(如菜单改了声音),同步控件
