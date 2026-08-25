@@ -326,6 +326,12 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
     let m_theme = Submenu::with_id(app, "m_theme", t("主题", "Theme"), true)?;
     m_theme.append_items(&theme_refs)?;
     let sound = CheckMenuItem::with_id(app, "sound", t("啾鸣声", "Chirp"), true, ui.sound, None::<&str>)?;
+    // 开机自启挪出设置窗到托盘直达(Mac 同款;勾选即所见,refresh_menu 重建读实时状态)
+    let auto_now = {
+        use tauri_plugin_autostart::ManagerExt;
+        app.autolaunch().is_enabled().unwrap_or(false)
+    };
+    let autostart = CheckMenuItem::with_id(app, "autostart", t("开机自启", "Launch at Login"), true, auto_now, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", t("设置…", "Settings…"), true, None::<&str>)?;
     // 有新版时前端会 invoke set_update_badge → 原子+refresh_menu 重建,这里读当前态
     let checkupd = MenuItem::with_id(app, "checkupdate",
@@ -340,7 +346,7 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
     let _ = menu; // 分隔符+设置区需要 append;改用一次性 with_items 全量
     let items: Vec<&dyn IsMenuItem<tauri::Wry>> = vec![
         &call, &fish, &sing, &perch, &peck, &show, &repair, &diag,
-        &m_theme, &sound, &settings, &checkupd, &about, &quit,
+        &m_theme, &sound, &autostart, &settings, &checkupd, &about, &quit,
     ];
     Menu::with_items(app, &items)
 }
@@ -525,6 +531,14 @@ pub fn run() {
                     let id = event.id.as_ref().to_string();
                     let handle = app.clone();
                     match id.as_str() {
+                        "autostart" => {
+                            use tauri_plugin_autostart::ManagerExt;
+                            let m = handle.autolaunch();
+                            let now = m.is_enabled().unwrap_or(false);
+                            let _ = if now { m.disable() } else { m.enable() };
+                            crate::kflog::kflog(&format!("autostart(菜单) → {}", !now));
+                            refresh_menu(&handle);
+                        }
                         "checkupdate" => {
                             // 检查更新:前端 fetch GitHub API 对比版本(CORS 允许),结果弹窗
                             use tauri::Emitter;
