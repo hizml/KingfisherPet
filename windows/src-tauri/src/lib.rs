@@ -347,7 +347,7 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
     let settings = MenuItem::with_id(app, "settings", t("设置…", "Settings…"), true, None::<&str>)?;
     // 有新版时前端会 invoke set_update_badge → 原子+refresh_menu 重建,这里读当前态
     let checkupd = MenuItem::with_id(app, "checkupdate",
-        if UPDATE_BADGE.load(std::sync::atomic::Ordering::Relaxed) { t("检查更新… ● 有新版", "Check for Updates… ● New") }
+        if UPDATE_BADGE.load(std::sync::atomic::Ordering::Relaxed) { t("发现新版本", "New Version Available") }
         else { t("检查更新…", "Check for Updates…") }, true, None::<&str>)?;
     let about = MenuItem::with_id(app, "about", t("关于 翡", "About Fei"), true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", t("退出 翡", "Quit Fei"), true, None::<&str>)?;

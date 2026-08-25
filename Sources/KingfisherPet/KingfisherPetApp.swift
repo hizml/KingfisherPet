@@ -843,7 +843,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let cur = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "dev"
             let has = (latest != nil) && latest != "v" + cur
             self.checkUpdateItem?.title = has
-                ? Language.t("menu.checkUpdate") + " ●"
+                ? (Language.current == "zh" ? "发现新版本" : "New Version Available")
                 : Language.t("menu.checkUpdate")
             if has { kfLog("update: 自动检查发现新版 \(latest!),菜单已标注") }
         }
