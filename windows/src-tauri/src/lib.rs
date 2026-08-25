@@ -266,37 +266,19 @@ fn prefs_set(key: &str, val: &str) {
 /// 是全局开关,不越权替用户改),唯一受支持路径是用户在设置里点一次开关
 /// → 弹一次 YESNO 引导直达任务栏设置页。
 #[cfg(windows)]
-fn tray_pin_guidance() {
-    std::thread::spawn(|| {
-        std::thread::sleep(std::time::Duration::from_secs(2));   // 等托盘就绪、不抢安装完成焦点
-        let zh = ui_lang_zh();
-        let text = if zh {
-            "翠鸟已住进任务栏。\n\nWindows 默认会把新图标收进任务栏右下角的 ^ 溢出区,想让它常驻可见:\n设置 → 个性化 → 任务栏 → 其他系统托盘图标 → 打开「翡」。\n\n现在打开任务栏设置吗?"
-        } else {
-            "Fei is now living in your taskbar.\n\nWindows hides new tray icons in the ^ overflow flyout by default. To keep it visible:\nSettings → Personalization → Taskbar → Other system tray icons → turn on Fei.\n\nOpen Taskbar settings now?"
-        };
-        let caption = if zh { "翡 · KingfisherPet" } else { "Fei · KingfisherPet" };
-        use ::windows::core::PCWSTR;
-        use ::windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_YESNO, MB_ICONINFORMATION, IDYES, SW_SHOWNORMAL};
-        use ::windows::Win32::UI::Shell::ShellExecuteW;
-        let wide = |s: &str| -> Vec<u16> { s.encode_utf16().chain(std::iter::once(0)).collect() };
-        let tw = wide(text); let cw = wide(caption);
-        let r = unsafe {
-            MessageBoxW(None, PCWSTR(tw.as_ptr()), PCWSTR(cw.as_ptr()),
-                        MB_YESNO | MB_ICONINFORMATION)
-        };
-        if r == IDYES {
-            let ow = wide("open"); let uw = wide("ms-settings:taskbar");
-            unsafe {
-                let _ = ShellExecuteW(None, PCWSTR(ow.as_ptr()), PCWSTR(uw.as_ptr()),
-                                       None, None, SW_SHOWNORMAL);
-            }
-        }
+fn tray_pin_guidance(app: tauri::AppHandle) {
+    use tauri::Manager;
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(3));   // 等托盘就绪、前端加载完成
         prefs_set("tray_tip_done", "1");
+        use tauri::Emitter;
+        // 弹窗由前端 update.html 自绘(设置窗同风格);系统 MessageBox 丑且盖鸟,弃用
+        if let Some(w) = app.get_webview_window("main") {
+            let _ = w.emit("tray-guide", ());
+        }
     });
-}
-#[cfg(not(windows))]
-fn tray_pin_guidance() {}
+}#[cfg(not(windows))]
+fn tray_pin_guidance(_app: tauri::AppHandle) {}
 
 fn ui_lang_zh() -> bool {
     match UI.lock().unwrap().lang {
@@ -534,7 +516,7 @@ pub fn run() {
             }
             // 托盘:子菜单化菜单(勾选当前项),左键直接打开
             let menu = build_menu(app.handle())?;
-            if prefs_get("tray_tip_done").is_none() { tray_pin_guidance(); }
+            if prefs_get("tray_tip_done").is_none() { tray_pin_guidance(app.handle().clone()); }
             let _ = TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)

@@ -20,6 +20,7 @@ export default defineConfig({
         crack: resolve(__dirname, "crack.html"),
         poop: resolve(__dirname, "poop.html"),
         settings: resolve(__dirname, "settings.html"),
+        update: resolve(__dirname, "update.html"),
       },
     },
   },

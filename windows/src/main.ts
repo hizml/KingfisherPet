@@ -95,6 +95,16 @@ async function main() {
                       activity: settings.activity, speed: settings.speed, sound: settings.soundOn, peck: settings.peckScreen });
     // 检查更新:GitHub latest 对比当前版本(api.github.com 允许 CORS,零后端)
     // 手动(菜单):总是给反馈;自动(启动 30s + 每 24h):静默,有新版且没提示过才弹一次
+    // 自绘弹窗(update.html,设置窗同风格):WebView2 原生 alert/confirm 丑且糊在鸟窗口上,弃用
+    async function openUpdateDialog(qs: string, title: string) {
+      const ex = await WebviewWindow.getByLabel("update");   // 单例:旧的先关(参数在 URL 上,复用拿不到新参)
+      if (ex) { await ex.close().catch(() => {}); }
+      new WebviewWindow("update", { url: `update.html?${qs}`, title, width: 380, height: 210,
+                                     resizable: false });
+    }
+    const zhUI = () => (localStorage.getItem("kf_lang") || "system") === "zh"
+      || ((localStorage.getItem("kf_lang") || "system") === "system"
+          && (navigator.language || "en").toLowerCase().startsWith("zh"));
     async function doCheckUpdate(silent: boolean) {
       try {
         const [r, cur] = await Promise.all([
@@ -105,12 +115,15 @@ async function main() {
         const has = latest !== "v" + cur;
         if (silent) { invoke("set_update_badge", { on: has }).catch(() => {}); return; }   // 静默:只标菜单
         invoke("set_update_badge", { on: false }).catch(() => {});                          // 手动看过详情,清标注
-        if (!has) { alert(`已是最新版本(v${cur})`); return; }
-        if (confirm(`发现新版本 ${latest}(当前 v${cur})。前往下载?`)) {
-          invoke("open_url", { url: "https://github.com/hizml/KingfisherPet/releases/latest" });
-        }
-      } catch { if (!silent) alert("检查更新失败:无法访问 GitHub(网络原因)。可手动前往 Releases 页查看。"); }
+        const tt = zhUI() ? "翡 · 检查更新" : "Fei · Update";
+        if (!has) { await openUpdateDialog(`t=latest&cur=${cur}`, tt); return; }
+        await openUpdateDialog(`t=found&latest=${encodeURIComponent(latest)}&cur=${cur}`, tt);
+      } catch { if (!silent) await openUpdateDialog("t=error", zhUI() ? "翡 · 检查更新" : "Fei · Update"); }
     }
+    // 首启托盘常显引导(Rust emit;原系统 MessageBox 丑且盖鸟,统一自绘)
+    listen("tray-guide", () => {
+      openUpdateDialog("t=guide", zhUI() ? "翡 · KingfisherPet" : "Fei · KingfisherPet").catch(() => {});
+    });
     listen("check-update", () => doCheckUpdate(false));
     setTimeout(() => doCheckUpdate(true), 30_000);
     setInterval(() => doCheckUpdate(true), 24 * 3600_000);
