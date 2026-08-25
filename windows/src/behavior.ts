@@ -211,7 +211,7 @@ async function think() {
   else if (r < walkEnd + 29) startDart();
   else if (r < walkEnd + 36) startWatch();
   else if (r < walkEnd + 43) startSun();
-  else if (r < walkEnd + 50) startPeck();
+  else if (r < walkEnd + 50) { if (settings.peckScreen) startPeck(); else { enter("idle"); scheduleThink(); } }   // 啄屏可关
   else if (r < walkEnd + 56) startPerchWindow();
   else if (r < walkEnd + 62) startPoop();
   else startSleep();

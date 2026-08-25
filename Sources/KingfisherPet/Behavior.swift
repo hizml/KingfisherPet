@@ -245,7 +245,11 @@ final class Behavior: PetViewDelegate {
             (walk + 29, { [weak self] in self?.startDart() }),
             (walk + 36, { [weak self] in self?.startWatch() }),
             (walk + 43, { [weak self] in self?.startSun() }),
-            (walk + 50, { [weak self] in self?.startPeck() }),
+            (walk + 50, { [weak self] in
+                guard let self = self else { return }
+                if Settings.shared.peckScreen { self.startPeck() }
+                else { self.enter("idle"); self.scheduleThink() }
+            }),
             (walk + 56, { [weak self] in self?.startPerchWindow() }),
             (walk + 62, { [weak self] in self?.startPoop() }),
         ]

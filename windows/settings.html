@@ -29,6 +29,9 @@
     <label class="chk"><input id="snd" type="checkbox" checked /><span>啾鸣声 Chirp</span></label>
   </div>
   <div class="row">
+    <label class="chk"><input id="peck" type="checkbox" checked /><span>啄屏幕 Peck Screen</span></label>
+  </div>
+  <div class="row">
     <div class="lbl"><span>主题 Theme</span></div>
     <div class="themes" id="themes"></div>
   </div>
@@ -48,7 +51,8 @@
     const savedSpd = Number(localStorage.getItem("kf_speed") ?? 1);
     const savedSnd = localStorage.getItem("kf_sound") !== "0";
     const act = document.getElementById("act"), spd = document.getElementById("spd"),
-          snd = document.getElementById("snd"), actV = document.getElementById("actV"),
+          snd = document.getElementById("snd"), peck = document.getElementById("peck"),
+          actV = document.getElementById("actV"),
           spdV = document.getElementById("spdV"), themesEl = document.getElementById("themes"),
           langsEl = document.getElementById("langs"), autoEl = document.getElementById("auto");
     const NAMES = [["flat","扁平"],["clay","粘土"],["pixel","像素"],["neon","霓虹"],["ink","水墨"],["watercolor","水彩"]];
@@ -56,6 +60,8 @@
     act.value = savedAct; actV.textContent = savedAct.toFixed(2);
     spd.value = savedSpd; spdV.textContent = savedSpd.toFixed(2);
     snd.checked = savedSnd;
+    const savedPeck = localStorage.getItem("kf_peck") !== "0";
+    peck.checked = savedPeck;
     for (const [id, name] of NAMES) {
       const b = document.createElement("button");
       b.textContent = name; b.dataset.t = id;
@@ -85,12 +91,14 @@
     act.oninput = () => { actV.textContent = Number(act.value).toFixed(2); emit("setting", "activity:" + act.value); };
     spd.oninput = () => { spdV.textContent = Number(spd.value).toFixed(2); emit("setting", "speed:" + spd.value); };
     snd.onchange = () => emit("setting", "sound:" + snd.checked);
+    peck.onchange = () => emit("setting", "peck:" + peck.checked);
     // 主窗回推的当前值(打开时同步真实状态)
     listen("settings-sync", (e) => {
       const v = e.payload;
       act.value = v.activity; actV.textContent = Number(v.activity).toFixed(2);
       spd.value = v.speed; spdV.textContent = Number(v.speed).toFixed(2);
       snd.checked = v.sound;
+      if (v.peck !== undefined) peck.checked = v.peck;
       curTheme = v.theme; paintTheme();
       if (v.lang !== undefined) { curLang = v.lang; paintLang(); }
       if (v.autostart !== undefined) autoEl.checked = v.autostart;

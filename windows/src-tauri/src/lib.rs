@@ -252,6 +252,43 @@ fn prefs_set(key: &str, val: &str) {
     let _ = std::fs::write(prefs_file(), serde_json::to_string(&v).unwrap_or_default());
 }
 
+/// 首启引导:Win11 默认把新托盘图标收进 ^ 溢出区,微软没有提供安装器可用的
+/// "指定图标常显"API(IconStreams 二进制未文档化且要重启 explorer;EnableAutoTray
+/// 是全局开关,不越权替用户改),唯一受支持路径是用户在设置里点一次开关
+/// → 弹一次 YESNO 引导直达任务栏设置页。
+#[cfg(windows)]
+fn tray_pin_guidance() {
+    std::thread::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_secs(2));   // 等托盘就绪、不抢安装完成焦点
+        let zh = ui_lang_zh();
+        let text = if zh {
+            "翠鸟已住进任务栏。\n\nWindows 默认会把新图标收进任务栏右下角的 ^ 溢出区,想让它常驻可见:\n设置 → 个性化 → 任务栏 → 其他系统托盘图标 → 打开「翡」。\n\n现在打开任务栏设置吗?"
+        } else {
+            "Fei is now living in your taskbar.\n\nWindows hides new tray icons in the ^ overflow flyout by default. To keep it visible:\nSettings → Personalization → Taskbar → Other system tray icons → turn on Fei.\n\nOpen Taskbar settings now?"
+        };
+        let caption = if zh { "翡 · KingfisherPet" } else { "Fei · KingfisherPet" };
+        use ::windows::core::PCWSTR;
+        use ::windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_YESNO, MB_ICONINFORMATION, IDYES, SW_SHOWNORMAL};
+        use ::windows::Win32::UI::Shell::ShellExecuteW;
+        let wide = |s: &str| -> Vec<u16> { s.encode_utf16().chain(std::iter::once(0)).collect() };
+        let tw = wide(text); let cw = wide(caption);
+        let r = unsafe {
+            MessageBoxW(None, PCWSTR(tw.as_ptr()), PCWSTR(cw.as_ptr()),
+                        MB_YESNO | MB_ICONINFORMATION)
+        };
+        if r == IDYES {
+            let ow = wide("open"); let uw = wide("ms-settings:taskbar");
+            unsafe {
+                let _ = ShellExecuteW(None, PCWSTR(ow.as_ptr()), PCWSTR(uw.as_ptr()),
+                                       None, None, SW_SHOWNORMAL);
+            }
+        }
+        prefs_set("tray_tip_done", "1");
+    });
+}
+#[cfg(not(windows))]
+fn tray_pin_guidance() {}
+
 fn ui_lang_zh() -> bool {
     match UI.lock().unwrap().lang {
         "zh" => true,
@@ -465,6 +502,7 @@ pub fn run() {
             }
             // 托盘:子菜单化菜单(勾选当前项),左键直接打开
             let menu = build_menu(app.handle())?;
+            if prefs_get("tray_tip_done").is_none() { tray_pin_guidance(); }
             let _ = TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)

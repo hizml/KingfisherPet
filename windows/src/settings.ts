@@ -5,8 +5,10 @@ export const settings = {
   activity: Number(localStorage.getItem("kf_activity") ?? 0.5),   // 0..1
   speed: Number(localStorage.getItem("kf_speed") ?? 1),            // 0.5..1.5
   soundOn: localStorage.getItem("kf_sound") !== "0",
+  peckScreen: localStorage.getItem("kf_peck") !== "0",   // 自发啄屏幕(关掉免频繁修复屏幕)
 };
 
 export function setActivity(v: number) { settings.activity = v; localStorage.setItem("kf_activity", String(v)); }
 export function setSpeed(v: number) { settings.speed = v; localStorage.setItem("kf_speed", String(v)); }
 export function setSound(on: boolean) { settings.soundOn = on; localStorage.setItem("kf_sound", on ? "1" : "0"); }
+export function setPeckScreen(on: boolean) { settings.peckScreen = on; localStorage.setItem("kf_peck", on ? "1" : "0"); }

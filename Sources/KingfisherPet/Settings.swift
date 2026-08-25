@@ -26,6 +26,11 @@ final class Settings {
         get { Defaults.bool(forKey: K.soundOn, default: true) }
         set { set(K.soundOn, newValue) }
     }
+    /// 自发啄屏幕(菜单手动"啄一下"不受限;关掉后鸟不再自己啄裂屏幕)
+    var peckScreen: Bool {
+        get { Defaults.bool(forKey: K.peckScreen, default: true) }
+        set { set(K.peckScreen, newValue) }
+    }
     /// 主题 id(对应 SpriteLibrary.themes)
     var theme: String {
         get { Defaults.string(forKey: K.theme, default: "flat") }
@@ -56,6 +61,7 @@ final class Settings {
         static let activity = "kingfisher.settings.activity"
         static let speed    = "kingfisher.settings.speed"
         static let soundOn  = "kingfisher.settings.soundOn"
+        static let peckScreen = "kingfisher.settings.peckScreen"
         static let theme    = "kingfisher.settings.theme"
     }
     private enum Defaults {
@@ -85,6 +91,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private weak var speedSlider: NSSlider?
     private weak var speedLabel: NSTextField?
     private weak var soundButton: NSButton?
+    private weak var peckButton: NSButton?
     private weak var themePopup: NSPopUpButton?
 
     func show() {
@@ -197,6 +204,16 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         root.addSubview(sndBtn)
         soundButton = sndBtn
 
+        // 啄屏幕开关(自发行为;关掉后不再自己啄裂屏幕,免得频繁"修复屏幕")
+        y -= 22
+        let peckBtn = NSButton(checkboxWithTitle: Language.t("settings.peck"),
+                               target: self, action: #selector(peckToggled(_:)))
+        peckBtn.state = s.peckScreen ? .on : .off
+        peckBtn.frame = NSRect(x: margin, y: y, width: root.bounds.width - margin * 2, height: 22)
+        peckBtn.autoresizingMask = [.width]
+        root.addSubview(peckBtn)
+        peckButton = peckBtn
+
         w.contentView = root
         window = w
 
@@ -222,6 +239,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     @objc private func soundToggled(_ b: NSButton) {
         Settings.shared.soundOn = (b.state == .on)
     }
+    @objc private func peckToggled(_ b: NSButton) {
+        Settings.shared.peckScreen = (b.state == .on)
+    }
 
     /// 外部改了设置:同步本窗口控件(避免 UI 与状态不同步)
     @objc private func externalChange(_ n: Notification) {
@@ -231,6 +251,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         case "kingfisher.settings.activity":
             activitySlider?.doubleValue = Double(s.activity)
             activityLabel?.stringValue = activityText(s.activity)
+        case "kingfisher.settings.peckScreen":
+            peckButton?.state = s.peckScreen ? .on : .off
         case "kingfisher.settings.speed":
             speedSlider?.doubleValue = Double(s.speed)
             speedLabel?.stringValue = String(format: "%.1f×", s.speed)

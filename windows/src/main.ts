@@ -12,7 +12,7 @@ import { clearCracks } from "./crack";   // crack 窗懒创建:首次 crackAt �
 import { setupBranch } from "./branch";
 import { setupTheme, setTheme } from "./theme";
 import { setupAudio, playPeep, setSoundOn, setMediaMuted } from "./audio";
-import { settings, setSound, setActivity, setSpeed } from "./settings";
+import { settings, setSound, setActivity, setSpeed, setPeckScreen } from "./settings";
 import * as behavior from "./behavior";
 
 const lib = new SpriteLibrary();
@@ -77,6 +77,7 @@ async function main() {
     listen<string>("setting", (e) => {
       const v = e.payload;
       if (v.startsWith("sound:")) { const on = v.split(":")[1] === "true"; setSound(on); setSoundOn(on); }
+      else if (v.startsWith("peck:")) { setPeckScreen(v.split(":")[1] === "true"); }
       else if (v.startsWith("activity:")) { setActivity(Number(v.split(":")[1])); }
       else if (v.startsWith("speed:")) { setSpeed(Number(v.split(":")[1])); }
       syncSettingsOutlets();   // 回推:托盘勾选(Rust ui-state)+ 设置窗滑杆
@@ -84,13 +85,13 @@ async function main() {
     listen("settings-open", () => syncSettingsOutlets());   // 设置窗打开/已开 → 推当前真实值
     function syncSettingsOutlets() {
       const snap = { theme: localStorage.getItem("kf_theme") || "flat",
-                     activity: settings.activity, speed: settings.speed, sound: settings.soundOn };
+                     activity: settings.activity, speed: settings.speed, sound: settings.soundOn, peck: settings.peckScreen };
       emit("ui-state", snap);
       emit("settings-sync", snap);
     }
     // 启动上报状态 → Rust 菜单勾选反映真实值
     emit("ui-state", { theme: localStorage.getItem("kf_theme") || "flat",
-                      activity: settings.activity, speed: settings.speed, sound: settings.soundOn });
+                      activity: settings.activity, speed: settings.speed, sound: settings.soundOn, peck: settings.peckScreen });
     listen("sleep", () => behavior.sleepForUserAbsence());   // Rust 监听到睡眠 → 鸟睡
     listen("wake", () => behavior.wakeFromUserAbsence());     // 唤醒 → 赖床 2–4 秒
     listen("session-change", () => location.reload());   // RDP 会话恢复 → 重载自愈(贴图/合成器丢失)
