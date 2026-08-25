@@ -94,19 +94,26 @@ async function main() {
     emit("ui-state", { theme: localStorage.getItem("kf_theme") || "flat",
                       activity: settings.activity, speed: settings.speed, sound: settings.soundOn, peck: settings.peckScreen });
     // 检查更新:GitHub latest 对比当前版本(api.github.com 允许 CORS,零后端)
-    listen("check-update", async () => {
+    // 手动(菜单):总是给反馈;自动(启动 30s + 每 24h):静默,有新版且没提示过才弹一次
+    async function doCheckUpdate(silent: boolean) {
       try {
         const [r, cur] = await Promise.all([
           fetch("https://api.github.com/repos/hizml/KingfisherPet/releases/latest"),
           getVersion(),
         ]);
         const latest = (await r.json()).tag_name as string;
-        if (latest === "v" + cur) { alert(`已是最新版本(v${cur})`); return; }
+        const has = latest !== "v" + cur;
+        if (silent) { invoke("set_update_badge", { on: has }).catch(() => {}); return; }   // 静默:只标菜单
+        invoke("set_update_badge", { on: false }).catch(() => {});                          // 手动看过详情,清标注
+        if (!has) { alert(`已是最新版本(v${cur})`); return; }
         if (confirm(`发现新版本 ${latest}(当前 v${cur})。前往下载?`)) {
           invoke("open_url", { url: "https://github.com/hizml/KingfisherPet/releases/latest" });
         }
-      } catch { alert("检查更新失败:无法访问 GitHub(网络原因)。可手动前往 Releases 页查看。"); }
-    });
+      } catch { if (!silent) alert("检查更新失败:无法访问 GitHub(网络原因)。可手动前往 Releases 页查看。"); }
+    }
+    listen("check-update", () => doCheckUpdate(false));
+    setTimeout(() => doCheckUpdate(true), 30_000);
+    setInterval(() => doCheckUpdate(true), 24 * 3600_000);
     listen("sleep", () => behavior.sleepForUserAbsence());   // Rust 监听到睡眠 → 鸟睡
     listen("wake", () => behavior.wakeFromUserAbsence());     // 唤醒 → 赖床 2–4 秒
     listen("session-change", () => location.reload());   // RDP 会话恢复 → 重载自愈(贴图/合成器丢失)

@@ -230,6 +230,15 @@ static UI: std::sync::Mutex<UiState> = std::sync::Mutex::new(UiState {
     theme: "flat", activity: 0.5, speed: 1.0, sound: true, lang: "system",
 });
 
+/// 菜单"检查更新"是否有新版标注(自动检查静默发现新版 → 只标菜单,点击才弹详情)
+static UPDATE_BADGE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[tauri::command]
+fn set_update_badge(app: tauri::AppHandle, on: bool) {
+    UPDATE_BADGE.store(on, std::sync::atomic::Ordering::Relaxed);
+    refresh_menu(&app);   // 重建菜单让标注生效(自带 250ms 防抖)
+}
+
 /// 持久化小设置(Rust 侧目前只存语言;前端数值走 localStorage)
 fn prefs_file() -> std::path::PathBuf {
     let dir = std::env::var("APPDATA")
@@ -336,7 +345,10 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
     m_theme.append_items(&theme_refs)?;
     let sound = CheckMenuItem::with_id(app, "sound", t("啾鸣声", "Chirp"), true, ui.sound, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", t("设置…", "Settings…"), true, None::<&str>)?;
-    let checkupd = MenuItem::with_id(app, "checkupdate", t("检查更新…", "Check for Updates…"), true, None::<&str>)?;
+    // 有新版时前端会 invoke set_update_badge → 原子+refresh_menu 重建,这里读当前态
+    let checkupd = MenuItem::with_id(app, "checkupdate",
+        if UPDATE_BADGE.load(std::sync::atomic::Ordering::Relaxed) { t("检查更新… ● 有新版", "Check for Updates… ● New") }
+        else { t("检查更新…", "Check for Updates…") }, true, None::<&str>)?;
     let about = MenuItem::with_id(app, "about", t("关于 翡", "About Fei"), true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", t("退出 翡", "Quit Fei"), true, None::<&str>)?;
 
@@ -397,7 +409,7 @@ pub fn run() {
         
 
 .invoke_handler(tauri::generate_handler![
-        open_url,front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, diag_append, assert_z_cmd, show_window_bottom_right, anim_guard])
+        open_url, set_update_badge,front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, diag_append, assert_z_cmd, show_window_bottom_right, anim_guard])
         .setup(|app| {
             crate::system::setup_power(app.handle().clone());   // 睡眠/锁屏/唤醒/会话 → emit sleep/wake/session-change
             // 设置窗主动拉状态(打开时):回语言/自启

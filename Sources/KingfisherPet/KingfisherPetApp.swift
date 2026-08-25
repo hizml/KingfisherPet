@@ -58,6 +58,7 @@ enum KingfisherPetApp {
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusItem: NSStatusItem!
+    private var checkUpdateItem: NSMenuItem?
     private var petController: PetWindowController!
     private var soundMenuItem: NSMenuItem!
     private var autoLoginMenuItem: NSMenuItem!
@@ -170,6 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // CPU 自监控:每 5 秒记录进程 CPU% + 线程数 + effect 数 + 当前状态,定位唤醒卡死
         startWatchdog()
+        startAutoUpdateCheck()   // 启动 30s + 每 24h 静默查更新(有新版才提示一次)
     }
 
     /// 看门狗:定期记录资源占用。卡死时日志里有铁证。
@@ -603,7 +605,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         langItem.submenu = langMenu
         menu.addItem(langItem)
         menu.addItem(.separator())
-        menu.addItem(item(Language.t("menu.checkUpdate"), action: #selector(checkUpdate)))
+        let cuItem = item(Language.t("menu.checkUpdate"), action: #selector(checkUpdate))
+        menu.addItem(cuItem)
+        checkUpdateItem = cuItem
         menu.addItem(item(Language.t("menu.about"), action: #selector(showAbout)))
         menu.addItem(item(Language.t("menu.quit"), action: #selector(quit)))
         statusItem.menu = menu
@@ -814,16 +818,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func checkUpdate() {
-        let cur = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "dev"
-        let cur2 = cur
+        fetchLatest { latest in
+            let cur = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "dev"
+            self.checkUpdateItem?.title = Language.t("menu.checkUpdate")   // 看过详情,清标注
+            self.updateAlert(latest: latest, current: cur)
+        }
+    }
+
+    private func fetchLatest(_ done: @escaping (String?) -> Void) {
         let url = URL(string: "https://api.github.com/repos/hizml/KingfisherPet/releases/latest")!
         URLSession.shared.dataTask(with: url) { data, _, _ in
             var latest: String?
             if let data, let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 latest = obj["tag_name"] as? String
             }
-            DispatchQueue.main.async { self.updateAlert(latest: latest, current: cur2) }
+            DispatchQueue.main.async { done(latest) }
         }.resume()
+    }
+
+    /// 自动检查(静默):有新版只在菜单项上标注(不弹窗,用户点开才出详情);
+    /// 无新版/失败 → 清标注或不动,一声不吭
+    private func autoCheckUpdate() {
+        fetchLatest { latest in
+            let cur = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "dev"
+            let has = (latest != nil) && latest != "v" + cur
+            self.checkUpdateItem?.title = has
+                ? Language.t("menu.checkUpdate") + " ●"
+                : Language.t("menu.checkUpdate")
+            if has { kfLog("update: 自动检查发现新版 \(latest!),菜单已标注") }
+        }
+    }
+    private var updateTimer: Timer?
+    private func startAutoUpdateCheck() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in self?.autoCheckUpdate() }
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 24 * 3600, repeats: true) { [weak self] _ in
+            self?.autoCheckUpdate()
+        }
     }
     private func updateAlert(latest: String?, current: String) {
         let a = NSAlert()
