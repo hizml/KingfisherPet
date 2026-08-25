@@ -214,7 +214,20 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         root.addSubview(peckBtn)
         peckButton = peckBtn
 
-        w.contentView = root
+        // 内容按真实高度收口,包 NSScrollView:设置项增多超出窗高时可滚动
+        // (加"啄屏幕"后内容已超 280 窗高,之前直接溢出且滚不动)
+        let top = root.bounds.height - margin
+        let contentH = top - y + margin
+        root.frame = NSRect(x: 0, y: 0, width: root.bounds.width, height: contentH)
+        root.autoresizingMask = [.width]
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.scrollerStyle = .overlay
+        scroll.drawsBackground = false
+        scroll.documentView = root
+        scroll.frame = w.contentView!.bounds
+        scroll.autoresizingMask = [.width, .height]
+        w.contentView = scroll
         window = w
 
         // 监听外部变化(如菜单改了声音),同步控件
