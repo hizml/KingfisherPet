@@ -108,7 +108,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     }
 
     private func buildWindow() {
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 320, height: 280),
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 320, height: 308),
                          styleMask: [.titled, .closable],
                          backing: .buffered, defer: false)
         w.title = Language.t("settings.title")
@@ -119,8 +119,10 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         let s = Settings.shared
 
         // 根视图:垂直 stack
-        let root = NSView(frame: w.contentView!.bounds)
-        root.autoresizingMask = [.width, .height]
+        // 宽高钉死与窗口 contentRect 一致:实测 w.contentView!.bounds 曾返回
+        // 640×560(2×backing 尺寸),按它布局导致内容 600 宽、横向可拖(v1.4.51 宽度问题)
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 308))
+        root.autoresizingMask = [.width]
 
         let margin: CGFloat = 20
         var y = root.bounds.height - margin
@@ -214,20 +216,11 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         root.addSubview(peckBtn)
         peckButton = peckBtn
 
-        // 内容按真实高度收口,包 NSScrollView:设置项增多超出窗高时可滚动
-        // (加"啄屏幕"后内容已超 280 窗高,之前直接溢出且滚不动)
-        let top = root.bounds.height - margin
-        let contentH = top - y + margin
-        root.frame = NSRect(x: 0, y: 0, width: root.bounds.width, height: contentH)
-        root.autoresizingMask = [.width]
-        let scroll = NSScrollView()
-        scroll.hasVerticalScroller = true
-        scroll.scrollerStyle = .overlay
-        scroll.drawsBackground = false
-        scroll.documentView = root
-        scroll.frame = w.contentView!.bounds
-        scroll.autoresizingMask = [.width, .height]
-        w.contentView = scroll
+        // 固定窗直接装下全部内容(实测内容 294 高),不再用滚动:
+        // v1.4.51 两轮滚动实现均被 w.contentView!.bounds 的 2× 假值坑(640 宽
+        // 布局→横向可拖;该值在窗口布局早期不可信,几何一律钉常量)。
+        root.frame.origin = .zero
+        w.contentView = root
         window = w
 
         // 监听外部变化(如菜单改了声音),同步控件

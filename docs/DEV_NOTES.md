@@ -132,7 +132,16 @@ PoopController / CrackController / ShadowController / BranchController
 见 docs/TESTING.md。要点:改完汇报必须注明验证方式(编译/场景/快照/仅推理四档),
 "仅推理"不得表述为"已修复/没问题";发版前跑 `./tools/run_tests.sh` + 手动清单。
 
-## API 使用纪律(用户指令:幽灵 API 事故后立,以后不许再犯)
+## API 使用纪律
+### 几何与配置三律(v1.4.51 设置窗三连翻车总结)
+1. **几何值钉常量**:`w.contentView!.bounds` 在窗口布局早期实测返回过 640×560(2× backing 假值),
+   从运行时对象"顺便拿"的尺寸可能和预期差一倍;布局一律用与 contentRect 一致的字面常量。
+2. **改容器尺寸必须平移子视图**:视图 frame 变高/变宽时,已布好的子视图坐标系不会跟着重映射,
+   会出现"滚到底也看不到"的控件(frame 外)。改坐标系前先想清楚旧子视图怎么办。
+3. **改配置前先找消费方**:Localizable.strings 曾被当成文案源加 key,而项目文案真源是
+   Language.swift 内置字典(t() 根本不读 strings)——改任何"数据文件"前先 grep 谁在读它,
+   没有消费方的文件改了等于没改,还会制造"已修"假象。
+(用户指令:幽灵 API 事故后立,以后不许再犯)
 
 2026-08-20 事故:Windows 端把 `currentMonitor/availableMonitors` 当 Window 方法调用
 (实际是模块级函数),`as any` 绕过类型检查 + catch 静默吞错,导致缩放系数
