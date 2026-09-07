@@ -39,7 +39,9 @@ export function setupHitTest(lib: SpriteLibrary, getCurrentFrame: () => string, 
   setIgnore(true);   // 初始穿透,轮询命中实体再切回
   refreshGeom();
   petWin.onScaleChanged(() => { refreshGeom(); });   // 拖到不同 DPI 的屏 → 重取
-  setInterval(refreshGeom, 2000);   // 兜底:漏喂路径(系统移动窗口等)不致永久错位
+  setInterval(() => {   // 兜底:漏喂路径(系统移动窗口等)不致永久错位。睡眠/隐藏时跳过(与光标轮询同门控,IPC 归零)
+    if (!isSleeping() && !document.hidden) refreshGeom();
+  }, 2000);
   const POLL_MS = 33;   // ~30fps,足够跟手
   let polling = false;
   setInterval(async () => {

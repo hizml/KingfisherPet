@@ -44,8 +44,9 @@
     // 初始值直接读共享 localStorage(与主窗同源互通,无竞态——之前页面写死默认值
     // 靠事件推送初始化,关掉重开时推送已被错过 = 滑杆"自动还原");
     // 语言/自启是 Rust 侧状态,打开时主动拉
-    const savedAct = Number(localStorage.getItem("kf_activity") ?? 0.5);
-    const savedSpd = Number(localStorage.getItem("kf_speed") ?? 1);
+    const fin = (n, d) => (Number.isFinite(n) ? n : d);   // 脏存储回默认(与 settings.ts 同防护)
+    const savedAct = fin(Number(localStorage.getItem("kf_activity") ?? 0.5), 0.5);
+    const savedSpd = fin(Number(localStorage.getItem("kf_speed") ?? 1), 1);
     const savedSnd = localStorage.getItem("kf_sound") !== "0";
     const act = document.getElementById("act"), spd = document.getElementById("spd"),
           snd = document.getElementById("snd"), peck = document.getElementById("peck"),
@@ -69,7 +70,7 @@
       for (const b of themesEl.children) b.classList.toggle("on", b.dataset.t === curTheme);
     }
     paintTheme();
-    // 语言 + 自启(设置收纳:托盘不再重复列子菜单)
+    // 语言(自启已回托盘直达,设置窗只留语言)
     let curLang = "system";
     for (const [id, name] of [["system","跟随系统"],["zh","中文"],["en","English"]]) {
       const b = document.createElement("button");
@@ -83,7 +84,7 @@
     paintLang();
     listen("lang", (e) => { curLang = e.payload; paintLang(); });
     listen("theme", (e) => { curTheme = e.payload; paintTheme(); });
-    emit("settings-need-state", null);   // 主动拉语言/自启(Rust 侧状态,localStorage 没有)
+    emit("settings-need-state", null);   // 主动拉 Rust 侧权威状态(语言;经 settings-open/settings-sync 回传)
     act.oninput = () => { actV.textContent = Number(act.value).toFixed(2); emit("setting", "activity:" + act.value); };
     spd.oninput = () => { spdV.textContent = Number(spd.value).toFixed(2); emit("setting", "speed:" + spd.value); };
     snd.onchange = () => emit("setting", "sound:" + snd.checked);

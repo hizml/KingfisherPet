@@ -85,8 +85,8 @@ async function ensure() {
         .catch(e => warnOnce("poop stage show", e));
     })();
     // 创建失败:记原因 + 复位允许下次重试(之前拒绝态被永久缓存,阴影/树枝/屎全哑)
-    attempt.catch((e: any) => {
-      stageError = String(e?.message ?? e);
+    attempt.catch((e) => {
+      stageError = e instanceof Error ? e.message : String(e);
       warnOnce("poop stage", e);
       ready = null;
     });
@@ -95,7 +95,7 @@ async function ensure() {
   await ready;
 }
 
-export function setupPoop() { ensure().catch((e: any) => { stageError = String(e?.message ?? e); }); }
+export function setupPoop() { ensure().catch((e) => { stageError = e instanceof Error ? e.message : String(e); }); }
 
 /// 唤醒宽限:告诉舞台窗 3s 内屎不做承载判定(唤醒瞬间层级混乱)
 export async function wakeGrace() {

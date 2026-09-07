@@ -196,24 +196,34 @@ function scheduleThink() {
 let wakeGraceUntil = 0;   // 唤醒宽限:此刻前 think 推迟(系统正在恢复,别抢)
 async function think() {
   if (busy || perchMoving || performance.now() < wakeGraceUntil) { scheduleThink(); return; }   // 栖窗被用户拖动中:推迟预设动作
-  // 权重带逐项对齐 macOS think():idle/walk 带随活跃度伸缩(高活跃→少待机多走动),
-  // fly 7 / fish 8 / sing 7 / dart 7 / watch 7 / sun 7 / peck 7 / perch 6 / poop 6,兜底 sleep
+  // 权重带逐项对齐 macOS think(),idle/walk 带随活跃度伸缩(高活跃→少待机多走动)
   const a = settings.activity;
   const idleBand = Math.round((1 - a) * 22);            // 0→22, 1→0
   const walkEnd = idleBand + Math.max(1, Math.round((1 - a) * 20));   // idle+walk 带
+  // 权重归一(macOS 同款,公式见 docs/FIX-DIVISION 评论区):sleep 固定小桶 6,
+  // 九个动作带(总 62)按剩余空间等比缩放 k → 低活跃收敛、高活跃放大,sleep 恒 ≤6。
+  // 此前未归一:activity=1 时兜底 sleep 反占 ~38% 成最高频,与"高活跃"语义相悖。
+  const k = Math.max(0.5, (100 - walkEnd - 6) / 62);
+  const bands: Array<[number, () => void]> = [
+    [7, () => startFly()],
+    [8, () => startFish()],
+    [7, () => startSing()],
+    [7, () => startDart()],
+    [7, () => startWatch()],
+    [7, () => startSun()],
+    [6, () => { if (settings.peckScreen) startPeck(); else { enter("idle"); scheduleThink(); } }],   // 啄屏可关
+    [6, () => startPerchWindow()],
+    [6, () => startPoop()],
+  ];
   const r = Math.random() * 100;   // 带宽是 0-100 的计数,不是 0-1 概率(之前忘乘,鸟只发呆)
-  if (r < idleBand) { enter("idle"); scheduleThink(); }
-  else if (r < walkEnd) startWalk();
-  else if (r < walkEnd + 7) startFly();
-  else if (r < walkEnd + 15) startFish();
-  else if (r < walkEnd + 22) startSing();
-  else if (r < walkEnd + 29) startDart();
-  else if (r < walkEnd + 36) startWatch();
-  else if (r < walkEnd + 43) startSun();
-  else if (r < walkEnd + 50) { if (settings.peckScreen) startPeck(); else { enter("idle"); scheduleThink(); } }   // 啄屏可关
-  else if (r < walkEnd + 56) startPerchWindow();
-  else if (r < walkEnd + 62) startPoop();
-  else startSleep();
+  if (r < idleBand) { enter("idle"); scheduleThink(); return; }
+  if (r < walkEnd) { startWalk(); return; }   // walk 桶(门控在 startWalk 内:空中/半空自动回 idle)
+  let acc = walkEnd;
+  for (const [band, fn] of bands) {
+    acc += band * k;
+    if (r < acc) { fn(); return; }
+  }
+  startSleep();   // 兜底桶:全活跃度下 ≈7%(带总宽 61,与 Mac 完全同公式同分布)
 }
 
 // MARK: 走(线性)。门控:只在"地面"走——任务栏顶,或栖着的窗口上沿(macOS 同款);

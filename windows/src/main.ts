@@ -19,7 +19,6 @@ import * as behavior from "./behavior";
 const lib = new SpriteLibrary();
 const petWin = getCurrentWindow();
 const img = document.getElementById("sprite") as HTMLImageElement;
-const effectLayer = document.getElementById("effects") as HTMLElement;
 
 let state = "idle";
 let facingRight = false;
@@ -70,6 +69,7 @@ async function main() {
       else if (id === "perch") behavior.doPerch();
       else if (id === "peck") behavior.doPeck();
       else if (id === "show") { behavior.isVisible() ? behavior.fallAway() : behavior.hatchIn(); }   // 显示/隐藏 toggle
+      else if (id === "recall") { behavior.dragResetCache(); emit("log", "recall: Rust 出屏找回完成,拖拽缓存已重置"); }   // Rust 看门狗找回后的状态同步
       else if (id === "repair") { clearCracks(); }   // 托盘"修复屏幕"
     });
     listen<string>("theme", (e) => {   // 主题切换(托盘/设置窗)→ 原地换装 + 回推勾选状态
@@ -79,16 +79,33 @@ async function main() {
       const v = e.payload;
       if (v.startsWith("sound:")) { const on = v.split(":")[1] === "true"; setSound(on); setSoundOn(on); }
       else if (v.startsWith("peck:")) { setPeckScreen(v.split(":")[1] === "true"); }
-      else if (v.startsWith("activity:")) { setActivity(Number(v.split(":")[1])); }
-      else if (v.startsWith("speed:")) { setSpeed(Number(v.split(":")[1])); }
+      else if (v.startsWith("activity:")) {   // 畸形载荷(NaN)直接丢弃,不污染行为链
+        const n = Number(v.split(":")[1]);
+        if (Number.isFinite(n)) setActivity(Math.min(1, Math.max(0, n)));
+      }
+      else if (v.startsWith("speed:")) {
+        const n = Number(v.split(":")[1]);
+        if (Number.isFinite(n)) setSpeed(Math.min(1.5, Math.max(0.5, n)));
+      }
       syncSettingsOutlets();   // 回推:托盘勾选(Rust ui-state)+ 设置窗滑杆
     });
-    listen("settings-open", () => syncSettingsOutlets());   // 设置窗打开/已开 → 推当前真实值
+    // 设置窗打开/已开 → 推当前真实值。载荷带 Rust 侧权威 lang(settings.json 持久化):
+    // 回写 localStorage,kf_lang 不再是只读死键(update.html/zhUI 与设置窗高亮都能取到真值)
+    listen<{ lang?: string }>("settings-open", (e) => {
+      if (e.payload?.lang) localStorage.setItem("kf_lang", e.payload.lang);
+      syncSettingsOutlets();
+    });
+    // 设置窗切语言(事件广播到所有窗口):本地也记一份,弹窗语言即时正确
+    listen<string>("lang", (e) => {
+      const l = e.payload;
+      if (l === "zh" || l === "en" || l === "system") localStorage.setItem("kf_lang", l);
+    });
     function syncSettingsOutlets() {
       const snap = { theme: localStorage.getItem("kf_theme") || "flat",
-                     activity: settings.activity, speed: settings.speed, sound: settings.soundOn, peck: settings.peckScreen };
+                     activity: settings.activity, speed: settings.speed, sound: settings.soundOn, peck: settings.peckScreen,
+                     lang: localStorage.getItem("kf_lang") || "system" };
       emit("ui-state", snap);
-      emit("settings-sync", snap);
+      emit("settings-sync", snap);   // 带 lang:设置窗重开时语言按钮高亮真实值(此前永远"跟随系统")
     }
     // 启动上报状态 → Rust 菜单勾选反映真实值
     emit("ui-state", { theme: localStorage.getItem("kf_theme") || "flat",
@@ -111,7 +128,9 @@ async function main() {
           fetch("https://api.github.com/repos/hizml/KingfisherPet/releases/latest"),
           getVersion(),
         ]);
-        const latest = (await r.json()).tag_name as string;
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        const latest = (await r.json())?.tag_name;   // 限流/异常响应无 tag_name → 走 catch,不弹"发现新版本 undefined"
+        if (typeof latest !== "string" || !latest) throw new Error("响应无 tag_name");
         const has = latest !== "v" + cur;
         if (silent) { invoke("set_update_badge", { on: has }).catch(() => {}); return; }   // 静默:只标菜单
         invoke("set_update_badge", { on: false }).catch(() => {});                          // 手动看过详情,清标注
@@ -165,8 +184,8 @@ async function main() {
     }
     setupWatchdog();
     setInterval(() => emit("hb", null).catch(() => {}), 30_000);   // 心跳:Rust 侧看门狗监测主窗死活
-  } catch (e: any) {
-    emit("log", "main err: " + (e?.stack || String(e)));
+  } catch (e) {
+    emit("log", "main err: " + (e instanceof Error ? (e.stack || e.message) : String(e)));
   }
 }
 
@@ -269,10 +288,10 @@ async function endDrag() {
 /// 诊断:收集前端可见的坐标/DPI 状态 → Rust 追加进诊断文件
 /// (主报告由 Rust 生成并打开记事本;这里每字段独立容错,一处失败不影响其余)
 async function collectDiagnostics() {
-  const g = async <T>(k: string, f: () => Promise<T>): Promise<any> => {
-    try { return await f(); } catch (e: any) { return "ERR: " + String(e); }
+  const g = async <T>(k: string, f: () => Promise<T>): Promise<T | string> => {
+    try { return await f(); } catch (e) { return "ERR: " + String(e); }
   };
-  const report: Record<string, any> = { time: new Date().toISOString() };
+  const report: Record<string, unknown> = { time: new Date().toISOString() };
   report.devicePixelRatio = window.devicePixelRatio;
   report.screen_css = { w: screen.width, h: screen.height };
   report.scaleFactor_api = await g("sf", () => petWin.scaleFactor());
@@ -310,7 +329,7 @@ async function collectDiagnostics() {
                          crack: localStorage.getItem("kf_crack_probe"), crack_err: localStorage.getItem("kf_crack_err") };
   report.saved_pos = { x: localStorage.getItem("kf_x"), y: localStorage.getItem("kf_y") };
   try { await invoke("diag_append", { payload: JSON.stringify(report, null, 2) }); }
-  catch (e: any) { emit("log", "diag append err: " + String(e)); }
+  catch (e) { emit("log", "diag append err: " + String(e)); }
 }
 
 /// 看门狗(15s 巡检;macOS watchdog 同款自愈哲学:假设自己会坏)
@@ -341,19 +360,19 @@ function setupWatchdog() {
       }
       if (performance.now() > wdLastZ) {
         // 卡隐身自愈:状态认为可见但窗口实际隐藏(显示竞速失败等)→ 立即显示。
-      // 之前此状态无人救:点动作全部隐形执行 = "鸟消失",只能手动点两次显示/隐藏
-      if (behavior.isVisible() && !behavior.isSleeping() && !behavior.isDnd()) {
-        try {
-          const vis = await petWin.isVisible();
-          if (!vis) { emit("log", "watchdog: 卡隐身(状态可见/窗口隐藏),自愈显示"); await invoke("show_no_activate"); }
-        } catch { /* */ }
-      }
-      invoke("assert_z_cmd").catch(() => {});   // z 序收敛(5s):poop(树枝)> main > crack
+        // 之前此状态无人救:点动作全部隐形执行 = "鸟消失",只能手动点两次显示/隐藏
+        if (behavior.isVisible() && !behavior.isSleeping() && !behavior.isDnd()) {
+          try {
+            const vis = await petWin.isVisible();
+            if (!vis) { emit("log", "watchdog: 卡隐身(状态可见/窗口隐藏),自愈显示"); await invoke("show_no_activate"); }
+          } catch { /* */ }
+        }
+        invoke("assert_z_cmd").catch(() => {});   // z 序收敛(5s):poop(树枝)> main > crack
         wdLastZ = performance.now() + 5000;
       }
       if (performance.now() > wdLeakCooldownUntil) {
-        const all: any[] = await WebviewWindow.getAll();
-        const legal = new Set(["main", "poop", "crack", "settings"]);
+        const all = await WebviewWindow.getAll();
+        const legal = new Set(["main", "poop", "crack", "settings", "update"]);
         const stray = all.filter(w => !legal.has(w.label));
         if (all.length > 8 || stray.length > 0) {
           emit("log", `watchdog: 窗口异常(共 ${all.length},陌生 ${stray.length}),关闭泄漏窗`);

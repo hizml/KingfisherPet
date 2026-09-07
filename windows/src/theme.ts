@@ -14,7 +14,3 @@ export async function setTheme(theme: string) {
   setShadowTheme(theme);
   setBranchTheme(theme);
 }
-export const THEMES: Array<[string, string]> = [
-  ["flat", "扁平"], ["clay", "粘土"], ["pixel", "像素"],
-  ["neon", "霓虹"], ["ink", "水墨"], ["watercolor", "水彩"],
-];

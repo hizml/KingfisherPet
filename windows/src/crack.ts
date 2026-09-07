@@ -74,7 +74,7 @@ async function ensure() {
       await invoke("stage_visibility", { label: "crack", show: true })
         .catch(e => warnOnce("crack stage show", e));
     })();
-    attempt.catch((e: any) => { warnOnce("crack stage", e); ready = null; });   // 失败留痕 + 可重试
+    attempt.catch((e) => { warnOnce("crack stage", e); ready = null; });   // 失败留痕 + 可重试
     ready = attempt;
   }
   await ready;

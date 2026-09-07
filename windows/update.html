@@ -26,7 +26,7 @@
     const lang = localStorage.getItem("kf_lang") || "system";
     const zh = lang === "zh" || (lang === "system" && (navigator.language || "en").toLowerCase().startsWith("zh"));
     const close = () => getCurrentWindow().close();
-    const open = (url) => invoke("open_url", { url }).catch(() => {});
+    const open = (url) => invoke("open_url", { url });   // 失败(Reject)由调用方决定是否关窗
     const L = {
       foundT: zh ? "发现新版本" : "New Version Available",
       foundM: zh ? (l, c) => `最新 ${l}\n当前 v${c}。前往下载?` : (l, c) => `Latest ${l}\nCurrent v${c}. Download now?`,
@@ -45,18 +45,18 @@
       openSet: zh ? "打开任务栏设置" : "Open Taskbar Settings",
       openRel: zh ? "打开 Releases 页" : "Open Releases", closeB: zh ? "关闭" : "Close",
     };
-    const t = q.get("t") || "latest", latest = q.get("latest") || "", cur = q.get("cur") || "";
+    const t = q.get("t") || "error", latest = q.get("latest") || "", cur = q.get("cur") || "";   // 无参/异常一律按失败弹(默认"已是最新"会误导)
     const elT = document.getElementById("t"), elM = document.getElementById("m"), elB = document.getElementById("b");
     const btn = (txt, primary, fn) => { const b = document.createElement("button");
       if (primary) b.className = "primary"; b.textContent = txt; b.onclick = fn; elB.appendChild(b); };
     const REL = "https://github.com/hizml/KingfisherPet/releases/latest";
     if (t === "found") { elT.textContent = L.foundT; elM.textContent = L.foundM(latest, cur);
-      btn(L.go, true, () => { open(REL); close(); }); btn(L.later, false, close); }
+      btn(L.go, true, () => { open(REL).then(() => close(), () => {}); }); btn(L.later, false, close); }
     else if (t === "latest") { elT.textContent = L.latestT; elM.textContent = L.latestM(cur); btn(L.ok, true, close); }
     else if (t === "error") { elT.textContent = L.errT; elM.textContent = L.errM;
-      btn(L.openRel, true, () => { open(REL); close(); }); btn(L.closeB, false, close); }
+      btn(L.openRel, true, () => { open(REL).then(() => close(), () => {}); }); btn(L.closeB, false, close); }
     else if (t === "guide") { elT.textContent = L.guideT; elM.textContent = L.guideM;
-      btn(L.openSet, true, () => { open("ms-settings:taskbar"); close(); }); btn(L.later, false, close); }
+      btn(L.openSet, true, () => { open("ms-settings:taskbar").then(() => close(), () => {}); }); btn(L.later, false, close); }
     else { elT.textContent = L.aboutT; elM.textContent = L.aboutM;
       // 鸟图标(关于窗专属,Mac NSAlert.icon 同款)
       const img = document.createElement("img");
@@ -64,7 +64,7 @@
       img.style.cssText = "position:absolute;top:14px;right:16px;width:52px;image-rendering:pixelated;";
       document.body.style.position = "relative";
       document.body.appendChild(img);
-      btn(L.githubB, true, () => { open("https://github.com/hizml/KingfisherPet"); close(); }); btn(L.ok, false, close); }
+      btn(L.githubB, true, () => { open("https://github.com/hizml/KingfisherPet").then(() => close(), () => {}); }); btn(L.ok, false, close); }
   </script>
 </body>
 </html>
