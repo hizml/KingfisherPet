@@ -40,7 +40,7 @@ run_one() {
     sleepwake)
       # 唤醒段(didWake 后)不应有屎重落——只统计【本次运行】日志段
       # (全文件扫描会把上次真实唤醒后的正常白天屎重落计入,误报)
-      local refalls=$(tail -n +"$((before+1))" "$LOG" | awk '/didWake effects=/{f=1} /TEST sleepwave/{f=0} f' | grep -c "POOP refall" || true)
+      local refalls=$(tail -n +"$((before+1))" "$LOG" | awk '/didWake effects=/{f=1} /TEST sleepwake/{f=0} f' | grep -c "POOP refall" || true)
       if [ "$refalls" -gt 0 ]; then echo "  ❌ 唤醒后屎重落 x$refalls(屎雨回归!)"; rc=1
       else echo "  ✅ 唤醒后 0 重落"; fi
       # 入睡段必须有 suspend(定时器全停)
@@ -80,7 +80,12 @@ EOF
   return $rc
 }
 
-swift build -c release 2>&1 | grep -E "^error" && { echo "编译失败"; exit 1; }
+# 判编译自身退出码(之前 grep "^error":非该格式的失败——段错误/非标准输出——会漏过,
+# 拿旧二进制继续测还全绿)
+if ! swift build -c release > /tmp/kf_test_build.log 2>&1; then
+  echo "编译失败:"; grep -E "error" /tmp/kf_test_build.log | head -20
+  exit 1
+fi
 # 打包(不启动):场景需要 bundle 资源(裸二进制帧数=0,快照会空)
 KF_NO_LAUNCH=1 ./build.sh >/dev/null 2>&1
 BIN="$APP_BIN"
