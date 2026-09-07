@@ -237,7 +237,7 @@ async function startWalk() {
   try {
     const a = await area();
     const o = await getOrigin();
-    const onGround = o.y + FEET_TOP_P() >= a.maxY - 40 * _scale;      // 脚贴近任务栏顶
+    const onGround = o.y + FEET_TOP_P() >= a.maxY - 60 * _scale;      // 脚贴近任务栏顶(容差 60 对齐 macOS isLow)
     if (!onGround && perched == null) { finish(); return; }   // 空中/半空 → 不走,回 idle(macOS 同款)
     const dir = Math.random() < 0.5 ? 1 : -1;
     const dist = 80 + Math.random() * 120;
@@ -245,25 +245,23 @@ async function startWalk() {
     if (Math.abs(tx - o.x) < 20) { finish(); return; }
     setFacing(tx > o.x);
     animateMove({ x: tx, y: o.y }, Math.max(0.6, Math.abs(tx - o.x) / 70), async () => {
-      // 走完:在窗口上走到边(脚不在窗口横向范围)→ 飞远
-      if (perched != null && !(o.y + FEET_TOP_P() >= a.maxY - 40 * _scale)) {
+      // 走完(对齐 macOS afterWalk):还横跨栖窗 → 恢复跟随;走出边/窗口没了 → 50% 换最前窗、否则飞远。
+      // 此前 50% 分支"重栖同一扇已走出的窗"= 悬空小 bug;窗口消失时还会留在半空
+      if (perched != null && !(o.y + FEET_TOP_P() >= a.maxY - 60 * _scale)) {
         try {
           await scale();
           const r = await invoke<[number, number, number, number] | null>("window_rect_cmd", { hwndVal: perched });
-          if (r) {
-            const wx0 = r[0], wx1 = r[0] + r[2];
-            const midX = tx + SIZE_P() / 2;
-            // 还在窗口横向范围内 → 走完恢复栖窗跟随(macOS afterWalk)
-            if (midX >= wx0 - 10 && midX <= wx1 + 10) {
-              perchedHwnd = perched; lastPerchRect = null; startPerchCheck();
-              finish(); return;
-            }
-            if (midX < wx0 - 10 || midX > wx1 + 10) {
-              if (Math.random() < 0.5) { perchedHwnd = perched; lastPerchRect = null; startPerchCheck(); finish(); }   // 50% 换个窗口
-              else { startFly(300); }   // 否则飞远
-              return;
-            }
+          const midX = tx + SIZE_P() / 2;
+          const off = !r || midX < r[0] - 10 || midX > r[0] + r[2] + 10;
+          if (!off) {
+            perchedHwnd = perched; lastPerchRect = null; startPerchCheck();   // 还在窗口上:恢复栖窗跟随
+            finish();
+          } else if (Math.random() < 0.5) {
+            startPerchWindow();   // macOS 同款:50% 换个窗口(挑当前最前窗)
+          } else {
+            startFly(300);
           }
+          return;
         } catch { /* 查不到就正常留下 */ }
       }
       finish();
@@ -323,22 +321,34 @@ function startSing() {
   effects.notes(facingRight ? 110 : 50, 34);   // 音符从头上方出(macOS 同款:距顶 34)
   hold(1.2 + Math.random() * 0.4, () => finish());
 }
-function startSleep() {   // 打盹持续飘 zzz(macOS 每 0.9s,从头上方出)
+function startSleep() {   // 打盹持续飘 zzz(macOS 每 0.9s,从头上方出;距顶 34 与 macOS 对齐,此前 50 偏低)
   beginAction(); enter("sleep");
   const zx = facingRight ? 110 : 50;
-  const emitZzz = () => effects.zzz(zx, 50);
+  const emitZzz = () => effects.zzz(zx, 34);
   emitZzz();
   if (zzzTimer) clearInterval(zzzTimer);
   zzzTimer = setInterval(emitZzz, 900);
   hold(5 + Math.random() * 4, () => finish());
 }
 function startEat() { beginAction(); perchBranchHere(); enter("eat"); playPeep(); hold(1.1, () => finish()); }
-function startSun() {
+async function startSun() {
   beginAction(); enter("sun");
-  // 太阳在鸟斜上方、偏向空的一侧(macOS ±92);local y=-64(鸟头顶上方 64px)
-  const sx = facingRight ? -12 : 172;   // 80±92
   const dur = 3 + Math.random() * 2;
-  effects.sun(sx, -64, dur);
+  try {
+    const sc = await scale();
+    const a = await areaFast();
+    const o = await getOrigin();
+    // macOS 同款:太阳出在鸟斜上方、偏向屏幕空的一侧(鸟在左半屏→太阳出右侧),±92 逻辑偏移,
+    // 钳到屏内 70 边距——此前按朝向硬编码不钳屏,鸟贴边时太阳出屏一半
+    const preferRight = o.x + SIZE_P() / 2 < (a.minX + a.maxX) / 2;
+    let sxScreen = o.x + SIZE_P() / 2 + (preferRight ? 92 : -92) * sc;
+    sxScreen = Math.min(Math.max(sxScreen, a.minX + 70 * sc), a.maxX - 70 * sc);
+    let syScreen = o.y - 64 * sc;                      // 头顶上方 64
+    syScreen = Math.max(syScreen, a.minY + 70 * sc);   // 顶部不够就贴顶
+    effects.sun((sxScreen - o.x) / sc, (syScreen - o.y) / sc, dur);   // fx 收 local 坐标,内部转回 screen
+  } catch {
+    effects.sun(facingRight ? -12 : 172, -64, dur);    // 查询失败退回固定偏移
+  }
   hold(dur, () => finish());   // 同一随机数(macOS 同款,晒完太阳正好走)
 }
 function startPeck() {
@@ -364,12 +374,15 @@ function peckBurst(remaining: number, willCrack: boolean) {
 function startWatch() { beginAction(); enter("watch"); hold(1.4 + Math.random() * 0.8, () => finish()); }
 function startPoop() {
   beginAction(); enter("poop");
-  getOrigin().then(async o => {
-    // 屁股在朝向反侧(macOS: midX + facingRight ? -50 : 50)
-    const buttX = o.x + (80 + (facingRight ? -50 : 50)) * _scale;
-    await dropPoopAt(buttX, o.y + (SIZE - 58) * _scale);   // 屁股距窗底 58(macOS 同款;顶左原点要翻)
-  }).catch(() => {});
-  hold(0.8, () => finish());
+  // macOS 同款时序:0.5s 酝酿 → 掉 → 0.4s 收尾(此前立即掉,缺酝酿观感)
+  hold(0.5, () => {
+    getOrigin().then(async o => {
+      // 屁股在朝向反侧(macOS: midX + facingRight ? -50 : 50)
+      const buttX = o.x + (80 + (facingRight ? -50 : 50)) * _scale;
+      await dropPoopAt(buttX, o.y + (SIZE - 58) * _scale);   // 屁股距窗底 58(macOS 同款;顶左原点要翻)
+    }).catch(() => {});
+    hold(0.4, () => finish());
+  });
 }
 
 /// 拉屎(含物理):找 (x, y) 正下方最近落点(窗口上沿/任务栏顶),交给舞台窗下落-落定-淡出
@@ -534,8 +547,8 @@ let userSleeping = false;
 let zzzTimer: ReturnType<typeof setInterval> | null = null;
 function startZzzInterval() {
   if (zzzTimer) clearInterval(zzzTimer);
-  const zx = facingRight ? 110 : 50;   // 从头上方出,随朝向(macOS 同款)
-  zzzTimer = setInterval(() => effects.zzz(zx, 50), 900);
+  const zx = facingRight ? 110 : 50;   // 从头上方出,随朝向(macOS 同款;y 距顶 34 对齐)
+  zzzTimer = setInterval(() => effects.zzz(zx, 34), 900);
 }
 function stopZzzInterval() { if (zzzTimer) { clearInterval(zzzTimer); zzzTimer = null; } }
 
