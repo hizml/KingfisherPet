@@ -14,10 +14,29 @@ fn log_path() -> std::path::PathBuf {
     dir.join("kf.log")
 }
 
-/// 追加一行(带时间戳);超 5MB 截断保留尾部(节流:每 64 行查一次大小)
+/// UTC→本地偏移秒数(GetTimeZoneInformation;Bias 含 DST 语义:本地 = UTC - (Bias+季节Bias)*60)。
+/// 非 Windows(本机 dev)无偏移,退 UTC。
+#[cfg(windows)]
+fn utc_offset_secs() -> i64 {
+    use windows::Win32::System::Time::{
+        GetTimeZoneInformation, TIME_ZONE_ID_DAYLIGHT, TIME_ZONE_INFORMATION,
+    };
+    unsafe {
+        let mut tz = TIME_ZONE_INFORMATION::default();
+        let r = GetTimeZoneInformation(&mut tz);
+        // Bias:UTC = 本地 + Bias;夏令时再叠加 DaylightBias,否则 StandardBias
+        let seasonal = if r == TIME_ZONE_ID_DAYLIGHT { tz.DaylightBias } else { tz.StandardBias };
+        (tz.Bias + seasonal) as i64 * 60
+    }
+}
+#[cfg(not(windows))]
+fn utc_offset_secs() -> i64 { 0 }
+
+/// 追加一行(带本地时间戳);超 5MB 截断保留尾部(节流:每 64 行查一次大小)
 pub fn kflog(line: &str) {
     use std::sync::atomic::{AtomicU64, Ordering};
     static WRITES: AtomicU64 = AtomicU64::new(0);
+    static OFFSET: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
     let path = log_path();
     let n = WRITES.fetch_add(1, Ordering::Relaxed);
     if n % 64 == 0 {
@@ -34,9 +53,11 @@ pub fn kflog(line: &str) {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let hh = (ts % 86400) / 3600;
-    let mm = (ts % 3600) / 60;
-    let ss = ts % 60;
+    // 本地时间(此前直接用 epoch = UTC,与用户时钟差 8 小时,排障时间线对不上)
+    let local = (ts as i64 - *OFFSET.get_or_init(utc_offset_secs)).max(0) as u64;
+    let hh = (local % 86400) / 3600;
+    let mm = (local % 3600) / 60;
+    let ss = local % 60;
     if let Ok(mut f) = std::fs::OpenOptions::new().append(true).create(true).open(&path) {
         let _ = writeln!(f, "[{hh:02}:{mm:02}:{ss:02}] {line}");
     }

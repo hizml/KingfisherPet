@@ -8,7 +8,6 @@
 /// 菜单关了仍以"可见"窗口存在 → 枚举把它当最顶合格窗 → 鸟停托盘区角落。
 #[cfg(windows)]
 unsafe fn shell_junk_or_cloaked(hwnd: windows::Win32::Foundation::HWND) -> bool {
-    use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
     use windows::Win32::UI::WindowsAndMessaging::{GetClassNameW, GetWindowLongPtrW, GWL_EXSTYLE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST};
     const BAD: [&str; 9] = [
@@ -31,7 +30,6 @@ unsafe fn shell_junk_or_cloaked(hwnd: windows::Win32::Foundation::HWND) -> bool 
         &mut cloaked as *mut u32 as *mut core::ffi::c_void, 4).is_ok() {
         if cloaked != 0 { return true; }
     }
-    let _ = HWND::default();
     false
 }
 
@@ -364,8 +362,8 @@ pub fn diag_main_window(_w: &tauri::WebviewWindow) -> Option<(i32, i32, i32, i32
 /// 栖窗遮挡检测用(对应 macOS WindowTracker.frontWindowAt)。
 #[cfg(windows)]
 pub fn window_at_point(x: f64, y: f64) -> Option<isize> {
-    use windows::Win32::Foundation::{HWND, LPARAM, RECT};
-    use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowRect, GetWindowThreadProcessId};
+    use windows::Win32::Foundation::{HWND, LPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowThreadProcessId};
     use windows::Win32::System::Threading::GetCurrentProcessId;
     use std::cell::Cell;
     thread_local! {
@@ -379,8 +377,9 @@ pub fn window_at_point(x: f64, y: f64) -> Option<isize> {
             GetWindowThreadProcessId(hwnd, Some(&mut pid));
             if pid == MY.with(|m| m.get()) { return windows::core::BOOL(1); }
             if crate::windows::shell_junk_or_cloaked(hwnd) { return windows::core::BOOL(1); }
-            let mut r = RECT::default();
-            if GetWindowRect(hwnd, &mut r).is_err() { return windows::core::BOOL(1); }
+            // DWM 可见矩形(与 front_perch/surfaces_below 同口径):GetWindowRect 对最大化
+            // 窗口多出 7-8px 隐形调整边框,会把"贴边悬停"误判成遮挡
+            let Some(r) = visible_rect(hwnd) else { return windows::core::BOOL(1); };
             let (px, py) = PT.with(|p| p.get());
             if px >= r.left as f64 && px <= r.right as f64 && py >= r.top as f64 && py <= r.bottom as f64 {
                 HIT.with(|h| h.set(hwnd.0 as isize));

@@ -30,10 +30,17 @@ pub fn setup_power(app: tauri::AppHandle) {
             if gap > 15_000 {
                 crate::kflog::kflog(&format!("power: 系统睡眠唤醒(间隔 {}s),sleep 即发、wake 延迟 3s(系统未稳不动,Mac 同款保守性)", gap / 1000));
                 let _ = app.emit("sleep", ());
-                // wake 延迟 3s:唤醒瞬间层级/输入未稳,别抢(对齐 macOS resumeAfterWake 的 3s 延迟哲学)
+                // wake 延迟 3s:唤醒瞬间层级/输入未稳,别抢(对齐 macOS resumeAfterWake 的 3s 延迟哲学)。
+                // 发之前复查锁屏:锁屏后睡着(锁屏离开→自动睡眠)的场景,唤醒时屏幕仍锁着,
+                // 此时发 wake 鸟会在锁屏后面满血活动(真解锁的第二个 wake 会被 userSleeping=false 吞掉)。
+                // 仍锁着就不发,留给锁屏检测的解锁信号发。
                 let h = app.clone();
                 std::thread::spawn(move || {
                     std::thread::sleep(std::time::Duration::from_secs(3));
+                    if is_locked_here() {
+                        crate::kflog::kflog("power: 唤醒后仍锁屏,wake 缓发(等解锁信号)");
+                        return;
+                    }
                     crate::kflog::kflog("power: 延迟 wake 已发");
                     use tauri::Emitter;
                     let _ = h.emit("wake", ());

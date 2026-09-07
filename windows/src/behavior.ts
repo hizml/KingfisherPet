@@ -196,13 +196,8 @@ function scheduleThink() {
 let wakeGraceUntil = 0;   // 唤醒宽限:此刻前 think 推迟(系统正在恢复,别抢)
 async function think() {
   if (busy || perchMoving || performance.now() < wakeGraceUntil) { scheduleThink(); return; }   // 栖窗被用户拖动中:推迟预设动作
-  // 权重对齐 macOS think():idle/walk 带随活跃度伸缩(高活跃→少待机多走动),
-  // 其余固定:fish 8 / fly 7 / sing 7 / dart 7 / watch 7 / sun 5 / peck 5 / poop 5 / perch 4
-  const a = settings.activity;
-  const idleBand = Math.round((1 - a) * 22);            // 0→22, 1→0
-  const walkEnd = idleBand + Math.max(1, Math.round((1 - a) * 20));   // idle+walk 带
-  const r = Math.random() * 100;   // 带宽是 0-100 的计数,不是 0-1 概率(之前忘乘,鸟只发呆)
-  // 权重带逐项对齐 macOS think():fly 7 / fish 8 / sing 7 / dart 7 / watch 7 / sun 7 / peck 7 / perch 6 / poop 6
+  // 权重带逐项对齐 macOS think():idle/walk 带随活跃度伸缩(高活跃→少待机多走动),
+  // fly 7 / fish 8 / sing 7 / dart 7 / watch 7 / sun 7 / peck 7 / perch 6 / poop 6,兜底 sleep
   if (r < idleBand) { enter("idle"); scheduleThink(); }
   else if (r < walkEnd) startWalk();
   else if (r < walkEnd + 7) startFly();
@@ -283,7 +278,7 @@ async function startFly(minDist = 0) {
     if (feetY < a.maxY - 40 * _scale) branch.showBranchAt(tx + SIZE_P() / 2, feetY);
     // 35% 空中拉屎(macOS 同款):飞行途中从屁股掉一坨
     if (Math.random() < 0.35) {
-      const g = gen, ax = o.x + 80 + (tx > o.x ? -50 : 50);
+      const g = gen, ax = o.x + (80 + (tx > o.x ? -50 : 50)) * _scale;   // 偏移是逻辑像素,必须乘 _scale(对照 startPoop;之前漏乘,高 DPI 下空中屎横向偏位)
       setTimeout(() => { if (gen === g) dropPoopAt(ax, o.y + (SIZE - 40) * _scale); }, sp(0.3 + Math.random() * 0.4) * 1000);
     }
     animateFlight({ x: tx, y: ty }, 1.3, () => {
@@ -535,6 +530,11 @@ export function sleepForUserAbsence() {
   if (userSleeping) return;
   if (!onScreen) return;   // 隐藏着不睡(否则隐形 zzz/醒来满血复活)
   beginAction();
+  // 停栖窗跟随轮询(macOS stopPerchCheck 同款;只停计时器、保留 perchedHwnd,
+  // 唤醒后 finish() 会按需恢复跟随)。之前不停:锁屏期间 20fps window_rect IPC 空转,
+  // 且栖窗在锁屏中被销毁会触发 perchFlee → 鸟在锁屏后面飞。
+  if (perchTimer) { clearInterval(perchTimer); perchTimer = null; }
+  perchMoving = false;   // 不清则 think 恢复后被陈旧标志推迟
   userSleeping = true;
   setSleepMuted(true);   // 睡眠期间不叫(macOS 同款);正在播的也停
   // 节能:舞台窗隐藏 → WebView2 挂起(全屏透明层不合成);唤醒时恢复
@@ -553,7 +553,7 @@ export async function wakeFromUserAbsence() {
     enter("idle");
     return;
   }
-  if (!onScreen) { userSleeping = false; return; }   // 隐藏鸟不复活(macOS 同款守卫)
+  if (!onScreen) { userSleeping = false; setSleepMuted(false); return; }   // 隐藏鸟不复活(macOS 同款守卫);静音也要解除——之前漏了,隐藏鸟经一次睡眠唤醒后叫声永久静音
   wakeGraceUntil = performance.now() + 2000;   // 唤醒宽限:窗口层级未稳,先别急着动作
   setSleepMuted(false);
   stageVis("poop", true);   // 舞台恢复(鸟要阴影/特效)
@@ -740,6 +740,7 @@ export async function dndSet(on: boolean) {
   if (on) {
     emit("log", "dnd: 进入勿扰(鸟隐身+静音)");
     gen++; busy = false; busySince = null;   // 静默打断一切(不能在全屏上播放死亡动画)
+    if (thinkTimer) { clearTimeout(thinkTimer); thinkTimer = null; }   // 排程中的 think 一并停(macOS beginAction 同款);之前漏了 → 勿扰期间幽灵动作链持续空转
     userSleeping = false;
     setSleepMuted(true);
     stopZzzInterval(); stopPerchCheck();
@@ -830,6 +831,15 @@ async function setMainVisible(on: boolean, why: string) {
       return true;
     } else {
       await win.hide();
+      // 验证隐藏真的生效(RDP/系统竞速下有概率失败 = 鸟叠在全屏视频上,无兜底)
+      let gone = false;
+      try { gone = !(await win.isVisible()); } catch { /* */ }
+      if (!gone) {
+        emit("log", `vis: 隐藏未生效(${why}),重试`);
+        await win.hide();
+        try { gone = !(await win.isVisible()); } catch { /* */ }
+        if (!gone) { warnOnce("hide 失败 " + why, new Error("仍可见")); return false; }
+      }
       emit("log", `vis: 隐藏 ✓ (${why})`);
       return true;
     }

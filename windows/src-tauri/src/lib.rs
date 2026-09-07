@@ -125,19 +125,6 @@ fn diag_run(app: &tauri::AppHandle) {
     let _ = open::that(&path);
 }
 
-/// 替用户"点显示":主窗右下角脚踩任务栏+显示+置顶(Rust 直操,
-/// 隐藏时点菜单动作的前置步骤——JS 定时器在隐藏窗口中会被挂起,不可依赖)。
-#[tauri::command]
-fn show_window_bottom_right(app: tauri::AppHandle) {
-    if let Some(w) = app.get_webview_window("main") {
-        let _ = crate::windows::recall_show(&w);   // 光标屏右下角+显示+NOACTIVATE
-    }
-    if let Some(w) = app.get_webview_window("poop") {
-        crate::windows::show_no_activate(&w);
-    }
-    let _ = assert_z_cmd(app.clone());
-}
-
 /// JS 动画守护:死亡下坠等"故意出屏"的动画期间,出屏看门狗不找回(否则动画
 /// 中途被拽回,与随后的 hide 竞速 = 鸟闪现/消失乱跳)。4s 覆盖 0.85s 下坠绰绰有余。
 /// 动画守护到期时刻(共享原子:anim_guard 在 IPC 线程设置,看门狗线程读取
@@ -193,42 +180,56 @@ fn diag_append(payload: String) {
 /// 界面语言:系统首选语言 zh 开头 → 中文,否则英文。
 /// 用 reg.exe 查注册表(纯 std + CommandExt,不依赖 windows crate feature——
 /// Win32_Globalization 在 CI 上 feature 门控行为不稳,E0433)。
+/// 结果缓存(spawn reg.exe 有成本,build_menu 每次重建都问一遍;系统语言运行期不会变)。
 fn is_zh() -> bool {
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        use std::process::Command;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        let out = Command::new("reg")
-            .args(["query", r"HKCU\Control Panel\International", "/v", "LocaleName"])
-            .creation_flags(CREATE_NO_WINDOW)
-            .output();
-        if let Ok(o) = out {
-            return String::from_utf8_lossy(&o.stdout).to_lowercase().contains("zh-");
+    static CACHED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *CACHED.get_or_init(|| {
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            use std::process::Command;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            let out = Command::new("reg")
+                .args(["query", r"HKCU\Control Panel\International", "/v", "LocaleName"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .output();
+            if let Ok(o) = out {
+                return String::from_utf8_lossy(&o.stdout).to_lowercase().contains("zh-");
+            }
+            false
         }
-        false
-    }
-    #[cfg(not(windows))]
-    {
-        // dev(mac/linux):看 LANG/LC_ALL
-        std::env::var("LANG")
-            .or_else(|_| std::env::var("LC_ALL"))
-            .map(|v| v.to_lowercase().starts_with("zh"))
-            .unwrap_or(false)
-    }
+        #[cfg(not(windows))]
+        {
+            // dev(mac/linux):看 LANG/LC_ALL
+            std::env::var("LANG")
+                .or_else(|_| std::env::var("LC_ALL"))
+                .map(|v| v.to_lowercase().starts_with("zh"))
+                .unwrap_or(false)
+        }
+    })
 }
 
 // UI 状态:托盘勾选/语言的数据源(前端启动时 ui-state 同步,菜单切换时更新)
+// theme/lang 用 String:Box::leak 方案每次切语言/主题泄漏一小块,没有收益
 struct UiState {
-    theme: &'static str,
+    theme: String,
     activity: f64,
     speed: f64,
     sound: bool,
-    lang: &'static str,   // system / zh / en
+    lang: String,   // system / zh / en
 }
 static UI: std::sync::Mutex<UiState> = std::sync::Mutex::new(UiState {
-    theme: "flat", activity: 0.5, speed: 1.0, sound: true, lang: "system",
+    theme: String::new(), activity: 0.5, speed: 1.0, sound: true, lang: String::new(),
 });
+/// 启动即填默认值(const fn 不便时用 once 兜底):theme/lang 与原 'static 字面量默认一致
+static UI_DEFAULTS_INIT: std::sync::Once = std::sync::Once::new();
+fn ui_defaults_init() {
+    UI_DEFAULTS_INIT.call_once(|| {
+        let mut ui = UI.lock().unwrap();
+        if ui.theme.is_empty() { ui.theme = "flat".into(); }
+        if ui.lang.is_empty() { ui.lang = "system".into(); }
+    });
+}
 
 /// 菜单"检查更新"是否有新版标注(自动检查静默发现新版 → 只标菜单,点击才弹详情)
 static UPDATE_BADGE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -281,7 +282,8 @@ fn tray_pin_guidance(app: tauri::AppHandle) {
 fn tray_pin_guidance(_app: tauri::AppHandle) {}
 
 fn ui_lang_zh() -> bool {
-    match UI.lock().unwrap().lang {
+    let l = UI.lock().unwrap().lang.clone();
+    match l.as_str() {
         "zh" => true,
         "en" => false,
         _ => is_zh(),
@@ -293,6 +295,7 @@ type MenuResult = tauri::Result<tauri::menu::Menu<tauri::Wry>>;
 /// 构建托盘菜单(Mac 同构:动作平铺 + 设置子菜单带勾选)。
 fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
     use tauri::menu::{Menu, MenuItem, CheckMenuItem, Submenu, IsMenuItem};
+    ui_defaults_init();   // 静态 String 只能 const 初始化为空,这里补默认值(幂等)
     let zh = ui_lang_zh();
     let ui = UI.lock().unwrap();
 
@@ -340,10 +343,6 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
     let about = MenuItem::with_id(app, "about", t("关于 翡", "About Fei"), true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", t("退出 翡", "Quit Fei"), true, None::<&str>)?;
 
-    let menu = Menu::with_items(app, &[
-        &call, &fish, &sing, &perch, &peck, &show, &repair,
-    ])?;
-    let _ = menu; // 分隔符+设置区需要 append;改用一次性 with_items 全量
     let items: Vec<&dyn IsMenuItem<tauri::Wry>> = vec![
         &call, &fish, &sing, &perch, &peck, &show, &repair, &diag,
         &m_theme, &sound, &autostart, &settings, &checkupd, &about, &quit,
@@ -397,7 +396,7 @@ pub fn run() {
         
 
 .invoke_handler(tauri::generate_handler![
-        open_url, set_update_badge,front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, diag_append, assert_z_cmd, show_window_bottom_right, anim_guard])
+        open_url, set_update_badge,front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, diag_append, assert_z_cmd, anim_guard])
         .setup(|app| {
             crate::system::setup_power(app.handle().clone());   // 睡眠/锁屏/唤醒/会话 → emit sleep/wake/session-change
             // 设置窗主动拉状态(打开时):回语言/自启
@@ -405,7 +404,7 @@ pub fn run() {
                 let app2 = app.handle().clone();
                 app.listen("settings-need-state", move |_| {
                     let (lang, auto) = {
-                        let l = UI.lock().unwrap().lang;
+                        let l = UI.lock().unwrap().lang.clone();
                         use tauri_plugin_autostart::ManagerExt;
                         (l, app2.autolaunch().is_enabled().unwrap_or(false))
                     };
@@ -419,7 +418,7 @@ pub fn run() {
                 app.listen("lang", move |event| {
                     let l = event.payload().trim_matches('"').to_string();
                     if matches!(l.as_str(), "zh" | "en" | "system") {
-                        UI.lock().unwrap().lang = Box::leak(l.clone().into_boxed_str());
+                        UI.lock().unwrap().lang = l.clone();
                         prefs_set("lang", &l);
                         crate::kflog::kflog(&format!("lang → {l}"));
                         refresh_menu(&app2);
@@ -498,7 +497,7 @@ pub fn run() {
                 let p: serde_json::Value = serde_json::from_str(event.payload()).unwrap_or_default();
                 let mut ui = UI.lock().unwrap();
                 if let Some(t) = p.get("theme").and_then(|v| v.as_str()) {
-                    ui.theme = match t { "clay" => "clay", "pixel" => "pixel", "neon" => "neon", "ink" => "ink", "watercolor" => "watercolor", _ => "flat" };
+                    ui.theme = match t { "clay" => "clay", "pixel" => "pixel", "neon" => "neon", "ink" => "ink", "watercolor" => "watercolor", _ => "flat" }.to_string();
                 }
                 if let Some(v) = p.get("activity").and_then(|v| v.as_f64()) { ui.activity = v; }
                 if let Some(v) = p.get("speed").and_then(|v| v.as_f64()) { ui.speed = v; }
@@ -517,7 +516,7 @@ pub fn run() {
             // 启动恢复持久化的语言(之前重启丢回跟随系统)
             if let Some(l) = prefs_get("lang") {
                 if matches!(l.as_str(), "zh" | "en" | "system") {
-                    UI.lock().unwrap().lang = Box::leak(l.into_boxed_str());
+                    UI.lock().unwrap().lang = l;
                 }
             }
             // 托盘:子菜单化菜单(勾选当前项),左键直接打开
@@ -561,7 +560,7 @@ pub fn run() {
                             }
                             // 设置窗回推当前值(主窗推行为值;这里补语言/自启)
                             let (lang, auto) = {
-                                let l = UI.lock().unwrap().lang;
+                                let l = UI.lock().unwrap().lang.clone();
                                 use tauri_plugin_autostart::ManagerExt;
                                 (l, app.autolaunch().is_enabled().unwrap_or(false))
                             };
@@ -575,13 +574,6 @@ pub fn run() {
                             }
                         }
                         "quit" => app.exit(0),
-                        "login" => {
-                            use tauri_plugin_autostart::ManagerExt;
-                            let m = app.autolaunch();
-                            let on = m.is_enabled().unwrap_or(false);
-                            let _ = if on { m.disable() } else { m.enable() };
-                            refresh_menu(&handle);
-                        }
                         "sound" => {
                             let mut ui = UI.lock().unwrap();
                             ui.sound = !ui.sound;
@@ -604,27 +596,9 @@ pub fn run() {
                         }
                         _ if id.starts_with("theme_") => {
                             let t = id.trim_start_matches("theme_").to_string();
-                            UI.lock().unwrap().theme = Box::leak(t.into_boxed_str());
-                            let _ = app.emit("theme", id.trim_start_matches("theme_"));
+                            UI.lock().unwrap().theme = t.clone();
+                            let _ = app.emit("theme", &t);
                             refresh_menu(&handle);
-                        }
-                        _ if id.starts_with("act_") => {
-                            let v = match id.as_str() { "act_low" => 0.2, "act_high" => 0.9, _ => 0.5 };
-                            UI.lock().unwrap().activity = v;
-                            let _ = app.emit("setting", format!("activity:{}", v));
-                            refresh_menu(&handle);
-                        }
-                        _ if id.starts_with("spd_") => {
-                            let v = match id.as_str() { "spd_slow" => 0.7, "spd_fast" => 1.3, _ => 1.0 };
-                            UI.lock().unwrap().speed = v;
-                            let _ = app.emit("setting", format!("speed:{}", v));
-                            refresh_menu(&handle);
-                        }
-                        _ if id.starts_with("lang_") => {
-                            let l = match id.as_str() { "lang_zh" => "zh", "lang_en" => "en", _ => "system" };
-                            UI.lock().unwrap().lang = l;
-                            prefs_set("lang", l);   // 持久化(macOS UserDefaults 同款:重启不丢)
-                            refresh_menu(&handle);   // 整菜单换语言
                         }
                         _ => { let _ = app.emit("menu", id); }
                     }

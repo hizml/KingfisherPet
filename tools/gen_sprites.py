@@ -70,6 +70,20 @@ THEME_PALETTES = {
         "HEART":    (255, 60, 160, 255),
         "ZCOLOR":   (0, 229, 255, 255),
         "BELLY":    (255, 90, 180, 255),    # 品红腹
+        # 道具/蛋/嘴腔补齐(评审 R6:此前 13 键 flat 残留,米色蛋/棕枝/灰鱼破坏双色设计)
+        "EGG_SHELL":(16, 16, 34, 255),      # 深蓝底
+        "EGG_SPCK": (0, 229, 255, 255),     # 青斑点/裂纹纹
+        "FISH_BODY":(0, 229, 255, 255),     # 青 鱼
+        "FISH_DARK":(255, 50, 160, 255),    # 品红 鳍/眼
+        "BRANCH":   (24, 28, 44, 255),      # 暗青枝
+        "BRANCH_L": (40, 46, 70, 255),
+        "BRANCH_D": (14, 16, 28, 255),
+        "LEAF":     (0, 200, 220, 255),     # 青 叶
+        "LEAF_D":   (0, 150, 170, 255),
+        "MOUTH":    (255, 50, 160, 255),    # 品红口腔(随主色)
+        "TONGUE":   (255, 120, 190, 255),
+        "SWEAT":    (0, 229, 255, 255),     # 青 汗滴
+        "BLUSH":    (255, 90, 180, 255),    # 品红腮红
     },
     "ink": {
         "TEAL":     (170, 162, 154, 255),   # 中亮→post_ink 渐变成淡墨,不再纯黑
@@ -96,6 +110,11 @@ THEME_PALETTES = {
         "BRANCH_D": (48, 42, 38, 255),
         "LEAF":     (78, 88, 80, 255),
         "LEAF_D":   (54, 64, 56, 255),
+        # 嘴腔/腮红墨化(评审 R7:此前 flat 橙红残留,水墨帧嘴腔高饱和橙红违背设计)
+        "MOUTH":    (58, 52, 48, 255),
+        "TONGUE":   (92, 70, 64, 255),
+        "SWEAT":    (120, 120, 120, 255),
+        "BLUSH":    (150, 120, 112, 255),   # 淡墨腮
     },
     "watercolor": {
         "TEAL":     (60, 150, 165, 235),
@@ -108,6 +127,20 @@ THEME_PALETTES = {
         "LEG":      (210, 100, 70, 230),
         "HEART":    (225, 100, 120, 230),
         "ZCOLOR":   (120, 170, 180, 230),
+        # 道具/蛋/嘴腔补齐(评审 R6 同款问题:漏键 flat 残留;水彩系低饱和柔和)
+        "EGG_SHELL":(248, 242, 228, 235),
+        "EGG_SPCK": (150, 130, 105, 235),
+        "FISH_BODY":(110, 160, 170, 235),
+        "FISH_DARK":(70, 105, 115, 235),
+        "BRANCH":   (150, 120, 95, 235),
+        "BRANCH_L": (175, 145, 115, 235),
+        "BRANCH_D": (115, 90, 70, 235),
+        "LEAF":     (130, 165, 125, 235),
+        "LEAF_D":   (95, 130, 95, 235),
+        "MOUTH":    (215, 130, 100, 235),
+        "TONGUE":   (230, 150, 130, 235),
+        "SWEAT":    (150, 190, 200, 230),
+        "BLUSH":    (235, 160, 140, 220),
     },
 }
 
@@ -519,26 +552,17 @@ def post_ink(img):
             a = img.getpixel((x, y))[3]
             if a < 30:
                 continue
-            # 判定是否橙色系(腹/喙):R 高、G/B 低
-            is_orange = r > 150 and r - b > 60
-            if is_orange:
-                # 保留一抹橙,但稍微压暗、加水墨边缘抖动
-                jitter = rnd.random() * 20 - 10
-                op[x, y] = (max(0, min(255, int(r + jitter))),
-                            max(0, min(255, int(g * 0.7))),
-                            max(0, min(255, int(b * 0.6))),
-                            a)
+            # 转黑墨:亮度阈值 + 抖动(评审 R7:原"保留一抹橙"分支在调色板墨化后
+            # 永不命中喙/腹,只漏放 flat 橙红的嘴腔/腮红——调色板已补键,分支删除)
+            lum = 0.299*r + 0.587*g + 0.114*b
+            # 亮区(白颊)留白,暗区转黑
+            if lum > 200:
+                op[x, y] = (235, 232, 225, a)
             else:
-                # 转黑墨:亮度阈值 + 抖动
-                lum = 0.299*r + 0.587*g + 0.114*b
-                # 亮区(白颊)留白,暗区转黑
-                if lum > 200:
-                    op[x, y] = (235, 232, 225, a)
-                else:
-                    jitter = rnd.random() * 20 - 10
-                    # 墨分五色:按亮度渐变成墨阶(亮→淡墨,暗→浓墨),不再二值纯黑
-                    v = max(0, min(150, int(lum * 0.55) + int(jitter)))
-                    op[x, y] = (v, v, v, a)
+                jitter = rnd.random() * 20 - 10
+                # 墨分五色:按亮度渐变成墨阶(亮→淡墨,暗→浓墨),不再二值纯黑
+                v = max(0, min(150, int(lum * 0.55) + int(jitter)))
+                op[x, y] = (v, v, v, a)
     # 边缘墨晕:轻微模糊后 alpha 衰减叠加
     ink_bleed = out.filter(ImageFilter.GaussianBlur(0.8))
     return ink_bleed
@@ -986,6 +1010,15 @@ def render_all_frames(theme, pal, post):
     ])
 
 
+# 评审 R6 防回归:任何主题漏覆盖 ink 已覆盖的键(道具/嘴腔类)→ 渲染期才炸,这里启动即拦
+_cover_keys = set(THEME_PALETTES["ink"]) - {"TEAL", "TEAL_D", "ORANGE", "ORANGE_D", "WHITE",
+    "BEAK", "BEAK_D", "BEAK_HI", "EYE", "LEG", "HEART", "ZCOLOR", "BELLY"}
+for _t, _pal in THEME_PALETTES.items():
+    if _t in ("flat", "clay", "pixel"):
+        continue   # 这三主题走基础调色板/后处理,不做键覆盖
+    _missing = _cover_keys - set(_pal)
+    assert not _missing, f"主题 {_t} 漏覆盖道具/嘴腔色键(将 flat 残留进成品): {_missing}"
+
 def main():
     os.makedirs(OUT_BASE, exist_ok=True)
     for theme in THEME_NAMES:
@@ -997,104 +1030,25 @@ def main():
 
 def gen_colors():
     """每个主题导出 colors.json:特效(屎/zzz/音符/太阳/水花/裂纹)用色。
-    色值从主题调色板推导,Swift 侧 ThemeColors 加载后特效自动跟主题。
+    评审 R8 单源化:全部由 _effect_palette 推导——与烘焙进特效 PNG 的颜色同源。
+    此前这里是一套手写表,与 PNG 侧已互相矛盾(neon 音符品红vs橙、ink 太阳墨vs朱红)。
     格式:[r,g,b,a] 0-255。"""
-    # 特效需要的色键 → 从调色板哪个色推导
     def theme_colors(theme):
         pal = palette_for(theme)
-        def rgb(key):
-            return [pal[key][0], pal[key][1], pal[key][2], pal[key][3]]
-        # 特效色定义(每个主题不同)
-        if theme == "neon":
-            return {
-                # 屎:霓虹下用青/品红发光
-                "poop_white": rgb("WHITE"),
-                "poop_off":   [0, 200, 255, 255],
-                "poop_dark":  [255, 60, 160, 255],
-                # zzz:青色发光
-                "zzz_fill":   [220, 245, 255, 240],
-                "zzz_stroke": [0, 229, 255, 230],
-                # 音符:橙
-                "note":       [255, 140, 40, 255],
-                # 太阳:橙黄发光
-                "sun_ray":    [255, 160, 40, 235],
-                "sun_disk":   [255, 200, 80, 255],
-                # 水花:青
-                "splash":     [0, 229, 255, 230],
-                # 裂纹:青/橙发光
-                "crack_dark": [0, 200, 255, 180],
-                "crack_light":[255, 140, 40, 200],
-            }
-        elif theme == "ink":
-            return {
-                "poop_white": [240, 238, 232, 255],
-                "poop_off":   [200, 195, 185, 255],
-                "poop_dark":  [60, 55, 45, 255],
-                "zzz_fill":   [240, 238, 232, 240],
-                "zzz_stroke": [40, 40, 40, 220],
-                "note":       [180, 60, 30, 235],
-                "sun_ray":    [200, 70, 30, 200],
-                "sun_disk":   [220, 90, 40, 235],
-                "splash":     [200, 200, 195, 200],
-                "crack_dark": [10, 10, 10, 180],
-                "crack_light":[180, 175, 165, 150],
-            }
-        elif theme == "pixel":
-            return {
-                "poop_white": [253, 246, 230, 255],
-                "poop_off":   [200, 196, 180, 255],
-                "poop_dark":  [90, 110, 60, 255],
-                "zzz_fill":   [200, 240, 250, 240],
-                "zzz_stroke": [40, 100, 110, 230],
-                "note":       [40, 140, 150, 255],
-                "sun_ray":    [240, 200, 60, 235],
-                "sun_disk":   [250, 220, 100, 255],
-                "splash":     [240, 250, 255, 230],
-                "crack_dark": [20, 20, 20, 180],
-                "crack_light":[250, 250, 240, 200],
-            }
-        elif theme == "watercolor":
-            return {
-                "poop_white": [252, 248, 238, 235],
-                "poop_off":   [220, 215, 200, 225],
-                "poop_dark":  [120, 130, 90, 225],
-                "zzz_fill":   [180, 220, 225, 220],
-                "zzz_stroke": [90, 140, 150, 200],
-                "note":       [150, 180, 190, 225],
-                "sun_ray":    [240, 200, 130, 215],
-                "sun_disk":   [245, 215, 150, 230],
-                "splash":     [200, 225, 230, 210],
-                "crack_dark": [80, 70, 80, 160],
-                "crack_light":[240, 235, 225, 140],
-            }
-        elif theme == "clay":
-            return {
-                "poop_white": [253, 246, 230, 255],
-                "poop_off":   [225, 220, 205, 255],
-                "poop_dark":  [110, 120, 70, 255],
-                "zzz_fill":   [220, 240, 245, 240],
-                "zzz_stroke": [120, 160, 170, 220],
-                "note":       [80, 170, 180, 255],
-                "sun_ray":    [245, 190, 70, 235],
-                "sun_disk":   [250, 210, 110, 255],
-                "splash":     [245, 250, 255, 230],
-                "crack_dark": [30, 30, 30, 180],
-                "crack_light":[255, 250, 240, 200],
-            }
-        else:  # flat
-            return {
-                "poop_white": [253, 246, 230, 255],
-                "poop_off":   [220, 224, 209, 255],
-                "poop_dark":  [107, 122, 66, 255],
-                "zzz_fill":   [245, 250, 247, 242],
-                "zzz_stroke": [100, 130, 138, 230],
-                "note":       [80, 175, 185, 255],
-                "sun_ray":    [255, 204, 64, 235],
-                "sun_disk":   [255, 219, 97, 255],
-                "splash":     [255, 255, 255, 230],
-                "crack_dark": [13, 13, 13, 153],
-                "crack_light":[255, 255, 255, 178],
-            }
+        ep = _effect_palette(theme, pal)
+        def c(rgba): return [rgba[0], rgba[1], rgba[2], rgba[3]]
+        dark = pal.get("BEAK_D", (13, 13, 13))
+        crack_dark = [dark[0], dark[1], dark[2], 153]
+        crack_light = c(pal["WHITE"])[:3] + [178]
+        if theme == "ink":
+            crack_light = [185, 180, 170, 150]   # 墨系亮纹用淡墨
+        return {
+            "poop_white": c(ep["poop_w"]), "poop_off": c(ep["poop_o"]), "poop_dark": c(ep["poop_d"]),
+            "zzz_fill": c(ep["zzz_fill"]), "zzz_stroke": c(ep["zzz_stroke"]),
+            "note": c(ep["note"]), "sun_ray": c(ep["sun_ray"]), "sun_disk": c(ep["sun_disk"]),
+            "splash": c(ep["splash"]),
+            "crack_dark": crack_dark, "crack_light": crack_light,
+        }
 
     for theme in THEME_NAMES:
         out = os.path.join(OUT_BASE, theme, "colors.json")

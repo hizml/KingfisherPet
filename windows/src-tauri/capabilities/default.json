@@ -15,6 +15,7 @@
     "core:window:allow-current-monitor",
     "core:window:allow-outer-position",
     "core:window:allow-set-position",
+    "core:window:allow-set-size",
     "core:window:allow-set-ignore-cursor-events",
     "core:window:allow-start-dragging",
     "core:webview:allow-create-webview-window",
