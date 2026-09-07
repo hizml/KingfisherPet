@@ -709,7 +709,7 @@ final class Behavior: PetViewDelegate {
     var isSleeping: Bool { userSleeping }   // 锁屏/睡眠中(勿扰巡检需跳过)
 
     // MARK: - 勿扰(全屏应用):静默隐身——不播任何动画(动画本身也会盖在视频上)
-    private(set) var dndActive = false   // 勿扰中(守卫:唤醒/破壳都不能把鸟拉回全屏上)
+    private(set) var dndActive = false   // 单一权威(AppDelegate 派生读,不再自持副本)   // 勿扰中(守卫:唤醒/破壳都不能把鸟拉回全屏上)
     func enterDnd() {
         dndActive = true
         dragging = false   // 拖拽中进勿扰:mouseUp 已随窗口 orderOut 丢失,不清则树枝永不再现(评审 A8)

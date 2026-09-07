@@ -1,3 +1,29 @@
+    private func updateAlert(latest: String?, current: String) {
+        let a = NSAlert()
+        if latest == nil {
+            a.messageText = Language.t("update.failed")
+            a.informativeText = Language.t("update.failedBody")
+            a.addButton(withTitle: Language.t("update.openReleases"))
+            if a.runModal() == .alertFirstButtonReturn {
+                NSWorkspace.shared.open(URL(string: "https://github.com/hizml/KingfisherPet/releases")!)
+            }
+            return
+        }
+        if latest == "v" + current {
+            a.messageText = Language.t("update.latest")
+            a.informativeText = "v\(current)"
+            _ = a.runModal()
+        } else {
+            a.messageText = Language.t("update.found") + " \(latest!)"
+            a.informativeText = String(format: Language.t("update.downloadBody"), current)
+            a.addButton(withTitle: Language.t("update.download"))
+            a.addButton(withTitle: Language.t("update.later"))
+            if a.runModal() == .alertFirstButtonReturn {
+                NSWorkspace.shared.open(URL(string: "https://github.com/hizml/KingfisherPet/releases/latest")!)
+            }
+        }
+    }
+
 import AppKit
 import ApplicationServices
 import ServiceManagement
@@ -176,7 +202,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 看门狗:定期记录资源占用。卡死时日志里有铁证。
     // MARK: - 勿扰模式(全屏应用隐身 / 放音静音)
-    private var dndActive = false
     private var fsOnStreak = 0, fsOffStreak = 0
 
     private var dndSkipLast = ""
@@ -193,12 +218,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 观测脚手架门控:排障期才开(生产每 30s 一次 AX 逐窗查询+日志是纯负载)
         if !fs && dndDiagTick % 10 == 0 && ProcessInfo.processInfo.environment["KF_DND_DIAG"] == "1" { fsDiagSnapshot() }
         if fs { fsOnStreak += 1; fsOffStreak = 0 } else { fsOffStreak += 1; fsOnStreak = 0 }
-        if !dndActive && fsOnStreak >= 2 && active {
-            dndActive = true
+        if behavior?.dndActive != true && fsOnStreak >= 2 && active {
             kfLog("dnd: 全屏应用,鸟隐身+静音")
             behavior?.enterDnd()
-        } else if dndActive && fsOffStreak >= 2 {
-            dndActive = false
+        } else if behavior?.dndActive == true && fsOffStreak >= 2 {
             kfLog("dnd: 全屏退出,恢复")
             if active { behavior?.exitDnd() }   // 鸟隐藏时只清标志,不强制显示(下次 hatchIn 自然复活)
         }
