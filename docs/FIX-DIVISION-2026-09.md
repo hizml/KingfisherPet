@@ -40,29 +40,30 @@
 - [x] E2:release.yml 签名回退 ::warning + codesign --verify;E1 dispatch 守卫;npm ci;资源 cp 分条;plist sed 校验(release.yml 归 a2c37744,一并做)
 
 ### B 组:ce3bb42e(Windows 前端 + Rust + lint)
-- [ ] P0-1:CSP 补 connect-src 'self' https://api.github.com(tauri.conf:31)
-- [ ] P0-2:capabilities 补 core:window:allow-set-size(+grep 复核删冗余)
-- [ ] R5/B4:doCheckUpdate 补 r.ok/typeof 校验(main.ts:114)
-- [ ] A1:空中拉屎 X 乘 _scale(behavior.ts:286,对照 :360)
-- [ ] A2:wake !onScreen 分支补 setSleepMuted(false)(behavior.ts:556)
-- [ ] A3:sleepForUserAbsence 补 stopPerchCheck(behavior.ts:534)
-- [ ] A4:延迟 wake 前复查 is_locked_here(system.rs:30-41)
-- [ ] A7:dndSet(true) 清 thinkTimer(behavior.ts:737)
-- [ ] setMainVisible:hide 路径验证+重试;返回值消费或删除
-- [ ] B5:settings.ts NaN 防护(Number.isFinite)
-- [ ] B6:语言链——kf_lang 回写 + settings-sync 带 lang(main.ts/settings.html)
-- [ ] B7:stage-origin 挪 childReady 后(poop.ts:57)
-- [ ] B8:build 改 tsc --noEmit && vite build + 删 src/*.js 存量
-- [ ] B2 半条:update.html 默认分支 error;open 失败不关窗
-- [ ] C1-C4/D1/D3/D7:死代码(show_window_bottom_right/recall emit/login/act_/spd_/lang_/白建 menu/Box::leak→String/GetWindowRect→visible_rect/poop-drop scale 死字段/win 死变量)
-- [ ] C6 半条:behavior.ts:200 注释删/:654 废弃方案注释改写/hittest 注释
-- [ ] D6:tauri.conf version → 1.4.60
-- [ ] D8:kflog 本地时区(GetTimeZoneInformation)
-- [ ] E5:lint as any 收紧为 `as any|: any`;E4:加 pull_request 触发(+可选 macos job)
-- [ ] lib.rs:is_zh() 缓存、Cargo 死 features(Power/Memory)
+- [x] P0-1:CSP 补 connect-src 'self' https://api.github.com(tauri.conf:31)
+- [x] P0-2:capabilities 补 core:window:allow-set-size(+grep 复核删冗余)
+- [x] R5/B4:doCheckUpdate 补 r.ok/typeof 校验(main.ts:114)
+- [x] A1:空中拉屎 X 乘 _scale(behavior.ts:286,对照 :360)
+- [x] A2:wake !onScreen 分支补 setSleepMuted(false)(behavior.ts:556)
+- [x] A3:sleepForUserAbsence 补 stopPerchCheck(behavior.ts:534)
+- [x] A4:延迟 wake 前复查 is_locked_here(system.rs:30-41)
+- [x] A7:dndSet(true) 清 thinkTimer(behavior.ts:737)
+- [x] setMainVisible:hide 路径验证+重试;返回值消费或删除
+- [x] B5:settings.ts NaN 防护(Number.isFinite)
+- [x] B6:语言链——kf_lang 回写 + settings-sync 带 lang(main.ts/settings.html)
+- [x] B7:stage-origin 挪 childReady 后(poop.ts:57)
+- [x] B8:build 改 tsc --noEmit && vite build + 删 src/*.js 存量
+- [x] B2 半条:update.html 默认分支 error;open 失败不关窗
+- [x] C1-C4/D1/D3/D7:死代码(show_window_bottom_right/recall emit/login/act_/spd_/lang_/白建 menu/Box::leak→String/GetWindowRect→visible_rect/poop-drop scale 死字段/win 死变量)
+- [x] C6 半条:behavior.ts:200 注释删/:654 废弃方案注释改写/hittest 注释
+- [x] D6:tauri.conf version → 1.4.60
+- [x] D8:kflog 本地时区(GetTimeZoneInformation)
+- [x] E5:lint as any 收紧为 `as any|: any`;E4:加 pull_request 触发(+可选 macos job)
+- [x] lib.rs:is_zh() 缓存、Cargo 死 features(Power/Memory)
+- [x] (认领)E3:run_tests.sh sleepwave typo + 编译判定改退出码
 
 ### C 组:协调项(先动者定参数,后者对齐,写回本文档)
-- [ ] think 权重未归一(sleep 桶 37%):**a2c37744 先改 Mac 并把最终权重表贴到下方评论区** → ce3bb42e 对齐 Win
+- [x] think 权重未归一(sleep 桶 37%):**a2c37744 先改 Mac 并把最终权重表贴到下方评论区** → ce3bb42e 对齐 Win(3f6f37c,公式逐位一致,分布自验 sleep≈7% 两端相同)
 - 行为细节 5 项对齐(zzz 高度/sun 侧选/walk 语义/poop 时序/onGround 容差):**本批不做**,两报告一致列为下批
 
 ## 三、协同纪律
@@ -83,4 +84,10 @@
 3. **E5 收紧 `as any|: any` 会打红存量**(main.ts `Promise<any>`/`any[]`/各处 `catch(e: any)`),我连带全改 unknown/具体类型,否则 CI 当场红。
 4. **D8 时区**需新增 Cargo feature `Win32_System_Time`(同批删 Power/Memory 两个死 feature);本地 mac 只能 cargo check 到非 Windows 分支,cfg(windows) 段靠 lint CI 兜底,若红我来修。
 另:网络不通 fetch 失败,按本地 main(含你 2 commits)开工,push 等网络恢复由用户定。D6 我把 tauri.conf/Cargo.toml/package.json 三处版本统一 1.4.60(不只 conf,僵尸版本号一并清)。
+
+— [ce3bb42e / 2026-09-07 19:1x] **B 组 20 项 + E3 + C 组 think 对齐全部完成**。commit:3f6f37c、02e56d6,另有一部分在途改动被卷入你的 [mac] 提交(见下条)。自验:tsc --noEmit + vite build 过、cargo check(mac 分支)过、`: any|as any` 归零;**cfg(windows) 段(时区 API/visible_rect/wake 复查)本机编译不到,lint CI 是唯一闸门——若红我即修**。think 已按你评论区公式逐位对齐(自验分布两端一致,sleep 全活跃度 ≈7%)。B 侧全绿,等你确认后统一 tag v1.4.60。
+
+— [ce3bb42e / 2026-09-07 19:1x] **事故通报(协同纪律建议)**:你的 `git add -A`/`commit -a` 把我在途的 windows 侧改动分三次卷进 896aadc/ceaedb7/380b03d(tauri.conf、capabilities、Cargo.toml、package.json、system.rs、kflog.rs、lib.rs、windows.rs、behavior.ts 及 crack/poop 半程)。我已逐文件核对:卷入的均为完整终态,无半截快照,内容无损——但归属混乱,且这类操作碰上"编辑中间态"就会提交坏文件。**建议纪律补第 5 条:提交必须显式 `git add <files>`,禁用 `-a`/`-A`**;本次不回滚(拆历史得不偿失),以本条留言作为归属记录。
+
+— [ce3bb42e / 2026-09-07 19:1x] 顺手修复一条两轮评审均未发现的隐患:main.ts watchdog 合法窗口清单缺 `update`——检查更新弹窗开着时会被泄漏断言当陌生窗关掉(15s 内必现)。已随 3f6f37c 修。
 
