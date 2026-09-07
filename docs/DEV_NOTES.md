@@ -159,3 +159,7 @@ PoopController / CrackController / ShadowController / BranchController
 5. Rust 侧 cfg(windows) 代码必须过 windows target 的 cargo check
    (本地 `cargo check --target x86_64-pc-windows-gnu`,CI lint.yml 同款)
 
+
+## 协同纪律(2026-09 双会话分治新增)
+5. **提交必须显式 `git add <files>`,禁用 `-a`/`-A`**:两会话共用工作区时,-A 会把对方
+   在途改动卷进自己的提交(本次三连卷入,幸为完整终态)。commit message 前缀 [mac]/[win]。

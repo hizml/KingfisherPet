@@ -25,7 +25,6 @@ final class Behavior: PetViewDelegate {
     private let feetOffset: CGFloat = feetOffsetConst   // 单一事实源(评审 C7)
     /// 脚位基准:Behavior/Branch/PetView 共用(原版 27,视觉校准为 26)
     static let feetOffsetConst: CGFloat = 26
-    private let headOffset: CGFloat = 72   // 头距窗口顶(sprite 实测,预留)
 
     /// 按全局动画速度缩放一段时长:速度越快,实际时长越短(1.5×→除以 1.5)。
     private func sp(_ secs: TimeInterval) -> TimeInterval { secs / Settings.shared.speed }

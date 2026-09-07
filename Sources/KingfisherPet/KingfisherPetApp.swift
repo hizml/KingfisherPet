@@ -105,8 +105,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             branchCtl.start()
             petController.behavior.branch = branchCtl
             crackCtl = CrackController()
-            crackCtl.start()
             crackCtl.bird = win
+            crackCtl.start()   // bird 先赋值再 start:首帧 sizeToScreen 才能按鸟所在屏布局(评审:副屏裂纹错位)
             petController.behavior.crack = crackCtl
             poopCtl = PoopController()
             poopCtl.start()
@@ -190,7 +190,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 铺观测定位:每 10 拍记前台 App/窗口数/每窗属性原始错误码,切一次全屏即可对账)
         let fs = fullscreenAppOnBirdScreen(behavior?.birdScreen)
         dndDiagTick += 1
-        if !fs && dndDiagTick % 10 == 0 { fsDiagSnapshot() }
+        // 观测脚手架门控:排障期才开(生产每 30s 一次 AX 逐窗查询+日志是纯负载)
+        if !fs && dndDiagTick % 10 == 0 && ProcessInfo.processInfo.environment["KF_DND_DIAG"] == "1" { fsDiagSnapshot() }
         if fs { fsOnStreak += 1; fsOffStreak = 0 } else { fsOffStreak += 1; fsOnStreak = 0 }
         if !dndActive && fsOnStreak >= 2 && active {
             dndActive = true

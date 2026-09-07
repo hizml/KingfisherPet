@@ -36,7 +36,6 @@ final class PetView: NSView {
     // 拖拽状态
     private var mouseDownPoint = CGPoint.zero
     private var mouseDownWindowOrigin = CGPoint.zero
-    private var mouseDownTime: CFTimeInterval = 0
     private var didDrag = false
     private var dragScreen: NSScreen?    // 拖拽起点所在屏(多屏跟随)
 
@@ -168,7 +167,6 @@ final class PetView: NSView {
     override func mouseDown(with event: NSEvent) {
         mouseDownPoint = NSEvent.mouseLocation
         mouseDownWindowOrigin = window?.frame.origin ?? .zero
-        mouseDownTime = CACurrentMediaTime()
         didDrag = false
     }
 
