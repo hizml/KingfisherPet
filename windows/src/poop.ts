@@ -7,7 +7,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { settings } from "./settings";
 import { warnOnce } from "./log";
 
-let win: WebviewWindow | null = null;
 let ready: Promise<void> | null = null;
 export let stageError: string | null = null;   // 创建失败原因(诊断用;之前静默吞掉 → 树枝/阴影/屎全没了也没人知道)
 export let stageHandshaken = false;            // 子页面是否真的在听(诊断:页面加载成功与否)
@@ -52,36 +51,38 @@ async function ensure() {
         width: Math.ceil(rw), height: Math.ceil(rh),
         x: Math.round(ox) - OFF, y: Math.round(oy),
       });
-      win = w0;
       // 告诉子窗舞台原点:body 平移回 (0,0) 语义,事件里的全局逻辑坐标直接可用
       const emitOrigin = async () => {
         try { await emit("stage-origin", { x: ox, y: oy }); } catch { /* */ }
       };
-      await emitOrigin();
-      if (!existing) {
-        // 创建事件 5s 超时:别让挂死的创建把 ensure 永久吊住(失败要能重试)
-        await Promise.race([
-          w0.once("tauri://created", () => {}),
-          new Promise<void>((_, rej) => setTimeout(() => rej(new Error("stage create timeout")), 5000)),
-        ]);
-        // 穿透设置放握手后(页面在 = 窗口必然就绪)且重试 3 次:
-        // 全屏置顶窗若不穿透会吞掉整屏点击(P0)
-        for (let i = 0; i < 3; i++) {
-          try { await w0.setIgnoreCursorEvents(true); break; }
-          catch (e) { if (i === 2) warnOnce("ignore retry-failed", e); await new Promise(r => setTimeout(r, 400)); }
-        }
+      if (existing) {
+        // 复用既有窗:页面早在听(上次握手过),直接发完收工
+        await emitOrigin();
+        return;
+      }
+      // 创建事件 5s 超时:别让挂死的创建把 ensure 永久吊住(失败要能重试)
+      await Promise.race([
+        w0.once("tauri://created", () => {}),
+        new Promise<void>((_, rej) => setTimeout(() => rej(new Error("stage create timeout")), 5000)),
+      ]);
+      // 穿透设置放握手后(页面在 = 窗口必然就绪)且重试 3 次:
+      // 全屏置顶窗若不穿透会吞掉整屏点击(P0)
+      for (let i = 0; i < 3; i++) {
+        try { await w0.setIgnoreCursorEvents(true); break; }
+        catch (e) { if (i === 2) warnOnce("ignore retry-failed", e); await new Promise(r => setTimeout(r, 400)); }
       }
       // 等 child 页注册完 listener(握手监听已在创建前挂好;超时放行,页面晚到也能工作)
       await Promise.race([
         childReady,
         new Promise<void>(res => setTimeout(res, 3000)),
       ]);
-      if (!existing) {
-        // 页面就绪 → 归位(单次 SetWindowPos,无飞入动画)+ 置顶不抢焦点
-        try { await w0.setPosition(new PhysicalPosition(Math.round(ox), Math.round(oy))); } catch { /* */ }
-        await invoke("stage_visibility", { label: "poop", show: true })
-          .catch(e => warnOnce("poop stage show", e));
-      }
+      // ⚠️ 原点必须等握手后再发:页面模块没跑到 listen("stage-origin") 之前发 = 事件丢失,
+      // 任务栏在左/上、副屏负坐标(ox/oy≠0)的布局下舞台会整体错位
+      await emitOrigin();
+      // 页面就绪 → 归位(单次 SetWindowPos,无飞入动画)+ 置顶不抢焦点
+      try { await w0.setPosition(new PhysicalPosition(Math.round(ox), Math.round(oy))); } catch { /* */ }
+      await invoke("stage_visibility", { label: "poop", show: true })
+        .catch(e => warnOnce("poop stage show", e));
     })();
     // 创建失败:记原因 + 复位允许下次重试(之前拒绝态被永久缓存,阴影/树枝/屎全哑)
     attempt.catch((e: any) => {
@@ -106,7 +107,7 @@ export async function wakeGrace() {
 export function ensurePoopStage() { return ensure(); }
 
 export async function dropPoop(x: number, y: number, landingY: number, fallSec: number,
-                                hwnd: number | null = null, scale = 1) {
+                                hwnd: number | null = null) {
   await ensure();
-  await emit("poop-drop", { x, y, landingY, fallSec, spd: settings.speed, hwnd, scale });
+  await emit("poop-drop", { x, y, landingY, fallSec, spd: settings.speed, hwnd });
 }

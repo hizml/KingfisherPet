@@ -235,26 +235,35 @@ final class Behavior: PetViewDelegate {
         let a = Settings.shared.activity               // 0…1
         let idleBand = Int((1.0 - a) * 22)             // 0→22, 1→0
         let walk = idleBand + max(1, Int((1.0 - a) * 20))   // 待机+走动一起,高活跃更倾向走
-        let bounds: [(Int, () -> Void)] = [
+        // 权重归一(评审:activity=1 时 sleep 兜底桶反占 ~37% 成最高频,与"高活跃"相悖):
+        // sleep 固定小桶 6,九个动作带(总 62)按剩余空间等比缩放 k=(100-walk-6)/62
+        // → 低活跃动作收敛(k≈0.84),高活跃动作放大(k≈1.5),sleep 恒 ≤6。
+        // Windows 端对齐公式见 docs/FIX-DIVISION-2026-09.md 评论区。
+        let k = max(0.5, (100.0 - Double(walk) - 6.0) / 62.0)
+        let bands: [(Double, () -> Void)] = [
+            (7,  { [weak self] in self?.startFly() }),
+            (8,  { [weak self] in self?.startFish() }),
+            (7,  { [weak self] in self?.startSing() }),
+            (7,  { [weak self] in self?.startDart() }),
+            (7,  { [weak self] in self?.startWatch() }),
+            (7,  { [weak self] in self?.startSun() }),
+            (6,  { [weak self] in
+                guard let self = self else { return }
+                if Settings.shared.peckScreen { self.startPeck() }
+                else { self.enter("idle"); self.scheduleThink() }
+            }),
+            (6,  { [weak self] in self?.startPerchWindow() }),
+            (6,  { [weak self] in self?.startPoop() }),
+        ]
+        var bounds: [(Int, () -> Void)] = [
             (walk, { [weak self] in
                 guard let self = self else { return }
                 if self.onWindow || isLow { self.startWalk() }
                 else { self.enter("idle"); self.scheduleThink() }
             }),
-            (walk + 7,  { [weak self] in self?.startFly() }),
-            (walk + 15, { [weak self] in self?.startFish() }),
-            (walk + 22, { [weak self] in self?.startSing() }),
-            (walk + 29, { [weak self] in self?.startDart() }),
-            (walk + 36, { [weak self] in self?.startWatch() }),
-            (walk + 43, { [weak self] in self?.startSun() }),
-            (walk + 50, { [weak self] in
-                guard let self = self else { return }
-                if Settings.shared.peckScreen { self.startPeck() }
-                else { self.enter("idle"); self.scheduleThink() }
-            }),
-            (walk + 56, { [weak self] in self?.startPerchWindow() }),
-            (walk + 62, { [weak self] in self?.startPoop() }),
         ]
+        var acc = Double(walk)
+        for (band, fn) in bands { acc += band * k; bounds.append((Int(acc), fn)) }
         let r = Int.random(in: 0..<100)
         if r < idleBand {
             enter("idle"); scheduleThink()
@@ -263,7 +272,7 @@ final class Behavior: PetViewDelegate {
             for (upper, action) in bounds where r < upper {
                 action(); return
             }
-            startSleep()   // 兜底:超 walk+62 的进入打盹
+            startSleep()   // 兜底:sleep 固定桶(≤6)+ 取整误差
         }
     }
 

@@ -7,7 +7,6 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { warnOnce } from "./log";
 
-let win: WebviewWindow | null = null;
 let ready: Promise<void> | null = null;
 async function ensure() {
   if (!ready) {
@@ -44,42 +43,42 @@ async function ensure() {
         width: Math.ceil(rw), height: Math.ceil(rh),
         x: Math.round(ox) - OFF, y: Math.round(oy),
       });
-      win = w0;
       // 告诉子窗舞台原点:body 平移回 (0,0) 语义,事件里的全局逻辑坐标直接可用
       const emitOrigin = async () => {
         try { await emit("stage-origin", { x: ox, y: oy }); } catch { /* */ }
       };
-      await emitOrigin();
-      if (!existing) {
-        // 创建事件 5s 超时:别让挂死的创建把 ensure 永久吊住
-        await Promise.race([
-          w0.once("tauri://created", () => {}),
-          new Promise<void>((_, rej) => setTimeout(() => rej(new Error("crack stage create timeout")), 5000)),
-        ]);
-        // 穿透设置放握手后(页面在 = 窗口必然就绪)且重试 3 次:
-        // 全屏置顶窗若不穿透会吞掉整屏点击(P0)
-        for (let i = 0; i < 3; i++) {
-          try { await w0.setIgnoreCursorEvents(true); break; }
-          catch (e) { if (i === 2) warnOnce("ignore retry-failed", e); await new Promise(r => setTimeout(r, 400)); }
-        }
+      if (existing) {
+        // 复用既有窗:页面早在听(上次握手过),直接发完收工
+        await emitOrigin();
+        return;
       }
+      // 创建事件 5s 超时:别让挂死的创建把 ensure 永久吊住
+      await Promise.race([
+        w0.once("tauri://created", () => {}),
+        new Promise<void>((_, rej) => setTimeout(() => rej(new Error("crack stage create timeout")), 5000)),
+      ]);
+      // 穿透设置放握手后(页面在 = 窗口必然就绪)且重试 3 次:
+      // 全屏置顶窗若不穿透会吞掉整屏点击(P0)
+      for (let i = 0; i < 3; i++) {
+        try { await w0.setIgnoreCursorEvents(true); break; }
+        catch (e) { if (i === 2) warnOnce("ignore retry-failed", e); await new Promise(r => setTimeout(r, 400)); }
+      }
+      // 等 child 页注册完 listener(握手监听已在创建前挂好;超时放行,页面晚到也能工作)
       await Promise.race([
         childReady,
         new Promise<void>(res => setTimeout(res, 3000)),
       ]);
-      if (!existing) {
-        try { await w0.setPosition(new PhysicalPosition(Math.round(ox), Math.round(oy))); } catch { /* */ }
-        await invoke("stage_visibility", { label: "crack", show: true })
-          .catch(e => warnOnce("crack stage show", e));
-      }
+      // ⚠️ 原点必须等握手后再发(同 poop.ts:提前发会被未注册的 listener 丢掉)
+      await emitOrigin();
+      try { await w0.setPosition(new PhysicalPosition(Math.round(ox), Math.round(oy))); } catch { /* */ }
+      await invoke("stage_visibility", { label: "crack", show: true })
+        .catch(e => warnOnce("crack stage show", e));
     })();
     attempt.catch((e: any) => { warnOnce("crack stage", e); ready = null; });   // 失败留痕 + 可重试
     ready = attempt;
   }
   await ready;
 }
-
-export function setupCrack() { ensure().catch(e => warnOnce("crack setup", e)); }
 
 export async function crackAt(x: number, y: number) {
   await ensure();
