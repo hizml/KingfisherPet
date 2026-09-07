@@ -11,8 +11,11 @@ permissions:
   contents: write
 
 jobs:
+  # 手动 dispatch(无 tag)不发版:ref_name 会是分支名,tauri-action 会建出畸形 tag/release
+  # (评审 E1)——dispatch 仅允许用于调试编译,产物不发布
   # 原生 Mac 版(Swift + AppKit):build.sh 的打包步骤(去掉启动)
   native-mac:
+    if: startsWith(github.ref, 'refs/tags/')   # 仅 tag 构建(E1)
     runs-on: macos-latest
     env:
       KF_SIGN_P12_B64: ${{ secrets.KF_SIGN_P12_B64 }}
@@ -30,7 +33,10 @@ jobs:
           cp .build/release/KingfisherPet "$APP/Contents/MacOS/"
           for d in Resources/Sprites/*/; do
             t=$(basename "$d"); mkdir -p "$APP/Contents/Resources/Sprites/$t"
-            cp "$d"*.png "$d"sprites.json "$d"colors.json "$APP/Contents/Resources/Sprites/$t/" 2>/dev/null || true
+            # 分条容错(对齐 build.sh):一条 || true 会因任一 json 缺失丢掉整主题 png(评审)
+            cp "$d"*.png "$APP/Contents/Resources/Sprites/$t/" || echo "::warning::$t 缺 png"
+            cp "$d"sprites.json "$APP/Contents/Resources/Sprites/$t/" || echo "::error::$t 缺 sprites.json"
+            cp "$d"colors.json "$APP/Contents/Resources/Sprites/$t/" || echo "::warning::$t 缺 colors.json"
             rm -f "$APP/Contents/Resources/Sprites/$t/contact.png"
           done
           cp Resources/peep_*.wav "$APP/Contents/Resources/"
@@ -73,7 +79,8 @@ jobs:
           else
             VERSION=$(python3 -c "import json;print(json.load(open('windows/src-tauri/tauri.conf.json'))['version'])")
           fi
-          sed -i '' "s/<string>1\.3\.0<\/string>/<string>${VERSION}<\/string>/" "$APP/Contents/Info.plist" 
+          sed -i '' "s/<string>1\.3\.0<\/string>/<string>${VERSION}<\/string>/" "$APP/Contents/Info.plist"
+          grep -q "<string>${VERSION}</string>" "$APP/Contents/Info.plist" || { echo "::error::版本号写入失败($VERSION)"; exit 1; }
           # 固定签名:优先用 secrets 里的自签证书(签名稳定 → 用户辅助功能授权不随
           # 版本升级失效),无 secrets(如 fork)回退 ad-hoc
           if [ -n "$KF_SIGN_P12_B64" ]; then
@@ -83,7 +90,12 @@ jobs:
             security import /tmp/kf.p12 -k /tmp/kf-ci.keychain-db -P "$KF_SIGN_P12_PASS" -T /usr/bin/codesign
             security list-keychains -s /tmp/kf-ci.keychain-db
             security set-key-partition-list -S apple-tool:,apple: -k ci /tmp/kf-ci.keychain-db
-            codesign -s "KingfisherPet Dev" --force --deep "$APP" || codesign -s - --force --deep "$APP"
+            if codesign -s "KingfisherPet Dev" --force --deep "$APP"; then
+              codesign --verify --strict "$APP" || echo "::warning::签名校验失败"
+            else
+              echo "::warning::固定签名失败,已回退 ad-hoc——用户的辅助功能授权将随本包失效"
+              codesign -s - --force --deep "$APP"
+            fi
             security list-keychains -s ~/Library/Keychains/login.keychain-db || true
             rm -f /tmp/kf.p12 /tmp/kf-ci.keychain-db*
           else
@@ -100,6 +112,7 @@ jobs:
           files: build/KingfisherPet-mac-native.zip
 
   build:
+    if: startsWith(github.ref, 'refs/tags/')   # 仅 tag 构建(E1)
     strategy:
       fail-fast: false
       matrix:
@@ -132,7 +145,7 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
 
       - name: 安装前端依赖
-        run: npm install
+        run: npm ci
         working-directory: windows
 
       - name: 版本号跟 tag(v1.3.1 → 1.3.1,写入 tauri.conf.json)
