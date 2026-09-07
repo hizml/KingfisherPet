@@ -14,6 +14,7 @@ import { setupBranch } from "./branch";
 import { setupTheme, setTheme } from "./theme";
 import { setupAudio, playPeep, setSoundOn, setMediaMuted } from "./audio";
 import { settings, setSound, setActivity, setSpeed, setPeckScreen } from "./settings";
+import { warnOnce } from "./log";
 import * as behavior from "./behavior";
 
 const lib = new SpriteLibrary();
@@ -115,9 +116,13 @@ async function main() {
     // 自绘弹窗(update.html,设置窗同风格):WebView2 原生 alert/confirm 丑且糊在鸟窗口上,弃用
     async function openUpdateDialog(qs: string, title: string, h = 210) {
       const ex = await WebviewWindow.getByLabel("update");   // 单例:旧的先关(参数在 URL 上,复用拿不到新参)
-      if (ex) { await ex.close().catch(() => {}); }
-      new WebviewWindow("update", { url: `update.html?${qs}`, title, width: 380, height: h,
-                                     resizable: false });
+      if (ex) {
+        await ex.close().catch(() => {});
+        await new Promise(r => setTimeout(r, 150));   // close 是异步销毁,立即重建会撞 label 被 reject——稍等再建(评审:close/new 竞速)
+      }
+      const uw = new WebviewWindow("update", { url: `update.html?${qs}`, title, width: 380, height: h,
+                                               resizable: false });
+      uw.once("tauri://error", e => warnOnce("update-win", String(e.payload ?? "创建失败")));   // 创建失败留痕(v2 构造不抛,错误走事件;此前完全无声)
     }
     const zhUI = () => (localStorage.getItem("kf_lang") || "system") === "zh"
       || ((localStorage.getItem("kf_lang") || "system") === "system"

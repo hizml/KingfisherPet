@@ -750,6 +750,7 @@ export async function dndSet(on: boolean) {
     emit("log", "dnd: 进入勿扰(鸟隐身+静音)");
     gen++; busy = false; busySince = null;   // 静默打断一切(不能在全屏上播放死亡动画)
     if (thinkTimer) { clearTimeout(thinkTimer); thinkTimer = null; }   // 排程中的 think 一并停(macOS beginAction 同款);之前漏了 → 勿扰期间幽灵动作链持续空转
+    wakeGraceUntil = performance.now() + 1500;   // 宽限对齐 dndSet(false):退出后系统层级未稳前不抢动作
     userSleeping = false;
     setSleepMuted(true);
     stopZzzInterval(); stopPerchCheck();

@@ -85,8 +85,10 @@
     listen("lang", (e) => { curLang = e.payload; paintLang(); });
     listen("theme", (e) => { curTheme = e.payload; paintTheme(); });
     emit("settings-need-state", null);   // 主动拉 Rust 侧权威状态(语言;经 settings-open/settings-sync 回传)
-    act.oninput = () => { actV.textContent = Number(act.value).toFixed(2); emit("setting", "activity:" + act.value); };
-    spd.oninput = () => { spdV.textContent = Number(spd.value).toFixed(2); emit("setting", "speed:" + spd.value); };
+    // 滑杆:标签即时,设置载荷 250ms 节流(每 tick emit 会触发 Rust 重建托盘菜单,拖一路重建一路,白烧)
+    let actT = 0, spdT = 0;
+    act.oninput = () => { actV.textContent = Number(act.value).toFixed(2); clearTimeout(actT); actT = setTimeout(() => emit("setting", "activity:" + act.value), 250); };
+    spd.oninput = () => { spdV.textContent = Number(spd.value).toFixed(2); clearTimeout(spdT); spdT = setTimeout(() => emit("setting", "speed:" + spd.value), 250); };
     snd.onchange = () => emit("setting", "sound:" + snd.checked);
     peck.onchange = () => emit("setting", "peck:" + peck.checked);
     // 主窗回推的当前值(打开时同步真实状态)

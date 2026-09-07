@@ -18,6 +18,7 @@ pub fn setup_power(app: tauri::AppHandle) {
         let mut fs_on = 0u32; let mut fs_off = 0u32; let mut dnd = false;
         let mut au_on = 0u32; let mut au_off = 0u32; let mut media = false;
         let mut wts_tick = 0u32; let mut last_wts = -1i32;   // RDP 会话状态(轮询;隐藏消息窗方案不可靠)
+        let mut bg_tick = 0u32;   // RDP 后台化(切走/最小化,无断连事件)检测——独立计数,别和 wts_tick 复用一个 += (双计数复用读不出真实周期)
         let mut bg = false; let mut bg_ticks = 0u32;   // RDP 后台化(切走/最小化,无断连事件)检测
         let mut main_vis = true;   // 主窗可见性监视:翻转即记日志(抓"无声隐藏者"——JS 全部隐藏路径已留痕,仍有无日志的隐藏发生)
         loop {
@@ -90,7 +91,7 @@ pub fn setup_power(app: tauri::AppHandle) {
 
             // --- RDP 会话状态(断开/重连):ConnectState 变化 → 恢复时前端重载自愈 ---
             wts_tick += 1;
-            if wts_tick % 4 == 0 {
+            if wts_tick % 2 == 0 {
                 let st = wts_connect_state();
                 if last_wts == -1 {
                     last_wts = st;   // 首次只记基线(初始 -1 若触发会把"首查 Active"误判成恢复 → 启动 8s 后误 reload 重新破壳)
@@ -105,8 +106,8 @@ pub fn setup_power(app: tauri::AppHandle) {
 
             // --- RDP 后台化检测:RDP 窗口切走/最小化时会话无前台窗口(且未锁屏)---
             // 恢复前台 → 前端重载自愈(贴图消失第二场景:会话一直 Active,断连检测抓不到)
-            wts_tick += 1;
-            if wts_tick % 5 == 0 && !is_locked_here() {
+            bg_tick += 1;
+            if bg_tick % 5 == 0 && !is_locked_here() {
                 let main_visible = app.get_webview_window("main")
                     .map(|w| w.is_visible().unwrap_or(false))
                     .unwrap_or(false);
