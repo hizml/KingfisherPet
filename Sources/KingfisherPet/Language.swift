@@ -10,11 +10,9 @@ enum Language {
         get { Choice(rawValue: UserDefaults.standard.string(forKey: key) ?? "") ?? .system }
         set {
             UserDefaults.standard.set(newValue.rawValue, forKey: key)
-            NotificationCenter.default.post(name: didChangeNotification, object: nil)
         }
     }
 
-    static let didChangeNotification = Notification.Name("kingfisher.language.didChange")
     private static let key = "kingfisher.language"
 
     /// 实际生效语言:choice=system 时按设备首选语言(中文系→zh,否则 en)

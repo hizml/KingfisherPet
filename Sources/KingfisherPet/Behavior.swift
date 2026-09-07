@@ -22,7 +22,9 @@ final class Behavior: PetViewDelegate {
     private var perchOccludeFrame = 0 // 栖窗遮挡检测降频计数(frontWindowAt 全窗口枚举,贵)
 
     private let size = CGSize(width: 160, height: 160)
-    private let feetOffset: CGFloat = 26   // 脚位基准(原版 27,视觉校准)
+    private let feetOffset: CGFloat = feetOffsetConst   // 单一事实源(评审 C7)
+    /// 脚位基准:Behavior/Branch/PetView 共用(原版 27,视觉校准为 26)
+    static let feetOffsetConst: CGFloat = 26
     private let headOffset: CGFloat = 72   // 头距窗口顶(sprite 实测,预留)
 
     /// 按全局动画速度缩放一段时长:速度越快,实际时长越短(1.5×→除以 1.5)。
@@ -602,7 +604,7 @@ final class Behavior: PetViewDelegate {
         }
         // 水平脱离/过高:每帧查,确定性信号,150ms 迟滞即可
         let detach = w.frame.midX < f.minX - 10 || w.frame.midX > f.maxX + 10
-                  || wouldOvershootTop(surfaceY: scr.frame.height - f.minY)
+                  || wouldOvershootTop(surfaceY: (NSScreen.screens.first?.frame.height ?? scr.frame.height) - f.minY)   // CG 全局坐标锚定主屏(评审 A6)
         if detach { detachStreak += 1 } else { detachStreak = 0 }
         // 遮挡要连续 2 次查询(≈1s)坏才飞;脱离 3 帧(150ms)
         if occlStreak >= 2 || detachStreak >= 3 {
@@ -702,6 +704,7 @@ final class Behavior: PetViewDelegate {
     private(set) var dndActive = false   // 勿扰中(守卫:唤醒/破壳都不能把鸟拉回全屏上)
     func enterDnd() {
         dndActive = true
+        dragging = false   // 拖拽中进勿扰:mouseUp 已随窗口 orderOut 丢失,不清则树枝永不再现(评审 A8)
         beginAction()
         userSleeping = false
         SpriteLibrary.shared.mutedForSleep = true

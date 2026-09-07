@@ -181,25 +181,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var dndSkipLast = ""
     private func dndCheck() {
-        guard let behavior = petController?.behavior, behavior.isOnScreen else {
-            dndSkip("offscreen"); return }
-        guard !behavior.isSleeping else {   // 锁屏/睡眠中不处理勿扰(exitDnd 会把鸟显示在锁屏上)
-            dndSkip("sleeping"); return }
-        dndSkip("")
+        // 鸟不在屏/睡着时仍要累计 streak(否则勿扰中隐藏鸟 → fsOffStreak 永不累计
+        // → dndActive 永真 → hatchIn 拒绝复活 = 死锁,只能重启);只跳过 enter/exitDnd 副作用
+        let behavior: Behavior? = petController?.behavior
+        let active = behavior?.isOnScreen == true && behavior?.isSleeping != true
+        if !active { dndSkip(behavior?.isOnScreen != true ? "offscreen" : "sleeping") } else { dndSkip("") }
         // ① 全屏应用检测:AX "AXFullScreen" 窗口属性(授权已通但判定过 false,
         // 铺观测定位:每 10 拍记前台 App/窗口数/每窗属性原始错误码,切一次全屏即可对账)
-        let fs = fullscreenAppOnBirdScreen(behavior.birdScreen)
+        let fs = fullscreenAppOnBirdScreen(behavior?.birdScreen)
         dndDiagTick += 1
         if !fs && dndDiagTick % 10 == 0 { fsDiagSnapshot() }
         if fs { fsOnStreak += 1; fsOffStreak = 0 } else { fsOffStreak += 1; fsOnStreak = 0 }
-        if !dndActive && fsOnStreak >= 2 {
+        if !dndActive && fsOnStreak >= 2 && active {
             dndActive = true
             kfLog("dnd: 全屏应用,鸟隐身+静音")
-            behavior.enterDnd()
+            behavior?.enterDnd()
         } else if dndActive && fsOffStreak >= 2 {
             dndActive = false
             kfLog("dnd: 全屏退出,恢复")
-            behavior.exitDnd()
+            if active { behavior?.exitDnd() }   // 鸟隐藏时只清标志,不强制显示(下次 hatchIn 自然复活)
         }
 
     }
@@ -299,7 +299,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let a = NSAlert()
         a.alertStyle = .informational
         a.messageText = "翡 需要辅助功能权限"
-        a.informativeText = "勿扰模式(全屏看片/放音时鸟自动隐身静音)依赖辅助功能。\n\n请到 系统设置 → 隐私与安全性 → 辅助功能,删除旧的「翡」后重新添加并勾选(选择 ~/Developer/KingfisherPet/build/KingfisherPet.app)。"
+        let appPath = Bundle.main.bundleURL.path   // 发布版用户机器上路径各不相同,动态生成
+        a.informativeText = "勿扰模式(全屏看片/放音时鸟自动隐身静音)依赖辅助功能。\n\n请到 系统设置 → 隐私与安全性 → 辅助功能,删除旧的「翡」后重新添加并勾选(选择:\(appPath))"
         a.addButton(withTitle: "打开系统设置")
         a.addButton(withTitle: "稍后")
         if a.runModal() == .alertFirstButtonReturn {
@@ -311,10 +312,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func axWarnOnce(_ msg: String) {
-        if !axWarned { axWarned = true; kfLog("dnd-ax: \(msg)") }
-    }
-    private var axWarned = false
     private var dndDiagTick = 0
 
     // 放音静音已迁 SpriteLibrary.playPeep(叫前查;勿扰段只留全屏检测)。
@@ -337,7 +334,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // ps 在后台线程跑,不阻塞主线程(主线程阻塞 = 丢帧 = 卡顿加剧)
             DispatchQueue.global(qos: .utility).async {
                 let task = Process()
-                task.launchPath = "/bin/ps"
+                task.executableURL = URL(fileURLWithPath: "/bin/ps")
                 task.arguments = ["-p", "\(pid)", "-o", "%cpu,rss"]
                 let pipe = Pipe()
                 task.standardOutput = pipe
@@ -417,7 +414,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             kfLog("relaunching (leak guard)")
             let proc = Process()
-            proc.launchPath = "/usr/bin/open"
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/open")
             proc.arguments = ["-n", url.path]
             try? proc.run()
             NSApp.terminate(nil)
@@ -856,25 +853,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     private func updateAlert(latest: String?, current: String) {
+        let zh = Language.current == "zh"
         let a = NSAlert()
         if latest == nil {
-            a.messageText = "检查更新失败"
-            a.informativeText = "无法访问 GitHub(网络原因)。可手动前往 Releases 页面查看。"
-            a.addButton(withTitle: "打开 Releases 页")
+            a.messageText = zh ? "检查更新失败" : "Update Check Failed"
+            a.informativeText = zh ? "无法访问 GitHub(网络原因)。可手动前往 Releases 页面查看。" : "Cannot reach GitHub. You can check the Releases page manually."
+            a.addButton(withTitle: zh ? "打开 Releases 页" : "Open Releases")
             if a.runModal() == .alertFirstButtonReturn {
                 NSWorkspace.shared.open(URL(string: "https://github.com/hizml/KingfisherPet/releases")!)
             }
             return
         }
         if latest == "v" + current {
-            a.messageText = "已是最新版本"
+            a.messageText = zh ? "已是最新版本" : "Up to Date"
             a.informativeText = "v\(current)"
             _ = a.runModal()
         } else {
-            a.messageText = "发现新版本 \(latest!)"
-            a.informativeText = "当前 v\(current)。前往下载?"
-            a.addButton(withTitle: "前往下载")
-            a.addButton(withTitle: "稍后")
+            a.messageText = zh ? "发现新版本 \(latest!)" : "New Version \(latest!)"
+            a.informativeText = zh ? "当前 v\(current)。前往下载?" : "Current v\(current). Download now?"
+            a.addButton(withTitle: zh ? "前往下载" : "Download")
+            a.addButton(withTitle: zh ? "稍后" : "Later")
             if a.runModal() == .alertFirstButtonReturn {
                 NSWorkspace.shared.open(URL(string: "https://github.com/hizml/KingfisherPet/releases/latest")!)
             }

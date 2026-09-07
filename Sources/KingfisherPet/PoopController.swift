@@ -198,7 +198,7 @@ private final class Poop {
                 occludeFrame += 1
                 if occludeFrame % 10 != 0 { sitRemain -= dt; if sitRemain <= 0 { state = .fading }; return }
                 if let b = WindowTracker.frameOfWindow(id: id) {
-                    let topNS = screenH - b.minY
+                    let topNS = (NSScreen.screens.first?.frame.height ?? screenH) - b.minY   // CG 锚定主屏(评审 A6)
                     let off = x < b.minX || x > b.maxX || topNS < y - 12
                     // 遮挡检测与承载窗口查询同频(每 10 帧一次)
                     let occluded = WindowTracker.frontWindowAt(nsPoint: CGPoint(x: x, y: y)) != id

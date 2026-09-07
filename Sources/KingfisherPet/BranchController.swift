@@ -20,7 +20,7 @@ final class BranchController {
     private var previewUntil: CFTimeInterval = 0
 
     private let overlaySize = CGSize(width: 230, height: 96)
-    private let feetOffset: CGFloat = 27
+    private let feetOffset: CGFloat = Behavior.feetOffsetConst
 
     init(bird: NSWindow, behavior: Behavior) {
         self.bird = bird

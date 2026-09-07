@@ -195,7 +195,11 @@ final class SpriteLibrary {
         guard !peepProbeBusy else { peepPlay(); return }
         peepProbeBusy = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
-            if self?.peepProbeBusy == true { self?.peepProbeBusy = false }   // 探针挂死自愈
+            if self?.peepProbeBusy == true {   // 探针挂死自愈:清锁 + 补这声(fail-open,那声不能丢)
+                self?.peepProbeBusy = false
+                kfLog("media: 探针超时,照叫(fail-open)")
+                self?.peepPlay()
+            }
         }
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
@@ -209,8 +213,10 @@ final class SpriteLibrary {
                     .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 DispatchQueue.main.async {
                     self?.peepProbeBusy = false
-                    if txt == "1" {
-                        kfLog("media: 系统在播,吞掉这声叫")
+                    // 判据是"播放速率>0":倍速播放返回 "2"/"0.5",只认 "1" 会漏(隔壁评审 A5)
+                    let rate = Double(txt) ?? 0
+                    if rate > 0 {
+                        kfLog("media: 系统在播(rate=\(txt)),吞掉这声叫")
                     } else {
                         if !SpriteLibrary.probeOK { SpriteLibrary.probeOK = true; kfLog("media: 叫前探针链路可用") }
                         self?.peepPlay()

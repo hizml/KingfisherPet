@@ -37,8 +37,15 @@ final class CrackController {
     }
 
     func setVisible(_ visible: Bool) {
-        // 唤醒恢复:只有真的有裂纹才把覆盖层放回前面
-        if visible { if hasCracks { overlay.orderFrontRegardless() } } else { overlay.orderOut(nil) }
+        if visible {
+            guard hasCracks, let layer = overlay.contentView?.layer else { return }
+            // 熔断 purgeLayers 后 sublayer 树已空:恢复时把裂纹数据重新挂回(评审 B1——
+            // 原实现只 orderFront,老裂纹永久隐形但数据/窗口僵尸)
+            if layer.sublayers?.isEmpty != false {
+                for c in cracks { layer.addSublayer(c.container) }
+            }
+            overlay.orderFrontRegardless()
+        } else { overlay.orderOut(nil) }
     }
 
     private func sizeToScreen() {
