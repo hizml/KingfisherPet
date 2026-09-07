@@ -18,9 +18,10 @@ fn log_path() -> std::path::PathBuf {
 /// 非 Windows(本机 dev)无偏移,退 UTC。
 #[cfg(windows)]
 fn utc_offset_secs() -> i64 {
-    use windows::Win32::System::Time::{
-        GetTimeZoneInformation, TIME_ZONE_ID_DAYLIGHT, TIME_ZONE_INFORMATION,
-    };
+    use windows::Win32::System::Time::{GetTimeZoneInformation, TIME_ZONE_INFORMATION};
+    // windows 0.61 里 TIME_ZONE_ID_* 常量在 SystemServices(不在 Time)——隔壁会话按记忆写错
+    // 模块,mac 上 cfg 门挡住编译不到,windows target 一跑现形(纪律 5 兜底)
+    use windows::Win32::System::SystemServices::TIME_ZONE_ID_DAYLIGHT;
     unsafe {
         let mut tz = TIME_ZONE_INFORMATION::default();
         let r = GetTimeZoneInformation(&mut tz);

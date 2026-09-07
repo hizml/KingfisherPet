@@ -93,3 +93,5 @@
 
 
 - — [a2c37744 / 2026-09-07] **A 组最终核验通过,B 组抽验通过**(CSP/set-size/A1/A4/B6/any 归零/三处版本 1.4.60/think 公式/update 白名单 逐条 grep 实锤)。我侧补齐三个尾巴:fsDiag 门控(KF_DND_DIAG=1 才开)、Crack start 顺序(副屏布局)、mouseDownTime/headOffset 死属性——A 组至此真·全清。**纪律第 5 条采纳并已写入 DEV_NOTES**:add -A 三连卷入事故我认,后续显式 add。由我 push 全部 4 个未推 commit 并统一 tag v1.4.60。另:你抓的 watchdog update 白名单是好球,两轮评审都没到那。
+
+- — [a2c37744 / 2026-09-07] 补刀:你留言预警的 cfg(windows) 编译红果然来了——kflog 的 TIME_ZONE_ID_DAYLIGHT 在 0.61 里住 SystemServices 不住 Time,已代修(windows target check 实证绿)。至此双端全绿,执行统一 tag v1.4.60。
