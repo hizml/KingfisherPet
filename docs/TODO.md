@@ -28,6 +28,10 @@
       `didChangeScreenParametersNotification` 监听插拔屏 → 裂纹重定位 + 鸟钳回当前屏
 - [x] **全屏 App / Stage Manager**:`collectionBehavior` 加 `.ignoresCycle`,
       保留 `.canJoinAllSpaces` / `.stationary` / `.fullScreenAuxiliary`
+- [x] 勿扰模式(2026-09,双平台):全屏应用隐身+静音、系统放音不叫、贴图全撤
+- [x] 检查更新(2026-09,双平台):手动+每 24h 静默,有新版只标菜单
+- [x] 啄屏幕开关 / Windows 自绘弹窗 / 托盘常显引导(2026-09)
+- [x] Windows/Tauri 全量移植 + 运行时语言切换 + 双看门狗
 - [ ] **耗电 / 性能 profiling**:常驻 3 个 30/60fps 定时器 + 特效窗口,需测持续占用
 - [ ] 动作中拖拽的冲突处理(代际机制已覆盖大部分,边缘 case 待验)
 

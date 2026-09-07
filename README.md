@@ -51,7 +51,7 @@ Mac 原生 Swift + Windows Tauri 双平台,行为照着当年的它比着做,再
 
 **自主行为(全自动)**
 - 待机:轻微呼吸 + 眨眼
-- 每 3.5–7 秒随机抽取:走动 / 挪窝飞行 / **俯冲捕鱼** / 鸣唱 / 低空快飞掠过 / 栖枝守候探头 / 日光浴 / 打盹
+- 按活跃度每约 1.5–7 秒随机抽取(默认约 2.5–5 秒):走动 / 挪窝飞行 / **俯冲捕鱼** / 鸣唱 / 低空快飞掠过 / 栖枝守候探头 / 日光浴 / 打盹
 - **俯冲捕鱼**:抛物线飞到屏幕顶 → 悬停瞄准 → 急速俯冲到屏幕底"水线" → 溅起水花 → 叼鱼飞回栖处 → 仰头吞掉;已在顶端则直线俯冲
 - 吃完过会儿会拉一坨白色鸟屎;飞行途中偶尔空中排泄
 - **地面阴影**:固定在 Dock 上边、正对鸟下方(鸟飞高时变大变淡、留在地面,不跟着飞);移动走线性、同步刷新,不延迟
@@ -64,17 +64,18 @@ Mac 原生 Swift + Windows Tauri 双平台,行为照着当年的它比着做,再
 
 **勿扰模式(全自动)**
 - **全屏看片/游戏**:检测到全屏应用,鸟带着树枝、鸟屎、裂纹一起消失,绝不盖视频;退出全屏按层级原样恢复(Mac 用辅助功能的窗口属性 + pid 直连判定;Windows 比对前台窗口与屏幕矩形)
-- **系统在放音**:听歌/看片时鸟不叫——想叫的那一刻先查一次系统播放状态,在播就吞掉这声(Mac 查 Now Playing;Windows 查音频输出峰值),放完自动恢复
+- **系统在放音**:听歌/看片时鸟不叫(Mac:想叫的那一刻查一次系统 Now Playing,在播就吞掉这声;Windows:后台每 2 秒查音频输出峰值),放完自动恢复
 - 鸟隐藏/勿扰期间,菜单动作一律不响应(不会对着空屏唱歌)
 
 **交互**
 - 点击 → 啾一声 + 心眼害羞反应
 - 拖拽 → 移动位置;半空松手会自己飞走落下;靠近窗口上沿 / Dock(±70px)松手会精准吸附
 - 透明区域点击穿透,不挡后面 App
-- 支持多屏 / 外接屏:鸟跨屏移动,屎/裂纹/阴影跟随鸟所在屏
+- 支持多屏 / 外接屏:可拖拽跨屏,屎/裂纹/阴影跟随鸟所在屏
 
 **菜单栏控制(右上角翠鸟图标)**
-- 召唤过来 / 去抓条鱼 / 唱一个 / 停到窗口上 / 啄一下 / 显示·隐藏 / 啾鸣声开关 / 开机自启 / 修复屏幕 / **设置…** / 语言(跟随系统 / 中文 / English)/ 关于 / 退出
+- 召唤过来 / 去抓条鱼 / 唱一个 / 停到窗口上 / 啄一下 / 显示·隐藏 / 啾鸣声开关 / 开机自启 / 修复屏幕 / **设置…** / 语言(跟随系统 / 中文 / English)/ 检查更新…(发现新版时该项变为「发现新版本」)/ 关于 / 退出
+- 自动检查更新:启动 30 秒后与每 24 小时静默查一次,有新版只改菜单项名称,点击才弹详情
 - 显示 = 破壳而出(整蛋→裂纹→探头);隐藏 = 死掉(✕眼翻肚)从天上掉出屏幕
 - 记住上次位置与声音设置;可选开机自启
 
@@ -83,6 +84,7 @@ Mac 原生 Swift + Windows Tauri 双平台,行为照着当年的它比着做,再
 - 活跃度:低 / 中 / 高(行为触发频率与 idle 占比)
 - 动画速度:0.5×–1.5×
 - 啾鸣声开关
+- 啄屏幕开关(关掉后鸟不再自发啄裂屏幕;菜单手动「啄一下」不受限)
 
 ## 构建
 
@@ -138,6 +140,16 @@ KingfisherPet/
 - **多屏**:窗口/屎/裂纹跟随鸟所在屏,`didChangeScreenParametersNotification` 监听插拔屏自动钳位。
 - **全屏检测**:NSWorkspace 取前台 pid 后 `AXUIElementCreateApplication` 直连查窗口(原生全屏属性 + 盖屏几何双判定)。不走 systemWide 的 `focusedApplication`——它对 Chromium 系(Edge/Chrome/Electron)恒返回空值,原生 App 却正常,是个伪装成授权问题的系统坑。
 - **放音检测**:GUI 进程内 MediaRemote(macOS 15.4+)拿不到全局播放状态,由无身份子进程(osascript)代查;只在鸟想叫的那一刻查一次,零轮询。
+
+## Windows
+
+Windows 版是 Tauri 2 移植(`windows/`),行为与 Mac 版对齐(走/飞/捕鱼/睡眠/屎物理/裂纹/主题/托盘菜单,锁屏检测,勿扰模式)。构建:`cd windows && npm install && npm run tauri build`。
+
+## 稳健性
+
+- 睡眠/唤醒端到端处理:睡前停掉全部定时器(防回调积压),唤醒延迟 3 秒轻启动
+- 看门狗 + 熔断:卡死自动复位/自我重启;窗口泄漏有守卫
+- 多屏插拔自动钳位;勿扰期间菜单动作一律不响应
 
 ## License
 
@@ -201,7 +213,7 @@ different palette + post-processing, switchable live from the settings panel.
 
 **Autonomous behaviors (all automatic)**
 - Idle: gentle breathing + blinking
-- Every 3.5–7s picks one: walking / relocating flights / **diving to catch fish** (arc to top → hover → dive → splash → fly back with fish → swallow) / singing / low darting runs / perching & watching / sunbathing / napping
+- Every ~1.5–7s (activity-dependent, ~2.5–5s default) picks one: walking / relocating flights / **diving to catch fish** (arc to top → hover → dive → splash → fly back with fish → swallow) / singing / low darting runs / perching & watching / sunbathing / napping
 - Poops after eating (physics: falls and lands on window tops or the Dock, re-falls when its window moves away); occasionally mid-air
 - **Ground shadow**: pinned above the Dock, right under the bird (grows & fades with height, stays on the ground)
 - A branch appears under its feet when it rests high — the branch always arrives *before* the bird
@@ -223,7 +235,8 @@ different palette + post-processing, switchable live from the settings panel.
 - Multi-display: poops/cracks/effects follow the bird's screen
 
 **Menu bar control (kingfisher icon, top-right)**
-- Call Over / Catch a Fish / Sing / Perch on a Window / Peck / Show·Hide / Sound / Launch at Login / Repair Screen / **Settings…** / Language / About / Quit
+- Call Over / Catch a Fish / Sing / Perch on a Window / Peck / Show·Hide / Sound / Launch at Login / Repair Screen / **Settings…** / Language / Check for Updates (renames to "New Version Available" when one is found) / About / Quit
+- Auto update check: silent at launch +30s and every 24h; a new version only renames the menu item, click for details
 - Show = hatch from an egg; Hide = plays dead and falls off-screen
 - Remembers last position & sound; optional launch-at-login
 
@@ -232,6 +245,7 @@ different palette + post-processing, switchable live from the settings panel.
 - Activity: low / mid / high (behavior frequency)
 - Animation speed: 0.5×–1.5×
 - Sound on/off
+- Peck-the-screen toggle (stops autonomous screen pecking; manual menu "Peck" unaffected)
 
 **Bilingual** (中文 / English): follows system language by default; switch anytime from the menu.
 

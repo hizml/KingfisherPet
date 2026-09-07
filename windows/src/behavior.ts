@@ -198,6 +198,10 @@ async function think() {
   if (busy || perchMoving || performance.now() < wakeGraceUntil) { scheduleThink(); return; }   // 栖窗被用户拖动中:推迟预设动作
   // 权重带逐项对齐 macOS think():idle/walk 带随活跃度伸缩(高活跃→少待机多走动),
   // fly 7 / fish 8 / sing 7 / dart 7 / watch 7 / sun 7 / peck 7 / perch 6 / poop 6,兜底 sleep
+  const a = settings.activity;
+  const idleBand = Math.round((1 - a) * 22);            // 0→22, 1→0
+  const walkEnd = idleBand + Math.max(1, Math.round((1 - a) * 20));   // idle+walk 带
+  const r = Math.random() * 100;   // 带宽是 0-100 的计数,不是 0-1 概率(之前忘乘,鸟只发呆)
   if (r < idleBand) { enter("idle"); scheduleThink(); }
   else if (r < walkEnd) startWalk();
   else if (r < walkEnd + 7) startFly();
@@ -360,13 +364,12 @@ function startPoop() {
 
 /// 拉屎(含物理):找 (x, y) 正下方最近落点(窗口上沿/任务栏顶),交给舞台窗下落-落定-淡出
 async function dropPoopAt(x: number, y: number) {
-  let landingY = y + 400, landHwnd: number | null = null, sc = 1;
+  let landingY = y + 400, landHwnd: number | null = null;
   try {
-    sc = await scale();
     const a = await area();
     let best = a.maxY;   // 任务栏顶(兜底)
     try {
-      const list = await invoke<[number, number, number, number][]>("surfaces_below_cmd", { x });   // x 已是物理(调用方换算过),不能再乘 sc
+      const list = await invoke<[number, number, number, number][]>("surfaces_below_cmd", { x });   // x 已是物理(调用方换算过)
       for (const s of list) {
         const top = s[1];
         // 表面在屎下方(top > y)且取最近的一条(top 最小)。
@@ -378,7 +381,7 @@ async function dropPoopAt(x: number, y: number) {
   } catch { /* */ }
   const dist = Math.max(0, landingY - y);
   const fallSec = Math.max(0.15, dist / 220);   // 220px/s(macOS 同款);近距也留 0.15s 可见下落
-  try { await poop.dropPoop(x, y, landingY, fallSec, landHwnd, sc); } catch (e) { warnOnce("dropPoop", e); }
+  try { await poop.dropPoop(x, y, landingY, fallSec, landHwnd); } catch (e) { warnOnce("dropPoop", e); }
 }
 
 // 栖窗:飞到最前窗口的上沿歇脚(Win32 front_perch;mac stub 返回 null → finish)
@@ -651,13 +654,9 @@ export async function callOver() {
     animateFlight(target, 1.0, () => finish());
   } catch (e) { startFly(); }
 }
-/// 菜单动作:隐藏时先完整破壳再执行(一次点击=显示+动作;Mac 同款缺失一并修)
-/// 隐藏时点动作:先"替用户点一下显示"再执行(用户方案)。
-/// 关键实现:显示走 Rust 直操(show_window_bottom_right),不依赖可能被
-/// WebView2 挂起的 JS 定时器——之前 hatchIn().await 在窗口隐藏后 hold 的
-/// setTimeout 不回调,Promise 永不 resolve → 动作链断裂 → 鸟"运动中消失"
-/// + 看门狗 busy 熔断(日志实证:开始破壳×4 无完成,2min 后熔断×2)。
-/// 流程:Rust 置右下角+显示 → JS 切蛋帧跑破壳动画 → 1.4s 真实定时器完成后执行动作。
+/// 菜单动作:隐藏时不响应(用户方案:唯一恢复入口=显示/隐藏)。
+/// (历史:曾用 Rust 直操 show_window_bottom_right 替隐藏后点动作"先显示再执行",
+/// 该命令已随方案废弃移除;现行为=直接 return,与 macOS 菜单守卫一致。)
 export function doSing() { if (!onScreen) return; startSing(); }   // 隐藏时不响应(用户方案)
 export function doEat() { if (!onScreen) return; startEat(); }
 export function doFish() { if (!onScreen) return; startFish(); }

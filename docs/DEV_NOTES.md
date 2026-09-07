@@ -68,7 +68,7 @@ PoopController / CrackController / ShadowController / BranchController
 ```
 
 关键实现点:
-- **透明置顶**:`NSWindow` borderless + `isOpaque=false` + `backgroundColor=.clear` + `level=statusBar+1`,无 Dock(`LSUIElement` + `setActivationPolicy(.accessory)`)。`collectionBehavior` 含 `canJoinAllSpaces`/`stationary`/`fullScreenAuxiliary`/`ignoresCycle`。
+- **透明置顶**:`NSWindow` borderless + `isOpaque=false` + `backgroundColor=.clear` + `level=statusBar+1`,无 Dock(`LSUIElement` + `setActivationPolicy(.accessory)`)。`collectionBehavior` 含 `canJoinAllSpaces`/`fullScreenAuxiliary`/`ignoresCycle`(stationary 已全线移除——close/orderOut 后需真正离开窗口列表)。
 - **点击穿透**:每帧预计算 `[UInt8]` alpha(顶行在前);`PetView.hitTest(_:)` 把父坐标转本视图坐标采样,透明像素返回 `nil`,事件落到后面的 App。
 - **逐帧**:60fps Timer 推进 `animTime`,`applyFrame()` 按 `sprites.json` 的序列+fps 选当前帧,赋给 `CALayer.contents`(按帧名去重避免重设)。`animTime` 累加受全局 `Settings.speed` 倍率影响。
 - **转向**:`facingRight` → `spriteLayer.setAffineTransform(scaleX:-1)`,水平翻转。

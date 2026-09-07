@@ -11,8 +11,8 @@
 
 | 场景 | 覆盖回归 | 关键断言 |
 |---|---|---|
-| `smoke` | 启动/破壳/状态机/窗口数 | 状态合法、常驻窗口 3-6、快照正立 |
-| `sleepwave`(sleepwake) | **睡眠唤醒链路:静音/suspend/卡顿/树枝闪/屎雨** | 睡眠期 PetView suspend、唤醒后 `POOP refall`=0、苏醒完成 |
+| `smoke` | 启动/破壳/状态机/窗口数 | 状态合法、常驻窗口 2-8、快照正立 |
+| `sleepwake` | **睡眠唤醒链路:静音/suspend/卡顿/树枝闪/屎雨** | 睡眠期 PetView suspend、唤醒后 `POOP refall`=0、苏醒完成 |
 | `themecycle` | 6 主题资源完整性 | 每主题 frames=35 |
 | `vis_toggle` | 隐藏/显示(死掉掉出/破壳)+ 幽灵特效 | 隐藏期窗口不可见+Effect=0,复活后状态合法 |
 
