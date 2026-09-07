@@ -15,7 +15,7 @@ jobs:
         with: { node-version: 20 }
       - uses: dtolnay/rust-toolchain@stable
         with: { targets: x86_64-pc-windows-msvc }
-      - name: 禁 as any / : any(幽灵API事故的机器防线;: any 同样绕过类型检查,一并拦)
+      - name: "禁 as any / : any(幽灵API事故的机器防线;: any 同样绕过类型检查,一并拦)"
         shell: bash
         run: |
           if grep -rnE "as any|: any" windows/src --include="*.ts"; then

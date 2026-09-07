@@ -73,7 +73,9 @@ final class CrackController {
         if overlay.frame.width == 0 { sizeToScreen() }
         let c = CGPoint(x: point.x - origin.x, y: point.y - origin.y)
 
-        if let near = cracks.last(where: { hypot($0.center.x - c.x, $0.center.y - c.y) < 55 }) {
+        // 取「最近」而非「最新」:按距离排序后取第一条命中的(评审 C8;last(where) 在旧裂纹在近处时会错过)
+        if let near = cracks.min(by: { hypot($0.center.x - c.x, $0.center.y - c.y) < hypot($1.center.x - c.x, $1.center.y - c.y) }),
+           hypot(near.center.x - c.x, near.center.y - c.y) < 55 {
             // 熔断 purgeLayers 后 container 脱离了 layer 树:扩展前先挂回去
             if near.container.superlayer == nil { layer.addSublayer(near.container) }
             near.grow()

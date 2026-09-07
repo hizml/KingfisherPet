@@ -919,7 +919,6 @@ def render_all_frames(theme, pal, post):
     render("walk_1", theme, pal, post, wing="folded", leg_phase=0.25)
     render("walk_2", theme, pal, post, wing="folded", leg_phase=0.5)
     render("walk_3", theme, pal, post, wing="folded", leg_phase=0.75)
-    render("fly_0", theme, pal, post, wing="folded")
     render("fly_1", theme, pal, post, wing="midup")
     render("fly_2", theme, pal, post, wing="up")
     render("fly_3", theme, pal, post, wing="middown")
@@ -930,7 +929,6 @@ def render_all_frames(theme, pal, post):
 
     # 俯冲捕鱼
     render("dive_0", theme, pal, post, wing="folded", hide_legs=True, rotate=90)
-    render("fly_fish_0", theme, pal, post, wing="folded", fish_in_beak=True)
     render("fly_fish_1", theme, pal, post, wing="midup",  fish_in_beak=True)
     render("fly_fish_2", theme, pal, post, wing="up",     fish_in_beak=True)
     render("fly_fish_3", theme, pal, post, wing="middown", fish_in_beak=True)
@@ -1003,7 +1001,7 @@ def render_all_frames(theme, pal, post):
     # 检查图
     montage_for(theme, [
         ("idle", "idle_0"), ("walk", "walk_0"), ("fly", "fly_2"), ("happy", "happy_0"),
-        ("dive", "dive_0"), ("fly_fish", "fly_fish_0"), ("eat0", "eat_0"), ("eat2", "eat_2"),
+        ("dive", "dive_0"), ("eat0", "eat_0"), ("eat2", "eat_2"),
         ("sing", "sing_0"), ("watch", "watch_0"), ("sun", "sun_0"), ("peck", "peck_0"),
         ("egg0", "egg_0"), ("egg1", "egg_1"), ("egg2", "egg_2"), ("dead", "dead"),
         ("poop", "poop_0"), ("shadow", "shadow"), ("branch", "branch"),

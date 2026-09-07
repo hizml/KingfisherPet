@@ -37,13 +37,6 @@ for theme_dir in "$SPRITES_SRC"/*/; do
 done
 # 叫声(多种,不随主题)
 cp Resources/peep_*.wav "$APP/Contents/Resources/" 2>/dev/null || true
-# 本地化(zh-Hans 默认,en)
-for loc in zh-Hans en; do
-  if [[ -d "Resources/${loc}.lproj" ]]; then
-    mkdir -p "$APP/Contents/Resources/${loc}.lproj"
-    cp "Resources/${loc}.lproj/"*.strings "$APP/Contents/Resources/${loc}.lproj/" 2>/dev/null || true
-  fi
-done
 
 echo "==> 3/6 生成图标"
 ICONSET="$(mktemp -d)/AppIcon.iconset"

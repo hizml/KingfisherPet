@@ -271,12 +271,12 @@ fn tray_pin_guidance(app: tauri::AppHandle) {
     use tauri::Manager;
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_secs(3));   // 等托盘就绪、前端加载完成
-        prefs_set("tray_tip_done", "1");
-        use tauri::Emitter;
-        // 弹窗由前端 update.html 自绘(设置窗同风格);系统 MessageBox 丑且盖鸟,弃用
+        // 先 emit 后落标记(时序修复):若先写标记,慢机上前端未加载完、事件丢失,引导永久消失
         if let Some(w) = app.get_webview_window("main") {
+            use tauri::Emitter;
             let _ = w.emit("tray-guide", ());
         }
+        prefs_set("tray_tip_done", "1");
     });
 }#[cfg(not(windows))]
 fn tray_pin_guidance(_app: tauri::AppHandle) {}

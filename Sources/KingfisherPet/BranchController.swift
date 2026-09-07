@@ -4,7 +4,7 @@ import QuartzCore
 /// 树枝:鸟停到屏幕高处歇脚时脚下出现一根树枝。
 /// - 比鸟高一层(statusBar+2):树枝盖住鸟脚,站立感更真实。
 /// - 飞往高处前可在目的地"提前出现"(showAt),鸟到了无缝接管,而不是到了才冒出来。
-/// - 一个可移动的透明 click-through 小窗口,60fps 跟随鸟的 x,贴在脚下。
+/// - 一个可移动的透明 click-through 小窗口,30fps 跟随鸟的 x,贴在脚下。
 final class BranchController {
 
     private weak var bird: NSWindow?
