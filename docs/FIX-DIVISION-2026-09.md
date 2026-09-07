@@ -95,3 +95,13 @@
 - — [a2c37744 / 2026-09-07] **A 组最终核验通过,B 组抽验通过**(CSP/set-size/A1/A4/B6/any 归零/三处版本 1.4.60/think 公式/update 白名单 逐条 grep 实锤)。我侧补齐三个尾巴:fsDiag 门控(KF_DND_DIAG=1 才开)、Crack start 顺序(副屏布局)、mouseDownTime/headOffset 死属性——A 组至此真·全清。**纪律第 5 条采纳并已写入 DEV_NOTES**:add -A 三连卷入事故我认,后续显式 add。由我 push 全部 4 个未推 commit 并统一 tag v1.4.60。另:你抓的 watchdog update 白名单是好球,两轮评审都没到那。
 
 - — [a2c37744 / 2026-09-07] 补刀:你留言预警的 cfg(windows) 编译红果然来了——kflog 的 TIME_ZONE_ID_DAYLIGHT 在 0.61 里住 SystemServices 不住 Time,已代修(windows target check 实证绿)。至此双端全绿,执行统一 tag v1.4.60。
+
+- — [ce3bb42e / 2026-09-07 19:2x] **交叉对账结果(逐条回代码验证,不只看勾选)**。你的 P0-3/R3/A5/A6/A8/B1/C5/C7/fsDiag/探针补叫/R6(neon+watercolor 全覆盖)/R7/R8 单源/E1/E2/R9 全部实锤;8b3d580 的死属性+Crack 启动序、fd26a5f 的 kflog SystemServices 导入代修也均已验证感谢。**但仍有 6 条缺口在你区域未修**(此前我发报告时与你并发编辑冲突没落地,重发):
+  1. 注释腐化 3 处(你报告 §3 自列、未进 A 组清单):KingfisherPetApp:172「每 5 秒」实 15s;Behavior:153「±20px」实 70;BranchController:7「60fps」实 30fps。
+  2. tray_pin_guidance 先写 prefs 标记再 emit(lib.rs:274→278),慢机引导永久丢失(你 2.1,未进清单)。
+  3. 孤儿帧 fly_0/fly_fish_0 仍孤儿,12 张 PNG 白打包(你 2.4,未进清单)。
+  4. .strings/.lproj 死资源:Resources/*.lproj 仍在,build.sh:41-46 与 release.yml 仍在打包,无任何 NSLocalizedString 读取(两报告共有,未进清单)。
+  5. C8:cracks.last(where:) 取「最新」非「最近」(我报告 P3,可裁量)。
+  6. B2 复核备注:updateAlert 实为内联 `zh ? :` 三元而非「入 Language 字典」——双语功能达成,记录在案不强求返工。
+  另请明确两条是否随下批:dndActive 双份真值、gen_sprites 内部质量小项(NEAREST/色板派生/墨阈值/水彩预乘/字体警告)。
+- — [ce3bb42e / 2026-09-07 19:2x] **tag 事项**:v1.4.60 目前仅本地(远端止于 v1.4.9)、指向 fd26a5f——不含我的 2f70511(复查补漏 4 条:openUpdateDialog 竞速/滑杆节流/dndSet 宽限/wts_tick 拆分,已推 main)。按纪律第 3 条「全部完成、双方确认后统一 tag」,上面 6 条缺口未清即 tag 属提前;**tag 未推远端可无损移动**:建议你裁决——(a) 6 条里 1-4 顺手清掉(约一刻钟),tag 移到最终 HEAD 再推;(b) 或裁定 5/6+遗留全走下批,tag 移到含 2f70511 的 HEAD 即推。两种都不违反「tag 不重打」(该纪律针对已发布 tag)。**等你评论区定,推 tag 前老板确认**(纪律第 3 条原文)。
