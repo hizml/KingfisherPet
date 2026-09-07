@@ -1,29 +1,3 @@
-    private func updateAlert(latest: String?, current: String) {
-        let a = NSAlert()
-        if latest == nil {
-            a.messageText = Language.t("update.failed")
-            a.informativeText = Language.t("update.failedBody")
-            a.addButton(withTitle: Language.t("update.openReleases"))
-            if a.runModal() == .alertFirstButtonReturn {
-                NSWorkspace.shared.open(URL(string: "https://github.com/hizml/KingfisherPet/releases")!)
-            }
-            return
-        }
-        if latest == "v" + current {
-            a.messageText = Language.t("update.latest")
-            a.informativeText = "v\(current)"
-            _ = a.runModal()
-        } else {
-            a.messageText = Language.t("update.found") + " \(latest!)"
-            a.informativeText = String(format: Language.t("update.downloadBody"), current)
-            a.addButton(withTitle: Language.t("update.download"))
-            a.addButton(withTitle: Language.t("update.later"))
-            if a.runModal() == .alertFirstButtonReturn {
-                NSWorkspace.shared.open(URL(string: "https://github.com/hizml/KingfisherPet/releases/latest")!)
-            }
-        }
-    }
-
 import AppKit
 import ApplicationServices
 import ServiceManagement
@@ -195,7 +169,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // CPU 自监控:每 5 秒记录进程 CPU% + 线程数 + effect 数 + 当前状态,定位唤醒卡死
+        // CPU 自监控:每 15 秒记录进程 CPU% + 线程数 + effect 数 + 当前状态,定位唤醒卡死
+        // (间隔 15s:熔断需 3 连击=45s,更频的 fork ps 唤醒太费电;注释此前误写 5s)
         startWatchdog()
         startAutoUpdateCheck()   // 启动 30s + 每 24h 静默查更新(有新版才提示一次)
     }
@@ -864,7 +839,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let cur = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "dev"
             let has = (latest != nil) && latest != "v" + cur
             self.checkUpdateItem?.title = has
-                ? (Language.current == "zh" ? "发现新版本" : "New Version Available")
+                ? Language.t("update.found")
                 : Language.t("menu.checkUpdate")
             if has { kfLog("update: 自动检查发现新版 \(latest!),菜单已标注") }
         }
@@ -877,26 +852,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     private func updateAlert(latest: String?, current: String) {
-        let zh = Language.current == "zh"
+        // 文案全部走 Language 字典(评审 B2:此前内联 zh?: 三元,绕过本地化体系)
         let a = NSAlert()
         if latest == nil {
-            a.messageText = zh ? "检查更新失败" : "Update Check Failed"
-            a.informativeText = zh ? "无法访问 GitHub(网络原因)。可手动前往 Releases 页面查看。" : "Cannot reach GitHub. You can check the Releases page manually."
-            a.addButton(withTitle: zh ? "打开 Releases 页" : "Open Releases")
+            a.messageText = Language.t("update.failed")
+            a.informativeText = Language.t("update.failedBody")
+            a.addButton(withTitle: Language.t("update.openReleases"))
             if a.runModal() == .alertFirstButtonReturn {
                 NSWorkspace.shared.open(URL(string: "https://github.com/hizml/KingfisherPet/releases")!)
             }
             return
         }
         if latest == "v" + current {
-            a.messageText = zh ? "已是最新版本" : "Up to Date"
+            a.messageText = Language.t("update.latest")
             a.informativeText = "v\(current)"
             _ = a.runModal()
         } else {
-            a.messageText = zh ? "发现新版本 \(latest!)" : "New Version \(latest!)"
-            a.informativeText = zh ? "当前 v\(current)。前往下载?" : "Current v\(current). Download now?"
-            a.addButton(withTitle: zh ? "前往下载" : "Download")
-            a.addButton(withTitle: zh ? "稍后" : "Later")
+            a.messageText = Language.t("update.found") + " \(latest!)"
+            a.informativeText = String(format: Language.t("update.downloadBody"), current)
+            a.addButton(withTitle: Language.t("update.download"))
+            a.addButton(withTitle: Language.t("update.later"))
             if a.runModal() == .alertFirstButtonReturn {
                 NSWorkspace.shared.open(URL(string: "https://github.com/hizml/KingfisherPet/releases/latest")!)
             }

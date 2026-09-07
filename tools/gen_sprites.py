@@ -166,6 +166,8 @@ def font(size):
         except Exception:
             pass
     if f is None:
+        print("[gen_sprites] 警告:未找到系统字体(_FONT_PATHS 全部失败,非 macOS?)——"
+              "zzz 文字将退化为位图默认字体;请在 _FONT_PATHS 补本机字体路径")
         f = ImageFont.load_default()
     _FONT_CACHE[size] = f
     return f
@@ -483,15 +485,13 @@ def post_pixel(img):
     """像素风:降采样到 64px(硬边块状)再 NEAREST 放回 256px;量化到限定色板。"""
     img = img.convert("RGBA")
     PX = 64
-    small = img.resize((PX, PX), Image.NEAREST)
-    # 量化色板:取 flat 主色 + 过渡
-    palette_colors = [
-        (22,166,179),(15,120,132),(240,145,59),(214,110,36),
-        (253,246,230),(26,26,26),(40,40,40),(24,28,32),(224,96,48),
-        (235,84,110),(255,196,120),(230,120,70),(235,110,130),
-        (202,214,222),(150,168,180),(252,244,224),(196,158,96),
-        (120,200,230),(88,168,78),(60,128,56),(150,196,206),
-    ]
+    # 降采样用 BOX(区域平均):NEAREST 只采样块内单像素,腿/喙等 1-2px 细部
+    # 跨帧随相位漂移闪烁(评审:细部闪烁)。放大仍用 NEAREST 保持硬边块状。
+    small = img.resize((PX, PX), Image.BOX)
+    # 量化色板:由 BASE_PALETTE 派生(评审:此前手抄清单,BASE 一改即漂移)。
+    # 排除半透明的 BLUSH(量化只收不透明主体色)与树枝三色(branch 走独立渲染路径)。
+    palette_colors = [v[:3] for k, v in BASE_PALETTE.items()
+                      if k not in ("BLUSH", "BRANCH", "BRANCH_L", "BRANCH_D")]
     px = small.load()
     for y in range(PX):
         for x in range(PX):
@@ -556,25 +556,52 @@ def post_ink(img):
             # 永不命中喙/腹,只漏放 flat 橙红的嘴腔/腮红——调色板已补键,分支删除)
             lum = 0.299*r + 0.587*g + 0.114*b
             # 亮区(白颊)留白,暗区转黑
-            if lum > 200:
+            if lum >= 220:
                 op[x, y] = (235, 232, 225, a)
             else:
                 jitter = rnd.random() * 20 - 10
                 # 墨分五色:按亮度渐变成墨阶(亮→淡墨,暗→浓墨),不再二值纯黑
                 v = max(0, min(150, int(lum * 0.55) + int(jitter)))
-                op[x, y] = (v, v, v, a)
+                if lum > 180:
+                    # 180-220 线性过渡:墨阶→纸白(此前 >200 直接跳纸白,109↔235
+                    # 硬跳变在颊/腹交界可见横带;评审:阈值过渡)
+                    t = (lum - 180) / 40.0
+                    op[x, y] = (int(v + (235 - v) * t),
+                                int(v + (232 - v) * t),
+                                int(v + (225 - v) * t), a)
+                else:
+                    op[x, y] = (v, v, v, a)
     # 边缘墨晕:轻微模糊后 alpha 衰减叠加
     ink_bleed = out.filter(ImageFilter.GaussianBlur(0.8))
     return ink_bleed
 
+
+def _premultiply(img):
+    """RGB × alpha/255(透明区 RGB 归零)。含 alpha 的模糊前必做:透明像素的
+    RGB=(0,0,0) 直接参与高斯模糊会把黑渗进轮廓内缘(评审:水彩 1px 黑边)。"""
+    r, g, b, a = img.split()
+    return Image.merge("RGBA", (ImageChops_mul(r, a), ImageChops_mul(g, a), ImageChops_mul(b, a), a))
+
+def _unpremultiply(img):
+    """预乘逆操作:RGB × 255 / alpha(模糊后的 alpha;a≈0 处 RGB 本就近 0,分母兜底)。
+    用 numpy:Pillow ≥11 已移除 ImageMath.eval。"""
+    import numpy
+    arr = numpy.asarray(img, dtype=numpy.float32)
+    a = numpy.maximum(arr[..., 3], 1.0)
+    out = numpy.empty_like(arr)
+    for i in range(3):
+        out[..., i] = numpy.clip(arr[..., i] * 255.0 / a, 0, 255)
+    out[..., 3] = arr[..., 3]
+    return Image.fromarray(out.astype(numpy.uint8), "RGBA")
 
 def post_watercolor(img):
     """水彩手绘:轻渗色(GaussianBlur)+ 纸纹(multiply)+ 边缘水痕。"""
     img = img.convert("RGBA")
     alpha = img.split()[3]
 
-    # 1) 渗色:轻微模糊颜色,保持 alpha 硬边
-    blurred = img.filter(ImageFilter.GaussianBlur(1.2))
+    # 1) 渗色:轻微模糊颜色,保持 alpha 硬边。
+    # 预乘 → 模糊 → 除回:物理正确的 alpha 混合,透明区不再向边缘渗黑
+    blurred = _unpremultiply(_premultiply(img).filter(ImageFilter.GaussianBlur(1.2)))
     # 用原 alpha 复位边缘(避免颜色溢出太远)
     b_r, b_g, b_b, _ = blurred.split()
     softened = Image.merge("RGBA", (b_r, b_g, b_b, alpha))

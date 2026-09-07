@@ -150,7 +150,7 @@ final class Behavior: PetViewDelegate {
         guard let w = window, let scr = screen else { finish(); return }
         let feetY = w.frame.minY + feetOffset
         // 吸附:找离鸟脚最近的表面(窗口上沿 / Dock 顶),上下方都找。
-        // 脚在表面 ±20px 内 → 吸到精确位置(脚踩表面),否则飞走/落下。
+        // 脚在表面 ±70px 内 → 吸到精确位置(脚踩表面),否则飞走/落下(注释此前误写 ±20)。
         let ground = scr.visibleFrame.minY
         let (surfY, surfID) = WindowTracker.nearestSurface(atX: w.frame.midX,
                                                             feetY: feetY, groundY: ground)
