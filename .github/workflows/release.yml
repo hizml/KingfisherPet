@@ -31,7 +31,6 @@ jobs:
           APP="build/KingfisherPet.app"
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/Sprites"
           cp .build/release/KingfisherPet "$APP/Contents/MacOS/"
-          cp .build/release/kf-media-probe "$APP/Contents/MacOS/"   # 放音勿扰探针
           for d in Resources/Sprites/*/; do
             t=$(basename "$d"); mkdir -p "$APP/Contents/Resources/Sprites/$t"
             # 分条容错(对齐 build.sh):一条 || true 会因任一 json 缺失丢掉整主题 png(评审)

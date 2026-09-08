@@ -19,12 +19,6 @@ let package = Package(
             path: "Sources/KingfisherPet",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
-        // 放音勿扰探针二进制(随 app 打包,叫前 spawn 查一次系统"真在播"标志)
-        .executableTarget(
-            name: "kf-media-probe",
-            path: "Sources/kf-media-probe",
-            swiftSettings: [.swiftLanguageMode(.v5)]
-        ),
         // 纯逻辑单测 runner(零依赖:本机 CLT 无 XCTest/swift-testing):
         // swift run kf-tests,断言失败 exit 1,CI 与本地通用。
         // 起因:版本比较 bug 属"正常流正确、边界态静默错",review 治不了这类,单测才治得了

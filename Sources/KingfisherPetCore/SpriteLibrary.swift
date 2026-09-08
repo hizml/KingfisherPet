@@ -212,21 +212,9 @@ final public class SpriteLibrary {
             }
         }
         let proc = Process()
-        // 探针查找链:app 包内二进制 → dev 裸跑时 .build 目录的兄弟产物 → osascript 终极兜底。
-        // osascript 版读 info 字典 rate,会被"暂停后不更新会话的播放器"永久污染(咪咕实测:
-        // 僵尸会话 rate=1 冻结一小时+),只作无编译产物时的最后手段
-        let bundleURL = Bundle.main.bundleURL
-        let candidates = [
-            bundleURL.appendingPathComponent("Contents/MacOS/kf-media-probe").path,   // .app 包内
-            bundleURL.appendingPathComponent("kf-media-probe").path,                   // dev 裸跑(.build/release/)
-        ]
-        if let bin = candidates.first(where: { FileManager.default.fileExists(atPath: $0) }) {
-            proc.executableURL = URL(fileURLWithPath: bin)
-            proc.arguments = []
-        } else {
-            proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-            proc.arguments = ["-l", "JavaScript", "-e", SpriteLibrary.mediaProbeJS]
-        }
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        proc.arguments = ["-l", "JavaScript", "-e", SpriteLibrary.mediaProbeJS]
         let out = Pipe(); proc.standardOutput = out; proc.standardError = Pipe()
         do {
             try proc.run()
@@ -236,10 +224,23 @@ final public class SpriteLibrary {
                     .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 DispatchQueue.main.async {
                     self?.peepProbeBusy = false
-                    if SpriteLibrary.shouldSwallowChirp(probeOutput: txt) {
-                        kfLog("media: 系统在播(探针=\(txt)),吞掉这声叫")
+                    // 解析 "r=<rate> t=<tsEpoch>";畸形输出按"没播"处理(fail-open)
+                    var rate = 0.0
+                    var age: TimeInterval? = nil
+                    let parts = txt.split(separator: " ")
+                    for p in parts {
+                        if p.hasPrefix("r=") { rate = Double(p.dropFirst(2)) ?? 0 }
+                        if p.hasPrefix("t=") {
+                            if let t = Double(p.dropFirst(2)), t > 0 {
+                                age = Date().timeIntervalSince1970 - t
+                            }
+                        }
+                    }
+                    if SpriteLibrary.shouldSwallowChirp(rate: rate, sessionAgeSeconds: age) {
+                        kfLog("media: 系统在播(rate=\(rate) 会话龄=\(age.map { Int($0) }.map { "\($0)s" } ?? "?")),吞掉这声叫")
                     } else {
-                        if !SpriteLibrary.probeOK { SpriteLibrary.probeOK = true; kfLog("media: 叫前探针链路可用(探针=\(txt))") }
+                        if !SpriteLibrary.probeOK { SpriteLibrary.probeOK = true; kfLog("media: 叫前探针链路可用") }
+                        kfLog("media: 照叫(rate=\(rate) 会话龄=\(age.map { Int($0) }.map { "\($0)s" } ?? "无"))")
                         self?.peepPlay()
                     }
                 }
@@ -265,29 +266,40 @@ final public class SpriteLibrary {
     /// - nowPlayingApplicationIsPlaying 标志:JXA 里两个入口播放中都恒 no,不可用(实测);
     /// - localNowPlayingItem 的 elapsed:冻结快照,跨进程读两次分毫不差,不可用(实测)。
     /// 输出协议:"1"在播/"0"没播/"nil"无 now-playing;判定入口 shouldSwallowChirp(单测覆盖)。
+    /// 探针 v4(终版):osascript 读 rate + 会话时间戳。
+    /// 信号选型血泪史(2026-09-08 本机逐条实测,别再走弯路):
+    /// - info 字典的 rate(osascript 读):唯一活的一手信号——QuickTime 播放=1/暂停=0、
+    ///   咪咕健康期两态都对、视频会话 rate=0;死穴是"会话僵尸"(咪咕暂停后冻结 rate=1
+    ///   一小时+),用时间戳活性治(kMRMediaRemoteNowPlayingInfoTimestamp=Owner 上次
+    ///   上报时刻,僵尸不刷新);
+    /// - C-API MRMediaRemoteGetNowPlayingApplicationIsPlaying:非苹果签名二进制里恒 0
+    ///   (QuickTime 实播中读 0 实锤)——只有苹果签名的 osascript 有资格,但 JXA 调不了 C 函数;
+    /// - localNowPlayingItem 在自编二进制(含内嵌 Info.plist/IMP 直调/-Onone)全读 nil;
+    ///   elapsed 是冻结快照。结论:离开 osascript 无解。
+    /// 输出协议:"r=<rate> t=<tsEpoch秒>" / "nil"(无会话)。
     static let mediaProbeJS = """
         const b = $.NSBundle.bundleWithPath("/System/Library/PrivateFrameworks/MediaRemote.framework");
         b.load;
-        const req = $.NSClassFromString("MRNowPlayingRequest");
-        const getRate = () => {
-            const it = req.localNowPlayingItem;
-            if (!it) return null;
-            return parseFloat(it.nowPlayingInfo.valueForKey("kMRMediaRemoteNowPlayingInfoPlaybackRate").js + "");
-        };
-        const r1 = getRate();
-        if (r1 === null) { "nil" }
+        const item = $.NSClassFromString("MRNowPlayingRequest").localNowPlayingItem;
+        if (!item) { "nil" }
         else {
-            const t0 = $.NSDate.date.timeIntervalSince1970;
-            while ($.NSDate.date.timeIntervalSince1970 - t0 < 0.4) {}
-            const r2 = getRate();
-            (r1 > 0 && r2 !== null && r2 > 0) ? "1" : "0"
+            const rate = parseFloat(item.nowPlayingInfo.valueForKey("kMRMediaRemoteNowPlayingInfoPlaybackRate").js + "");
+            const ts = item.nowPlayingInfo.valueForKey("kMRMediaRemoteNowPlayingInfoTimestamp");
+            const epoch = ts ? Math.floor(Date.parse(ts.js + "")) / 1000 : 0;
+            "r=" + rate + " t=" + epoch
         }
         """
 
-    /// 探针输出 → 是否吞掉这声叫(纯函数,kf-tests 单测覆盖)。
-    /// "1"=在播吞掉;其余("0"/"nil"/畸形/空)一律照叫——fail-open,勿扰优先级低于功能可用。
-    public static func shouldSwallowChirp(probeOutput: String) -> Bool {
-        probeOutput.trimmingCharacters(in: .whitespacesAndNewlines) == "1"
+    /// 会话时间戳活性上限:Owner(播放器)超过此时长没刷新上报 = 僵尸会话,其 rate 不可信。
+    /// 窗口取 180s:僵尸解冻延迟 ≤3 分钟(叫声分钟级,无感);长曲中途不重报的误报窗口足够宽。
+    public static let maxSessionAgeSeconds: TimeInterval = 180
+
+    /// 探针信号 → 是否吞掉这声叫(纯函数,kf-tests 覆盖)。
+    /// 吞 ⟺ rate>0 且 会话时间戳新鲜(≤180s);其余(暂停/无会话/无时间戳/僵尸)一律照叫——
+    /// fail-open,勿扰优先级低于功能可用。
+    public static func shouldSwallowChirp(rate: Double, sessionAgeSeconds: TimeInterval?) -> Bool {
+        guard rate > 0, let age = sessionAgeSeconds, age >= 0, age <= maxSessionAgeSeconds else { return false }
+        return true
     }
     private static var probeOK = false
     private var peepProbeBusy = false
