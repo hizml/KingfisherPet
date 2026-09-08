@@ -57,7 +57,10 @@
       btn(L.openRel, true, () => { open(REL).then(() => close(), () => {}); }); btn(L.closeB, false, close); }
     else if (t === "guide") { elT.textContent = L.guideT; elM.textContent = L.guideM;
       btn(L.openSet, true, () => { open("ms-settings:taskbar").then(() => close(), () => {}); }); btn(L.later, false, close); }
-    else { elT.textContent = L.aboutT; elM.textContent = L.aboutM;
+    else { elT.textContent = L.aboutT;
+      // 版本行(关于弹窗此前没版本号,老板要求)
+      if (cur) { const v = document.createElement("div"); v.textContent = (zh ? "当前版本 v" : "Version v") + cur; v.style.cssText = "color:#0e7c86;font-weight:600;margin-bottom:8px;"; elM.before(v); }
+      elM.textContent = L.aboutM;
       // 鸟图标(关于窗专属,Mac NSAlert.icon 同款)
       const img = document.createElement("img");
       img.src = new URL("Sprites/flat/idle_0.png", import.meta.env.BASE_URL).href;

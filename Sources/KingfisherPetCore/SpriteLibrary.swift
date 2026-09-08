@@ -244,26 +244,30 @@ final public class SpriteLibrary {
         p.play()
     }
 
-    /// 探针 v2:主判据改用 nowPlayingApplicationIsPlaying(系统权威"在播"标志)。
-    /// 此前只看 playbackRate——它是"App 上次 SET 的值"而非系统真相:播放器暂停后
-    /// 重刷 NowPlayingInfo、其他 App 瞬间抢占 now-playing 时会闪回 >0 → 鸟偶发静音
-    /// (用户实报:播放器已暂停仍偶尔静音;2026-09-08 实测暂停态 rate=0/flag=no 均正常,
-    /// 闪变只能靠 flag 防)。flag 拿不到时退回 rate>0(倍速播放也覆盖)。
-    /// 输出协议:"1"在播/"0"没播/"nil"无 now-playing。
+    /// 探针 v3:rate 双采样防抖(两次都 >0 才判在播,间隔 400ms)。
+    /// 信号选型(2026-09-08 两种状态实测定案):
+    /// - playbackRate:暂停=0/播放=1 两态都对,唯一毛病是瞬闪(播放器暂停后重刷
+    ///   NowPlayingInfo、其他 App 抢占 now-playing 时闪回 >0)——双采样即可滤掉(真播放
+    ///   持续为 1,闪变 400ms 内回落);
+    /// - nowPlayingApplicationIsPlaying 标志:JXA 里两个入口播放中都恒 no,不可用(实测);
+    /// - localNowPlayingItem 的 elapsed:冻结快照,跨进程读两次分毫不差,不可用(实测)。
+    /// 输出协议:"1"在播/"0"没播/"nil"无 now-playing;判定入口 shouldSwallowChirp(单测覆盖)。
     static let mediaProbeJS = """
         const b = $.NSBundle.bundleWithPath("/System/Library/PrivateFrameworks/MediaRemote.framework");
         b.load;
         const req = $.NSClassFromString("MRNowPlayingRequest");
-        const item = req.localNowPlayingItem;
-        if (!item) { "nil" }
+        const getRate = () => {
+            const it = req.localNowPlayingItem;
+            if (!it) return null;
+            return parseFloat(it.nowPlayingInfo.valueForKey("kMRMediaRemoteNowPlayingInfoPlaybackRate").js + "");
+        };
+        const r1 = getRate();
+        if (r1 === null) { "nil" }
         else {
-            let flag = "";
-            try { flag = req.nowPlayingApplicationIsPlaying ? "1" : "0"; } catch (e) { flag = ""; }
-            if (flag !== "") { flag }
-            else {
-                const rate = (item.nowPlayingInfo.valueForKey("kMRMediaRemoteNowPlayingInfoPlaybackRate")).js + "";
-                (parseFloat(rate) > 0 ? "1" : "0")
-            }
+            const t0 = $.NSDate.date.timeIntervalSince1970;
+            while ($.NSDate.date.timeIntervalSince1970 - t0 < 0.4) {}
+            const r2 = getRate();
+            (r1 > 0 && r2 !== null && r2 > 0) ? "1" : "0"
         }
         """
 

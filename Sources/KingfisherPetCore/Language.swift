@@ -74,6 +74,7 @@ public enum Language {
         "about.title": "翡",
         "about.body": "一只住在你 Mac 上的小生灵。\n它会自己活动,也会回应你——\n至于它都会些什么,养着养着就知道了。\n\n点它、拖它,或者就让它待着。",
         "about.github": "GitHub 主页",
+        "about.version": "当前版本 v%@",
         "about.ok": "好",
         // 无障碍/其他
         "ax.petName": "翡 · 翠鸟",
@@ -124,6 +125,7 @@ public enum Language {
         "about.title": "Fei",
         "about.body": "A little creature living on your Mac.\nIt does its own thing, and answers to you—\nwhat it can do, you'll discover as you keep it around.\n\nClick it, drag it, or just let it be.",
         "about.github": "GitHub Page",
+        "about.version": "Version v%@",
         "about.ok": "OK",
         // Accessibility
         "ax.petName": "Fei · Kingfisher",

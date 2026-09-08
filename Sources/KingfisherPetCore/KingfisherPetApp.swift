@@ -549,7 +549,8 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func showAbout() {
         let alert = NSAlert()
         alert.messageText = Language.t("about.title")
-        alert.informativeText = Language.t("about.body")
+        let cur = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "dev"
+        alert.informativeText = String(format: Language.t("about.version"), cur) + "\n\n" + Language.t("about.body")
         alert.alertStyle = .informational
         alert.addButton(withTitle: Language.t("about.github"))
         alert.addButton(withTitle: Language.t("about.ok"))

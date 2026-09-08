@@ -146,8 +146,9 @@ async function main() {
       } catch { if (!silent) await openUpdateDialog("t=error", zhUI() ? "翡 · 检查更新" : "Fei · Update"); }
     }
     // 关于(Mac NSAlert 同款:文案+鸟图标+GitHub 按钮;之前直接跳网页,弃)
-    listen("show-about", () => {
-      openUpdateDialog("t=about", zhUI() ? "关于 翡" : "About Fei", 250).catch(() => {});
+    listen("show-about", async () => {
+      const cur = await getVersion().catch(() => "dev");
+      openUpdateDialog(`t=about&cur=${cur}`, zhUI() ? "关于 翡" : "About Fei", 250).catch(() => {});
     });
     // 首启托盘常显引导(Rust emit;原系统 MessageBox 丑且盖鸟,统一自绘)
     listen("tray-guide", () => {
