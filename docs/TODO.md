@@ -18,8 +18,8 @@
 - [x] 开机自启(SMAppService,菜单可切换)
 - [x] **设置面板**:活跃度(行为触发频率)、动画速度、声音、主题——独立窗口
       (`Settings.swift` + `SettingsWindowController`)
-- [ ] **签名 + 公证**:现在是 ad-hoc 签名,只能本机跑;发给别人需 Developer ID + notarize,
-      或当源码发(需外部证书,代码侧已就绪)
+- [x] **固定自签证书**:CI 与本地统一 "KingfisherPet Dev" 自签(签名稳定 → 辅助功能授权
+      不随升级失效);正式对外分发仍需 Developer ID + notarize(需外部证书,代码侧已就绪)
 
 ## 健壮性
 - [x] **动作抢占/并发触发安全**:`Behavior.gen` 代际机制 + `hold`/timer 守卫,
@@ -42,5 +42,5 @@
 
 ## 体验
 - [x] 无障碍(AX)标签:菜单栏 button、PetView、设置控件均有 accessibilityLabel
-- [x] 本地化(中/英):`zh-Hans` / `en` Localizable.strings,菜单/设置/关于文案走
-      `NSLocalizedString`
+- [x] 本地化(中/英):`Language.swift` 运行时字典表(可运行时切换;NSLocalizedString
+      只跟系统语言做不到,已弃用,.strings 死文件已删)

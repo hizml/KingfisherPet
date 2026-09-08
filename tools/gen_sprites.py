@@ -424,12 +424,6 @@ def draw_egg(W, H, pal, stage):
 # 输入已是 SIZE x SIZE;输出同尺寸。
 # =========================================================================
 
-def _split_alpha(img):
-    """返回 (rgb, alpha)。rgb 为透明区填黑的 RGB,alpha 为 L。"""
-    img = img.convert("RGBA")
-    return img.split()
-
-
 def _compose(rgb_or_rgba, alpha):
     """用给定 alpha 合成(保持原色或新色)。"""
     base = rgb_or_rgba.convert("RGBA")
@@ -464,7 +458,6 @@ def post_clay(img):
     inner = edge_alpha.filter(ImageFilter.MinFilter(9))      # 内缩一圈
     rim_mask = ImageChops_sub(edge_alpha, inner)             # 边缘带
     rim = _compose(Image.new("RGBA", img.size, (255, 255, 255, 255)), rim_mask)
-    rim.putalpha(rim_mask)
     img = Image.alpha_composite(img, rim)
 
     # 3) 右下投影:把主体复制、染深、模糊、偏移,叠在主体之下
@@ -701,7 +694,7 @@ def render(name, theme, pal, post, rotate=0, egg_stage=None, **kw):
     small.save(os.path.join(out_dir, name + ".png"))
 
 
-def render_shadow(theme, post):
+def render_shadow(theme):
     """柔和地面阴影:径向渐变椭圆。像素风做硬边、霓虹做发光,其余靠主题后处理或保持。"""
     W, H = 256, 96
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -936,7 +929,7 @@ def montage_for(theme, names, out="contact.png"):
     cell = SIZE
     sheet = Image.new("RGBA", (cols*cell, rows*cell), (24, 28, 34, 255))
     d_dir = os.path.join(OUT_BASE, theme)
-    for i, (label, fn) in enumerate(names):
+    for i, (_label, fn) in enumerate(names):   # label 未用(评审死代码项),置 _ 占位
         r, c = divmod(i, cols)
         p = os.path.join(d_dir, fn + ".png")
         if os.path.exists(p):
@@ -997,7 +990,7 @@ def render_all_frames(theme, pal, post):
     render("dead", theme, pal, post, wing="up", x_eye=True, tongue=True, mouth_open=True, hide_legs=True, rotate=180)
 
     # 阴影 + 树枝
-    render_shadow(theme, post)
+    render_shadow(theme)
     render_branch(theme, post, pal)
     render_effects(theme, pal, post)
 
