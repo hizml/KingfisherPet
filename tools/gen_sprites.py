@@ -594,6 +594,23 @@ def _unpremultiply(img):
     out[..., 3] = arr[..., 3]
     return Image.fromarray(out.astype(numpy.uint8), "RGBA")
 
+def _paper_texture(w, h):
+    """水彩纸纹(按尺寸缓存;种子固定 99,同尺寸逐帧必然相同)。"""
+    key = (w, h)
+    if key not in _PAPER_CACHE:
+        noise = Image.new("L", (w, h))
+        npix = noise.load()
+        rnd = random.Random(99)
+        for y in range(h):
+            for x in range(w):
+                npix[x, y] = 225 + rnd.randint(-18, 18)
+        paper = Image.merge("RGB", (noise, noise,
+                                    ImageOps.colorize(noise, (0, 0, 0), (250, 244, 230)).split()[1]))
+        _PAPER_CACHE[key] = paper.convert("RGBA")
+    return _PAPER_CACHE[key]
+
+_PAPER_CACHE = {}
+
 def post_watercolor(img):
     """水彩手绘:轻渗色(GaussianBlur)+ 纸纹(multiply)+ 边缘水痕。"""
     img = img.convert("RGBA")
@@ -606,17 +623,10 @@ def post_watercolor(img):
     b_r, b_g, b_b, _ = blurred.split()
     softened = Image.merge("RGBA", (b_r, b_g, b_b, alpha))
 
-    # 2) 纸纹:随机噪声生成米色纸面,multiply 叠加
+    # 2) 纸纹:multiply 叠加米色纸面。噪声种子固定(99),逐帧纹理本就相同——
+    #    此前每帧重算 256×256 噪声,水彩全量再生分钟级纯浪费(交接单:纸纹缓存)
     w, h = img.size
-    noise = Image.new("L", (w, h))
-    npix = noise.load()
-    rnd = random.Random(99)
-    for y in range(h):
-        for x in range(w):
-            npix[x, y] = 225 + rnd.randint(-18, 18)
-    paper = Image.merge("RGB", (noise, noise,
-                                ImageOps.colorize(noise, (0, 0, 0), (250, 244, 230)).split()[1]))
-    paper = paper.convert("RGBA")
+    paper = _paper_texture(w, h).copy()   # copy:putalpha 按帧 alpha 蒙版,勿改缓存本体
     # multiply 纸纹(只在主体内)
     paper_a = ImageChops_mul(alpha, Image.new("L", (w, h), 255))
     paper.putalpha(paper_a)
