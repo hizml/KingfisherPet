@@ -12,6 +12,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 ./build.sh                          # SwiftPM release 编译 → 组装 build/KingfisherPet.app → ad-hoc 签名 → 杀旧进程并启动(开发主循环)
+swift run kf-tests                  # Mac 纯逻辑单测(版本比较/Settings clamp/Language 回退;零依赖 runner,CLT 可跑)
+npm --prefix windows test           # Windows 纯逻辑单测(node --test,与 Mac 同口径用例)
 swift build                         # 只编译不打包(快速看编译错误)
 .venv/bin/python tools/gen_sprites.py   # 重新生成素材(改了 gen_sprites.py 才需要);首次:python3 -m venv .venv && .venv/bin/pip install pillow
 ```
@@ -31,7 +33,7 @@ KF_DEMO=1 .build/release/KingfisherPet       # 2.5s 后自动拉一坨屎,便于
 
 ## 架构大图
 
-入口 `@main enum KingfisherPetApp` 手动建 `NSApplication` + `setActivationPolicy(.accessory)`(不进 Dock,只留菜单栏图标)。`AppDelegate` 装配所有子系统:`PetWindowController`(鸟) + 四个常驻覆盖层控制器 + 菜单栏 `NSStatusItem` + 设置窗口 + 三个服务类型(`DndMonitor` 勿扰巡检/AX 查询走后台队列、`UpdateService` 检查更新、`WatchdogService` 熔断看门狗——各自独立文件持有自身状态)。
+入口是薄壳 `Sources/KingfisherPet/main.swift`(建 `NSApplication` + accessory 策略),实现全在 core 库 `Sources/KingfisherPetCore/`——拆分是为了 `kf-tests` 能链接 core 做单测(executable 依赖 executable 会双 main 撞链接)。`AppDelegate` 装配所有子系统:`AppDelegate` 装配所有子系统:`PetWindowController`(鸟) + 四个常驻覆盖层控制器 + 菜单栏 `NSStatusItem` + 设置窗口 + 三个服务类型(`DndMonitor` 勿扰巡检/AX 查询走后台队列、`UpdateService` 检查更新、`WatchdogService` 熔断看门狗——各自独立文件持有自身状态)。
 
 **五层窗口分置不同 `level`**(决定谁能超出屏幕、盖过谁):
 
@@ -79,6 +81,7 @@ KF_DEMO=1 .build/release/KingfisherPet       # 2.5s 后自动拉一坨屎,便于
 - **`CALayer.contents` 去重用帧名字符串**,不要写 `contents as? CGImage`(Swift 报"对 CF 类型条件向下转换永远成功")。`PetView.applyFrame` 靠 `lastName` 去重避免每帧重设。
 - **阴影无自身定时器**:`ShadowController.tick()` 只由 `Behavior` 在鸟移动/拖拽时调 `shadow?.updateNow()` 触发(零延迟)。给阴影加独立 timer 会引入合成差。
 - **睡眠/唤醒/锁屏纪律**:`AppDelegate` 监听 `willSleepNotification`/`didWakeNotification`(`NSWorkspace`)+ `com.apple.screenIsLocked`/`screenIsUnlocked`(`DistributedNotificationCenter`)。入睡统一走 `Behavior.sleepForUserAbsence(systemSleep:)`:锁屏(`false`)用 `beginAction`+`startZzz` 自然睡(进程不挂起);系统睡眠(`true`)走 `suspend` 停所有 timer + 代际 bump(进程将挂起,防唤醒补发堆积卡死)。唤醒/解锁走 `wakeFromUserAbsence()`(赖床 2–4s 再 `finish`)。睡觉期间 `SpriteLibrary.mutedForSleep=true` 禁声。**睡眠期间不能有任何待处理 timer/asyncAfter**,否则唤醒密集补发堆出几十个特效卡死(反复修过的顽疾)。
+- **外部数据先防反方向与畸形值**:比较/解析来自外部的数据(版本号、API 字段、存储值)必须先问"反过来/坏了会怎样"——版本比较曾用严格不等,本地比线上新就误报,两轮 review 全漏、真机才暴露(2026-09-08 修+建单测)。数值一律 isFinite/clamp,纯逻辑写成可单测函数(`swift run kf-tests` / `npm test` 各加用例)。
 - **多屏跟随**:鸟在哪个屏(`bird?.screen ?? NSScreen.main`),屎/裂纹/阴影跟哪个屏;`didChangeScreenParametersNotification` → 裂纹 `relocate()` + 鸟 `clampToCurrentScreen()`。拖拽起点屏单独记(`PetView.dragScreen`),拖拽 clamp 跟它,别用主屏。
 
 ## 易重犯的坑(历史修过 ≥2 次,改 Behavior/BranchController 前必读)

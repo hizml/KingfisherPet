@@ -3,23 +3,25 @@ import Foundation
 
 /// 全局设置单例:活跃度 / 动画速度 / 声音 / 主题。
 /// 持久化到 UserDefaults;变化时通知所有监听者(用 NotificationCenter,因为监听者分散)。
-final class Settings {
+final public class Settings {
 
-    static let shared = Settings()
+    public static let shared = Settings()
 
     /// 设置变化通知(统一用这个,userInfo["key"] = 改变的字段名)
     static let didChangeNotification = Notification.Name("kingfisher.settings.didChange")
 
     // MARK: - 字段
-    /// 活跃度 0(几乎不动)…1(活跃),默认 0.5
-    var activity: Double {
-        get { Defaults.double(forKey: K.activity, default: 0.5) }
-        set { clampAndSet(K.activity, newValue, lo: 0, hi: 1) }
+    // 读写都过 clamp + NaN 防护(排查同类抓到:此前只有写入 clamp,getter 裸读——
+    // 脏 plist/手工改 defaults 的 NaN 会灌进 think 的随机区间,行为链静默瘫痪,
+    // Windows 侧 B5 已修,Mac 孪生漏修)
+    public var activity: Double {
+        get { Self.clamp(Defaults.double(forKey: K.activity, default: 0.5), lo: 0, hi: 1, fallback: 0.5) }
+        set { clampAndSet(K.activity, newValue, lo: 0, hi: 1, fallback: 0.5) }
     }
     /// 动画速度 0.5…1.5,默认 1.0
-    var speed: Double {
-        get { Defaults.double(forKey: K.speed, default: 1.0) }
-        set { clampAndSet(K.speed, newValue, lo: 0.5, hi: 1.5) }
+    public var speed: Double {
+        get { Self.clamp(Defaults.double(forKey: K.speed, default: 1.0), lo: 0.5, hi: 1.5, fallback: 1.0) }
+        set { clampAndSet(K.speed, newValue, lo: 0.5, hi: 1.5, fallback: 1.0) }
     }
     /// 声音开关
     var soundOn: Bool {
@@ -37,8 +39,12 @@ final class Settings {
         set { set(K.theme, newValue) }
     }
 
-    private func clampAndSet(_ key: String, _ value: Double, lo: Double, hi: Double) {
-        set(key, min(max(value, lo), hi))
+    /// clamp + NaN/Inf 防护:畸形值(外部数据/脏存储)一律回默认,不进存储不进行为链
+    private static func clamp(_ v: Double, lo: Double, hi: Double, fallback: Double) -> Double {
+        v.isFinite ? min(max(v, lo), hi) : fallback
+    }
+    private func clampAndSet(_ key: String, _ value: Double, lo: Double, hi: Double, fallback: Double) {
+        set(key, Self.clamp(value, lo: lo, hi: hi, fallback: fallback))
     }
     private func set(_ key: String, _ value: Double) {
         UserDefaults.standard.set(value, forKey: key)

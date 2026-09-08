@@ -278,11 +278,12 @@ async function startFly(minDist = 0) {
     const a = await area();
     const o = await getOrigin();
     let tx = o.x, ty = o.y;
-    for (let i = 0; i < 8; i++) {   // 重选直到够远(或用完次数)
-      tx = a.minX + Math.random() * (a.maxX - a.minX - SIZE_P());
-      ty = Math.random() < 0.5 ? (a.maxY - FEET_TOP_P()) : a.minY;
-      if (Math.hypot(tx - o.x, ty - o.y) >= minDist) break;
-    }
+        for (let i = 0; i < 8; i++) {   // 重选直到够远(或用完次数)
+          const spanX = Math.max(0, a.maxX - a.minX - SIZE_P());   // 极端窄工作区防负跨度(排查同类顺手加保险)
+          tx = a.minX + Math.random() * spanX;
+          ty = Math.random() < 0.5 ? (a.maxY - FEET_TOP_P()) : a.minY;
+          if (Math.hypot(tx - o.x, ty - o.y) >= minDist) break;
+        }
     setFacing(tx > o.x);
     branch.hideBranch();   // 起飞 → 先收当前树枝
     // 落点悬空(脚高于任务栏区)→ 树枝先到(屏幕坐标预显,对应 macOS perchBranchIfNeeded)

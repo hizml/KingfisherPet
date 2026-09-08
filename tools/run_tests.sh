@@ -82,7 +82,7 @@ EOF
 
 # 判编译自身退出码(之前 grep "^error":非该格式的失败——段错误/非标准输出——会漏过,
 # 拿旧二进制继续测还全绿)
-if ! swift build -c release > /tmp/kf_test_build.log 2>&1; then
+if ! swift build -c release --product KingfisherPet > /tmp/kf_test_build.log 2>&1; then
   echo "编译失败:"; grep -E "error" /tmp/kf_test_build.log | head -20
   exit 1
 fi

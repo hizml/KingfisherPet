@@ -42,19 +42,10 @@ func kfLog(_ msg: String) {
     _kfLogSize += d.count
 }
 
-@main
-enum KingfisherPetApp {
-    static let appDelegate = AppDelegate()
-
-    static func main() {
-        let app = NSApplication.shared
-        app.delegate = appDelegate
-        app.setActivationPolicy(.accessory)   // 不在 Dock 露脸
-        app.run()
-    }
-}
-
-final class AppDelegate: NSObject, NSApplicationDelegate {
+/// 应用装配核心(core 库):@main 入口拆到壳 target(Sources/KingfisherPet/main.swift),
+/// 这样 kf-tests 可直接链接 core 做纯逻辑单测(executable 依赖 executable 会双 main 撞链接)。
+final public class AppDelegate: NSObject, NSApplicationDelegate {
+    public static let appDelegate = AppDelegate()
 
     private var statusItem: NSStatusItem!
     var petController: PetWindowController!   // internal:WatchdogService.emergencyReset 经 owner 访问
@@ -74,7 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static let kAutoLogin = "kingfisher.autoLogin"
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    public func applicationDidFinishLaunching(_ notification: Notification) {
         // 加载资源(默认 flat);如保存的主题不是 flat,切过去
         let s = Settings.shared
         if s.theme != SpriteLibrary.shared.currentTheme {
@@ -234,7 +225,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     results += "\(t):\(SpriteLibrary.shared.frames.count) "
                     if i == themes.count - 1 {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                            let counts = Set(themes.compactMap { _ in SpriteLibrary.shared.frames.count })
                             // 最后只校验当前帧数 ≥30(逐主题值已在日志,runner 细查)
                             done(SpriteLibrary.shared.frames.count >= 30, "final=\(SpriteLibrary.shared.frames.count) [\(results)]")
                         }
@@ -548,7 +538,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         autoLoginMenuItem.state = UserDefaults.standard.bool(forKey: key) ? .on : .off
     }
 
-    func applicationWillTerminate(_ notification: Notification) {
+    public func applicationWillTerminate(_ notification: Notification) {
         petController?.behavior.savePosition()
     }
 

@@ -11,7 +11,7 @@ EXEC="$APP_NAME"
 APP="build/${APP_NAME}.app"
 
 echo "==> 1/6 swift build (release)"
-swift build -c release
+swift build -c release --product KingfisherPet   # 只编应用(测试壳 kf-tests 另走 swift run)
 BIN=".build/release/${EXEC}"
 if [[ ! -f "$BIN" ]]; then
   echo "找不到编译产物 $BIN"; exit 1

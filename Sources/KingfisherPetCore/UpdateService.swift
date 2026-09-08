@@ -3,7 +3,7 @@ import Foundation
 
 /// 检查更新(GitHub Releases 对比):手动(菜单)弹详情,自动(启动 30s + 每 24h)静默只标菜单。
 /// 从 AppDelegate 拆分的独立类型(评审待办:AppDelegate 拆分)。
-final class UpdateService {
+final public class UpdateService {
 
     /// 「检查更新…」菜单项(静默发现新版时标注;由 AppDelegate 建菜单后注入)
     weak var menuItem: NSMenuItem?
@@ -42,7 +42,7 @@ final class UpdateService {
     /// semver 比较:tag(vX.Y.Z)是否比 current 新(逐段数值比较)。
     /// 之前是严格不等(latest != "v"+cur)——本地比线上新(预发布/线上回滚)会误报"发现新版本"
     /// (N5105 实机验证时实锤:装 63 线上 59 仍提示更新)。解析失败按"不更新"保守处理。
-    static func isNewer(_ tag: String, than current: String) -> Bool {
+    public static func isNewer(_ tag: String, than current: String) -> Bool {
         func parts(_ s: String) -> [Int] {
             s.dropFirst(s.hasPrefix("v") ? 1 : 0)
                 .split(separator: ".").prefix(4)

@@ -15,6 +15,7 @@ import { setupTheme, setTheme } from "./theme";
 import { setupAudio, playPeep, setSoundOn, setMediaMuted } from "./audio";
 import { settings, setSound, setActivity, setSpeed, setPeckScreen } from "./settings";
 import { warnOnce } from "./log";
+import { isNewer } from "./shared.mjs";   // 纯函数抽出,tests/version.test.mjs 直测同一份源码
 import * as behavior from "./behavior";
 
 const lib = new SpriteLibrary();
@@ -127,17 +128,6 @@ async function main() {
     const zhUI = () => (localStorage.getItem("kf_lang") || "system") === "zh"
       || ((localStorage.getItem("kf_lang") || "system") === "system"
           && (navigator.language || "en").toLowerCase().startsWith("zh"));
-    // semver 比较:tag(vX.Y.Z)是否比 cur 新(逐段数值)。之前是严格不等(latest !== "v"+cur)
-    // ——本地比线上新(预发布/线上回滚)会误报"发现新版本"(N5105 实机验证实锤:装 63 线上 59 仍提示)
-    function isNewer(tag: string, cur: string): boolean {
-      const p = (s: string) => s.replace(/^v/, "").split(".").slice(0, 4).map(n => parseInt(n, 10) || 0);
-      const a = p(tag), b = p(cur);
-      for (let i = 0; i < Math.max(a.length, b.length); i++) {
-        const x = a[i] ?? 0, y = b[i] ?? 0;
-        if (x !== y) return x > y;
-      }
-      return false;
-    }
     async function doCheckUpdate(silent: boolean) {
       try {
         const [r, cur] = await Promise.all([

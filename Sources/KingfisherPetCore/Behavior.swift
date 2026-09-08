@@ -364,7 +364,9 @@ final class Behavior: PetViewDelegate {
         // 选目标点:若要求最小距离,最多重试 8 次直到够远
         var tx = ox, ty = oy
         for _ in 0..<8 {
-            tx = CGFloat.random(in: a.minX + 8 ... a.maxX - size.width - 8)
+            // max 守卫:startFish/diveFish 同款——工作区比鸟还窄时区间倒挂,CGFloat.random
+            // 会直接崩溃(排查同类抓到:正常屏永远不触发,和版本比较 bug 同一病根)
+            tx = CGFloat.random(in: a.minX + 8 ... max(a.minX + 9, a.maxX - size.width - 8))
             ty = Bool.random() ? (a.maxY - size.height) : (a.minY - feetOffset)
             if hypot(tx - ox, ty - oy) >= minDist { break }
         }

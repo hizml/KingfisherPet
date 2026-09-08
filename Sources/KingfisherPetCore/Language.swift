@@ -2,7 +2,7 @@ import Foundation
 
 /// 运行时语言:跟随系统(默认)/ 中文 / English。菜单可切,即时生效。
 /// (NSLocalizedString 只跟系统语言,不能运行时切,所以自建表。)
-enum Language {
+public enum Language {
 
     enum Choice: String { case system, zh, en }
 
@@ -27,7 +27,7 @@ enum Language {
     }
 
     /// 取文案。查不到回退 key 本身(开发期易发现)。
-    static func t(_ key: String) -> String {
+    public static func t(_ key: String) -> String {
         let table = current == "zh" ? zh : en
         return table[key] ?? en[key] ?? key
     }
