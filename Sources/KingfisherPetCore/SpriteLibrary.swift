@@ -19,7 +19,7 @@ struct PetFrame {
 
 /// 全局 sprite 资源库(启动时一次性加载;切换主题时 reload)
 /// 资源按主题分目录打包:Contents/Resources/Sprites/<theme>/{*.png, sprites.json}。
-final class SpriteLibrary {
+final public class SpriteLibrary {
     static let shared = SpriteLibrary()
 
     /// 所有可用主题 id(与 gen_sprites.py 的 THEME_NAMES 对应)。
@@ -223,12 +223,10 @@ final class SpriteLibrary {
                     .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 DispatchQueue.main.async {
                     self?.peepProbeBusy = false
-                    // 判据是"播放速率>0":倍速播放返回 "2"/"0.5",只认 "1" 会漏(隔壁评审 A5)
-                    let rate = Double(txt) ?? 0
-                    if rate > 0 {
-                        kfLog("media: 系统在播(rate=\(txt)),吞掉这声叫")
+                    if SpriteLibrary.shouldSwallowChirp(probeOutput: txt) {
+                        kfLog("media: 系统在播(探针=\(txt)),吞掉这声叫")
                     } else {
-                        if !SpriteLibrary.probeOK { SpriteLibrary.probeOK = true; kfLog("media: 叫前探针链路可用") }
+                        if !SpriteLibrary.probeOK { SpriteLibrary.probeOK = true; kfLog("media: 叫前探针链路可用(探针=\(txt))") }
                         self?.peepPlay()
                     }
                 }
@@ -246,12 +244,34 @@ final class SpriteLibrary {
         p.play()
     }
 
-    private static let mediaProbeJS = """
+    /// 探针 v2:主判据改用 nowPlayingApplicationIsPlaying(系统权威"在播"标志)。
+    /// 此前只看 playbackRate——它是"App 上次 SET 的值"而非系统真相:播放器暂停后
+    /// 重刷 NowPlayingInfo、其他 App 瞬间抢占 now-playing 时会闪回 >0 → 鸟偶发静音
+    /// (用户实报:播放器已暂停仍偶尔静音;2026-09-08 实测暂停态 rate=0/flag=no 均正常,
+    /// 闪变只能靠 flag 防)。flag 拿不到时退回 rate>0(倍速播放也覆盖)。
+    /// 输出协议:"1"在播/"0"没播/"nil"无 now-playing。
+    static let mediaProbeJS = """
         const b = $.NSBundle.bundleWithPath("/System/Library/PrivateFrameworks/MediaRemote.framework");
         b.load;
-        const item = $.NSClassFromString("MRNowPlayingRequest").localNowPlayingItem;
-        item ? (item.nowPlayingInfo.valueForKey("kMRMediaRemoteNowPlayingInfoPlaybackRate")).js + "" : "nil"
+        const req = $.NSClassFromString("MRNowPlayingRequest");
+        const item = req.localNowPlayingItem;
+        if (!item) { "nil" }
+        else {
+            let flag = "";
+            try { flag = req.nowPlayingApplicationIsPlaying ? "1" : "0"; } catch (e) { flag = ""; }
+            if (flag !== "") { flag }
+            else {
+                const rate = (item.nowPlayingInfo.valueForKey("kMRMediaRemoteNowPlayingInfoPlaybackRate")).js + "";
+                (parseFloat(rate) > 0 ? "1" : "0")
+            }
+        }
         """
+
+    /// 探针输出 → 是否吞掉这声叫(纯函数,kf-tests 单测覆盖)。
+    /// "1"=在播吞掉;其余("0"/"nil"/畸形/空)一律照叫——fail-open,勿扰优先级低于功能可用。
+    public static func shouldSwallowChirp(probeOutput: String) -> Bool {
+        probeOutput.trimmingCharacters(in: .whitespacesAndNewlines) == "1"
+    }
     private static var probeOK = false
     private var peepProbeBusy = false
 }

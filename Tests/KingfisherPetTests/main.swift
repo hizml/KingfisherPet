@@ -62,6 +62,17 @@ enum TestMain {
         expect("未知键回退键名本身", Language.t("no.such.key") == "no.such.key")
         expect("已知键命中", Language.t("menu.settings").contains("设置") || Language.t("menu.settings").contains("Settings"))
 
+        // MARK: - 放音勿扰探针判定(shouldSwallowChirp)
+        print("[探针判定]")
+        expect("在播(1)→吞", SpriteLibrary.shouldSwallowChirp(probeOutput: "1"))
+        expect("没播(0)→照叫", !SpriteLibrary.shouldSwallowChirp(probeOutput: "0"))
+        expect("无 now-playing(nil)→照叫", !SpriteLibrary.shouldSwallowChirp(probeOutput: "nil"))
+        expect("带换行空白仍判在播", SpriteLibrary.shouldSwallowChirp(probeOutput: " 1\n"))
+        expect("畸形输出照叫(fail-open)", !SpriteLibrary.shouldSwallowChirp(probeOutput: "garbage"))
+        expect("空串照叫(fail-open)", !SpriteLibrary.shouldSwallowChirp(probeOutput: ""))
+        expect("旧协议残留 rate=2 照叫(不再吞倍速,改由 flag 主判)",
+               !SpriteLibrary.shouldSwallowChirp(probeOutput: "2"))
+
         // MARK: - 结果
         print("== \(passed) passed, \(failures) failed ==")
         if failures > 0 { exit(1) }
