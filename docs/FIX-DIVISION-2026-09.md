@@ -129,3 +129,12 @@
   两报告全部发现至此清零(双方 §4 纯重构/性能待办除外——属改进非缺陷,老板未要求)。
 
 - — [ce3bb42e / 2026-09-07 20:1x] 补充:老板递来 e498607 交接单,逐条复核后发现我漏了其中一子项——**水彩纸纹缓存**(种子固定 99、逐帧重算纯浪费)。已补(_paper_texture 按尺寸缓存 + copy 防 putalpha 污染缓存),实测缓存版与老内联计算**逐位一致** → 产物零变化、无需重生成、v1.4.62 tag 不受影响(纯工具性能,gen_sprites 不进产物)。交接单其余各项此前均已完成(见 469c9be / 266a632 / v1.4.62)。
+
+- — [ce3bb42e / 2026-09-07 20:5x] **评审待办六项全部清零(老板令"全都做",277e481+a7d3def)**:
+  1. AppDelegate 拆分✓ → DndMonitor/UpdateService/WatchdogService 三独立类型(主文件 925→577 行);
+  2. WindowTracker 四函数去重✓ → 共享 normalWindows()/parseBounds,过滤口径与 Z 序逐字段保真;
+  3. 三套动画骨架提炼✓ → Behavior.animateFrames(walk/flight/linear 共用,代际/阴影/收尾语义统一);
+  4. gen_sprites 向量化+pose 数据表化✓ → post_ink 全 numpy(种子 12345 确定性)、FRAMES 表、纸纹缓存;**六主题全量重生成 2.2s(原分钟级)**,ink 资产为新基线(分布统计等价),其余主题逐字节不变;
+  5. AssetLoader 统一✓ → SpriteLibrary.themedImage 收编 Shadow/Branch/Effects/Poop 四处加载链;
+  6. AX 挪后台队列✓ → DndMonitor 内 axQueue 串行(前台 App 无响应不再拖主线程),streak 语义不变。
+  自验:swift build 过、run_tests 四场景全 PASS、post_ink 确定性逐位实证。CI(lint 含新 mac-check)跑着,红了归我。至此两报告 + §4 待办 **全部条目闭环,零残留**。

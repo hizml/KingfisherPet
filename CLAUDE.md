@@ -31,7 +31,7 @@ KF_DEMO=1 .build/release/KingfisherPet       # 2.5s 后自动拉一坨屎,便于
 
 ## 架构大图
 
-入口 `@main enum KingfisherPetApp` 手动建 `NSApplication` + `setActivationPolicy(.accessory)`(不进 Dock,只留菜单栏图标)。`AppDelegate` 装配所有子系统:`PetWindowController`(鸟) + 四个常驻覆盖层控制器 + 菜单栏 `NSStatusItem` + 设置窗口。
+入口 `@main enum KingfisherPetApp` 手动建 `NSApplication` + `setActivationPolicy(.accessory)`(不进 Dock,只留菜单栏图标)。`AppDelegate` 装配所有子系统:`PetWindowController`(鸟) + 四个常驻覆盖层控制器 + 菜单栏 `NSStatusItem` + 设置窗口 + 三个服务类型(`DndMonitor` 勿扰巡检/AX 查询走后台队列、`UpdateService` 检查更新、`WatchdogService` 熔断看门狗——各自独立文件持有自身状态)。
 
 **五层窗口分置不同 `level`**(决定谁能超出屏幕、盖过谁):
 
