@@ -212,10 +212,16 @@ final public class SpriteLibrary {
             }
         }
         let proc = Process()
-        // 首选随包探针二进制(MediaRemote C-API 系统真相);dev 裸跑无 bundle 时退回 osascript
-        let probeBin = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/kf-media-probe")
-        if FileManager.default.fileExists(atPath: probeBin.path) {
-            proc.executableURL = probeBin
+        // 探针查找链:app 包内二进制 → dev 裸跑时 .build 目录的兄弟产物 → osascript 终极兜底。
+        // osascript 版读 info 字典 rate,会被"暂停后不更新会话的播放器"永久污染(咪咕实测:
+        // 僵尸会话 rate=1 冻结一小时+),只作无编译产物时的最后手段
+        let bundleURL = Bundle.main.bundleURL
+        let candidates = [
+            bundleURL.appendingPathComponent("Contents/MacOS/kf-media-probe").path,   // .app 包内
+            bundleURL.appendingPathComponent("kf-media-probe").path,                   // dev 裸跑(.build/release/)
+        ]
+        if let bin = candidates.first(where: { FileManager.default.fileExists(atPath: $0) }) {
+            proc.executableURL = URL(fileURLWithPath: bin)
             proc.arguments = []
         } else {
             proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
