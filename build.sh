@@ -21,6 +21,7 @@ echo "==> 2/6 组装 .app 包"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/${EXEC}"
+cp .build/release/kf-media-probe "$APP/Contents/MacOS/"   # 放音勿扰探针(MediaRemote 真相信号)
 
 # 资源:按主题子目录放到 Resources/Sprites/<theme>/(SpriteLibrary 按子目录加载)
 #   每个主题各含 *.png + sprites.json + contact.png(检查图,不进包)

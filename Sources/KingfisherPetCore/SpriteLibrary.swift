@@ -212,8 +212,15 @@ final public class SpriteLibrary {
             }
         }
         let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        proc.arguments = ["-l", "JavaScript", "-e", SpriteLibrary.mediaProbeJS]
+        // 首选随包探针二进制(MediaRemote C-API 系统真相);dev 裸跑无 bundle 时退回 osascript
+        let probeBin = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/kf-media-probe")
+        if FileManager.default.fileExists(atPath: probeBin.path) {
+            proc.executableURL = probeBin
+            proc.arguments = []
+        } else {
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            proc.arguments = ["-l", "JavaScript", "-e", SpriteLibrary.mediaProbeJS]
+        }
         let out = Pipe(); proc.standardOutput = out; proc.standardError = Pipe()
         do {
             try proc.run()
