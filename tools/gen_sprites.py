@@ -529,44 +529,28 @@ def post_neon(img):
 
 
 def post_ink(img):
-    """水墨国风:灰度→阈值黑色写意笔触;喙/腹一抹橙保留。
-    实现:把青/背/尾/头压成黑墨;橙腹/喙/腿保留;边缘加抖动笔触感。"""
-    img = img.convert("RGBA")
-    alpha = img.split()[3]
-    rgb = img.convert("RGB")
-    px = rgb.load()
-    w, h = rgb.size
-    out = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    op = out.load()
-    rnd = random.Random(12345)
-    for y in range(h):
-        for x in range(w):
-            r, g, b = px[x, y]
-            a = img.getpixel((x, y))[3]
-            if a < 30:
-                continue
-            # 转黑墨:亮度阈值 + 抖动(评审 R7:原"保留一抹橙"分支在调色板墨化后
-            # 永不命中喙/腹,只漏放 flat 橙红的嘴腔/腮红——调色板已补键,分支删除)
-            lum = 0.299*r + 0.587*g + 0.114*b
-            # 亮区(白颊)留白,暗区转黑
-            if lum >= 220:
-                op[x, y] = (235, 232, 225, a)
-            else:
-                jitter = rnd.random() * 20 - 10
-                # 墨分五色:按亮度渐变成墨阶(亮→淡墨,暗→浓墨),不再二值纯黑
-                v = max(0, min(150, int(lum * 0.55) + int(jitter)))
-                if lum > 180:
-                    # 180-220 线性过渡:墨阶→纸白(此前 >200 直接跳纸白,109↔235
-                    # 硬跳变在颊/腹交界可见横带;评审:阈值过渡)
-                    t = (lum - 180) / 40.0
-                    op[x, y] = (int(v + (235 - v) * t),
-                                int(v + (232 - v) * t),
-                                int(v + (225 - v) * t), a)
-                else:
-                    op[x, y] = (v, v, v, a)
-    # 边缘墨晕:轻微模糊后 alpha 衰减叠加
-    ink_bleed = out.filter(ImageFilter.GaussianBlur(0.8))
-    return ink_bleed
+    """水墨国风:灰度→墨阶笔触(亮度渐变,180-220 向纸白线性过渡)+ 边缘抖动。
+    numpy 向量化(评审待办:原逐像素 getpixel ~350 万次/帧,六主题全量再生分钟级)。
+    种子定死(12345)保持可复现;RNG 流与旧逐像素版不同,墨点抖动属新基线。"""
+    import numpy
+    arr = numpy.asarray(img.convert("RGBA"), dtype=numpy.float32)
+    r, g, b, a = arr[..., 0], arr[..., 1], arr[..., 2], arr[..., 3]
+    lum = 0.299 * r + 0.587 * g + 0.114 * b
+    # 抖动与旧 int() 截断同分布;每帧同种子 → 同参数同输出
+    jit = numpy.trunc(numpy.random.RandomState(12345).uniform(-10, 10, lum.shape))
+    v = numpy.clip(numpy.floor(lum * 0.55) + jit, 0, 150)
+    ink = numpy.stack([v, v, v], axis=-1)
+    paper = numpy.array([235.0, 232.0, 225.0], dtype=numpy.float32)
+    t = numpy.clip((lum - 180) / 40.0, 0.0, 1.0)[..., None]   # 180-220 线性过渡(修硬带)
+    res = ink + (paper - ink) * t
+    res = numpy.where((lum >= 220)[..., None], paper, res)
+    mask = a >= 30
+    rgb = numpy.zeros(arr.shape[:2] + (3,), dtype=numpy.float32)   # 透明区 RGB 归零(与旧版一致)
+    rgb[mask] = res[mask]
+    alpha = numpy.where(mask, a, 0)
+    out = numpy.dstack([rgb, alpha]).astype(numpy.uint8)
+    result = Image.fromarray(out, "RGBA")
+    return result.filter(ImageFilter.GaussianBlur(0.8))   # 边缘墨晕
 
 
 def _premultiply(img):
@@ -939,57 +923,61 @@ def montage_for(theme, names, out="contact.png"):
 
 
 # 每个主题渲染的所有帧定义(几何参数,所有主题共用)
+# 所有帧的 pose 参数表(评审待办:pose 数据表化——此前 40 行散装 render() 调用,
+# 加帧改帧都是表里一行,几何参数一眼可比;表外的是 shadow/branch/effects 等特殊渲染)
+FRAMES = [
+    # 基础
+    ("idle_0",     dict(wing="folded", body_dy=0)),
+    ("idle_1",     dict(wing="folded", body_dy=-3)),
+    ("idle_blink", dict(wing="folded", eye_closed=True)),
+    ("walk_0",     dict(wing="folded", leg_phase=0.0)),
+    ("walk_1",     dict(wing="folded", leg_phase=0.25)),
+    ("walk_2",     dict(wing="folded", leg_phase=0.5)),
+    ("walk_3",     dict(wing="folded", leg_phase=0.75)),
+    ("fly_1",      dict(wing="midup")),
+    ("fly_2",      dict(wing="up")),
+    ("fly_3",      dict(wing="middown")),
+    ("happy_0",    dict(wing="folded", mouth_open=True, heart_eye=True, blush=True, body_dy=-2)),
+    ("happy_1",    dict(wing="midup",  mouth_open=True, heart_eye=True, blush=True, body_dy=-8)),
+    ("sleep_0",    dict(wing="folded", eye_closed=True, body_dy=0)),
+    ("sleep_1",    dict(wing="folded", eye_closed=True, body_dy=-2)),
+    # 俯冲捕鱼
+    ("dive_0",     dict(wing="folded", hide_legs=True, rotate=90)),
+    ("fly_fish_1", dict(wing="midup",   fish_in_beak=True)),
+    ("fly_fish_2", dict(wing="up",      fish_in_beak=True)),
+    ("fly_fish_3", dict(wing="middown", fish_in_beak=True)),
+    ("eat_0",      dict(wing="folded", fish_in_beak=True, head_up=True, mouth_open=True)),
+    ("eat_1",      dict(wing="folded", fish_bite=0.55, head_up=True, mouth_open=True)),
+    ("eat_2",      dict(wing="folded", fish_bite=1.0, head_up=True, head_raise_amt=10, eye_closed=True)),
+    # 鸣唱
+    ("sing_0",     dict(wing="folded", head_up=True, mouth_open=True)),
+    ("sing_1",     dict(wing="midup",  head_up=True, mouth_open=True)),
+    # 栖枝守候
+    ("watch_0",    dict(wing="folded", alert=True)),
+    ("watch_1",    dict(wing="folded", alert=True, head_tilt=-4)),
+    # 日光浴
+    ("sun_0",      dict(wing="spread", fluff=True, eye_closed=True)),
+    ("sun_1",      dict(wing="spread", fluff=True)),
+    # 啄屏幕
+    ("peck_0",     dict(wing="folded", look_down=True, head_jab=1.0, body_dy=-2)),
+    ("peck_1",     dict(wing="folded")),
+    # 蛋壳 + 死掉
+    ("egg_0",      dict(egg_stage=0)),
+    ("egg_1",      dict(egg_stage=1)),
+    ("egg_2",      dict(egg_stage=2)),
+    ("dead",       dict(wing="up", x_eye=True, tongue=True, mouth_open=True, hide_legs=True, rotate=180)),
+    # 拉屎
+    ("poop_0",     dict(wing="folded", butt_up=True, tail_wag=-5, sweat=True, body_dy=4)),
+    ("poop_1",     dict(wing="folded", butt_up=True, tail_wag=5, sweat=True, body_dy=4)),
+]
+
+
 def render_all_frames(theme, pal, post):
     print(f"=== 主题 {theme}({THEME_NAMES[theme]})===")
-    # 基础
-    render("idle_0", theme, pal, post, wing="folded", body_dy=0)
-    render("idle_1", theme, pal, post, wing="folded", body_dy=-3)
-    render("idle_blink", theme, pal, post, wing="folded", eye_closed=True)
-    render("walk_0", theme, pal, post, wing="folded", leg_phase=0.0)
-    render("walk_1", theme, pal, post, wing="folded", leg_phase=0.25)
-    render("walk_2", theme, pal, post, wing="folded", leg_phase=0.5)
-    render("walk_3", theme, pal, post, wing="folded", leg_phase=0.75)
-    render("fly_1", theme, pal, post, wing="midup")
-    render("fly_2", theme, pal, post, wing="up")
-    render("fly_3", theme, pal, post, wing="middown")
-    render("happy_0", theme, pal, post, wing="folded", mouth_open=True, heart_eye=True, blush=True, body_dy=-2)
-    render("happy_1", theme, pal, post, wing="midup",  mouth_open=True, heart_eye=True, blush=True, body_dy=-8)
-    render("sleep_0", theme, pal, post, wing="folded", eye_closed=True, body_dy=0)
-    render("sleep_1", theme, pal, post, wing="folded", eye_closed=True, body_dy=-2)
+    for name, kw in FRAMES:
+        render(name, theme, pal, post, **kw)
 
-    # 俯冲捕鱼
-    render("dive_0", theme, pal, post, wing="folded", hide_legs=True, rotate=90)
-    render("fly_fish_1", theme, pal, post, wing="midup",  fish_in_beak=True)
-    render("fly_fish_2", theme, pal, post, wing="up",     fish_in_beak=True)
-    render("fly_fish_3", theme, pal, post, wing="middown", fish_in_beak=True)
-    render("eat_0", theme, pal, post, wing="folded", fish_in_beak=True, head_up=True, mouth_open=True)
-    render("eat_1", theme, pal, post, wing="folded", fish_bite=0.55, head_up=True, mouth_open=True)
-    render("eat_2", theme, pal, post, wing="folded", fish_bite=1.0, head_up=True,
-           head_raise_amt=10, eye_closed=True)
-
-    # 鸣唱
-    render("sing_0", theme, pal, post, wing="folded", head_up=True, mouth_open=True)
-    render("sing_1", theme, pal, post, wing="midup",  head_up=True, mouth_open=True)
-
-    # 栖枝守候
-    render("watch_0", theme, pal, post, wing="folded", alert=True)
-    render("watch_1", theme, pal, post, wing="folded", alert=True, head_tilt=-4)
-
-    # 日光浴
-    render("sun_0", theme, pal, post, wing="spread", fluff=True, eye_closed=True)
-    render("sun_1", theme, pal, post, wing="spread", fluff=True)
-
-    # 啄屏幕
-    render("peck_0", theme, pal, post, wing="folded", look_down=True, head_jab=1.0, body_dy=-2)
-    render("peck_1", theme, pal, post, wing="folded")
-
-    # 蛋壳 + 死掉
-    render("egg_0", theme, pal, post, egg_stage=0)
-    render("egg_1", theme, pal, post, egg_stage=1)
-    render("egg_2", theme, pal, post, egg_stage=2)
-    render("dead", theme, pal, post, wing="up", x_eye=True, tongue=True, mouth_open=True, hide_legs=True, rotate=180)
-
-    # 阴影 + 树枝
+    # 阴影 + 树枝 + 特效
     render_shadow(theme)
     render_branch(theme, post, pal)
     render_effects(theme, pal, post)
