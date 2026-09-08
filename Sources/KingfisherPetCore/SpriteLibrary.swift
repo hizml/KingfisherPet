@@ -223,9 +223,11 @@ final public class SpriteLibrary {
                     .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 DispatchQueue.main.async {
                     self?.peepProbeBusy = false
-                    // 解析 "r=<rate> t=<tsEpoch>";畸形输出按"没播"处理(fail-open)
+                    // 解析 "r=<rate> t=<tsEpoch> e=<elapsed> n=<title>";畸形输出按"没播"处理(fail-open)
                     var rate = 0.0
                     var age: TimeInterval? = nil
+                    var elapsed = 0.0
+                    var title = ""
                     let parts = txt.split(separator: " ")
                     for p in parts {
                         if p.hasPrefix("r=") { rate = Double(p.dropFirst(2)) ?? 0 }
@@ -234,8 +236,15 @@ final public class SpriteLibrary {
                                 age = Date().timeIntervalSince1970 - t
                             }
                         }
+                        if p.hasPrefix("e=") { elapsed = Double(p.dropFirst(2)) ?? 0 }
+                        if p.hasPrefix("n=") { title = String(p.dropFirst(2)) }
                     }
-                    if SpriteLibrary.shouldSwallowChirp(rate: rate, sessionAgeSeconds: age) {
+                    // 活性第②路:与上一次叫声的快照比(进度走动/换歌 = 会话在推进)
+                    let snap = SpriteLibrary.ProbeSnapshot(elapsed: elapsed, title: title)
+                    let changed = self != nil && SpriteLibrary.lastProbeSnapshot != snap
+                    SpriteLibrary.lastProbeSnapshot = snap
+                    if SpriteLibrary.shouldSwallowChirp(rate: rate, sessionAgeSeconds: age,
+                                                         snapshotChangedSinceLastProbe: changed) {
                         kfLog("media: 系统在播(rate=\(rate) 会话龄=\(age.map { Int($0) }.map { "\($0)s" } ?? "?")),吞掉这声叫")
                     } else {
                         if !SpriteLibrary.probeOK { SpriteLibrary.probeOK = true; kfLog("media: 叫前探针链路可用") }
@@ -285,21 +294,28 @@ final public class SpriteLibrary {
             const rate = parseFloat(item.nowPlayingInfo.valueForKey("kMRMediaRemoteNowPlayingInfoPlaybackRate").js + "");
             const ts = item.nowPlayingInfo.valueForKey("kMRMediaRemoteNowPlayingInfoTimestamp");
             const epoch = ts ? Math.floor(Date.parse(ts.js + "")) / 1000 : 0;
-            "r=" + rate + " t=" + epoch
+            "r=" + rate + " t=" + epoch + " e=" + (item.nowPlayingInfo.valueForKey("kMRMediaRemoteNowPlayingInfoElapsedTime") ?? 0).js + " n=" + ((item.nowPlayingInfo.valueForKey("kMRMediaRemoteNowPlayingInfoTitle") ?? "") + "").replace(/ /g, "_")
         }
         """
 
-    /// 会话时间戳活性上限:Owner(播放器)超过此时长没刷新上报 = 僵尸会话,其 rate 不可信。
-    /// 窗口取 180s:僵尸解冻延迟 ≤3 分钟(叫声分钟级,无感);长曲中途不重报的误报窗口足够宽。
+    /// 会话时间戳活性上限:Owner(播放器)超过此时长没刷新上报 = 时间戳这条路失效。
+    /// 窗口 180s:僵尸解冻延迟 ≤3 分钟(叫声分钟级,无感)。
     public static let maxSessionAgeSeconds: TimeInterval = 180
 
     /// 探针信号 → 是否吞掉这声叫(纯函数,kf-tests 覆盖)。
-    /// 吞 ⟺ rate>0 且 会话时间戳新鲜(≤180s);其余(暂停/无会话/无时间戳/僵尸)一律照叫——
-    /// fail-open,勿扰优先级低于功能可用。
-    public static func shouldSwallowChirp(rate: Double, sessionAgeSeconds: TimeInterval?) -> Bool {
-        guard rate > 0, let age = sessionAgeSeconds, age >= 0, age <= maxSessionAgeSeconds else { return false }
-        return true
+    /// 活性双保险(实测各播放器上报习惯不一:浏览器暂停也刷 ts、咪咕僵尸全冻):
+    ///   ① 时间戳新鲜(≤180s)——主人刚上报过;
+    ///   ② 跨探针快照有变化(进度走动/换了歌)——两次叫声之间会话仍在推进。
+    /// 吞 ⟺ rate>0 且(①或②);其余(暂停/无会话/双路皆死)一律照叫——fail-open。
+    public static func shouldSwallowChirp(rate: Double, sessionAgeSeconds: TimeInterval?,
+                                         snapshotChangedSinceLastProbe: Bool) -> Bool {
+        guard rate > 0 else { return false }
+        if let age = sessionAgeSeconds, age >= 0, age <= maxSessionAgeSeconds { return true }
+        return snapshotChangedSinceLastProbe
     }
     private static var probeOK = false
+    /// 上一次叫声时的会话快照(活性第②路:跨探针对比;仅主线程读写)
+    fileprivate struct ProbeSnapshot: Equatable { let elapsed: Double; let title: String }
+    fileprivate static var lastProbeSnapshot: ProbeSnapshot?
     private var peepProbeBusy = false
 }
