@@ -68,7 +68,7 @@ enum TestMain {
         expect("倍速在播(rate=2)且新鲜 → 吞", SpriteLibrary.shouldSwallowChirp(rate: 2, sessionAgeSeconds: 10))
         expect("暂停(rate=0)→ 照叫", !SpriteLibrary.shouldSwallowChirp(rate: 0, sessionAgeSeconds: 5))
         expect("无会话(age=nil)→ 照叫", !SpriteLibrary.shouldSwallowChirp(rate: 1, sessionAgeSeconds: nil))
-        expect("无时间戳(age=0 哨兵)→ 照叫", !SpriteLibrary.shouldSwallowChirp(rate: 1, sessionAgeSeconds: 0))
+        expect("时间戳恰好当前(age=0 合法新鲜)→ 吞", SpriteLibrary.shouldSwallowChirp(rate: 1, sessionAgeSeconds: 0))
         expect("僵尸会话(age 超 180s)→ 照叫(咪咕实锤场景)", !SpriteLibrary.shouldSwallowChirp(rate: 1, sessionAgeSeconds: 3600))
         expect("临界:恰好 180s → 吞(闭区间)", SpriteLibrary.shouldSwallowChirp(rate: 1, sessionAgeSeconds: 180))
         expect("负 age(时钟异常)→ 照叫", !SpriteLibrary.shouldSwallowChirp(rate: 1, sessionAgeSeconds: -3))

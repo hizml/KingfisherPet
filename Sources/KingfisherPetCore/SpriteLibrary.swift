@@ -212,7 +212,6 @@ final public class SpriteLibrary {
             }
         }
         let proc = Process()
-        let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         proc.arguments = ["-l", "JavaScript", "-e", SpriteLibrary.mediaProbeJS]
         let out = Pipe(); proc.standardOutput = out; proc.standardError = Pipe()
