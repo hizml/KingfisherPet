@@ -31,12 +31,30 @@ final class UpdateService {
     private func autoCheck() {
         fetchLatest { [weak self] latest in
             let cur = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "dev"
-            let has = (latest != nil) && latest != "v" + cur
+            let has = latest.map { Self.isNewer($0, than: cur) } ?? false
             self?.menuItem?.title = has
                 ? Language.t("update.found")
                 : Language.t("menu.checkUpdate")
             if has { kfLog("update: 自动检查发现新版 \(latest!),菜单已标注") }
         }
+    }
+
+    /// semver 比较:tag(vX.Y.Z)是否比 current 新(逐段数值比较)。
+    /// 之前是严格不等(latest != "v"+cur)——本地比线上新(预发布/线上回滚)会误报"发现新版本"
+    /// (N5105 实机验证时实锤:装 63 线上 59 仍提示更新)。解析失败按"不更新"保守处理。
+    static func isNewer(_ tag: String, than current: String) -> Bool {
+        func parts(_ s: String) -> [Int] {
+            s.dropFirst(s.hasPrefix("v") ? 1 : 0)
+                .split(separator: ".").prefix(4)
+                .map { Int($0) ?? 0 }
+        }
+        let a = parts(tag), b = parts(current)
+        for i in 0..<max(a.count, b.count) {
+            let x = i < a.count ? a[i] : 0
+            let y = i < b.count ? b[i] : 0
+            if x != y { return x > y }
+        }
+        return false
     }
 
     private func fetchLatest(_ done: @escaping (String?) -> Void) {
@@ -62,7 +80,7 @@ final class UpdateService {
             }
             return
         }
-        if latest == "v" + current {
+        if !Self.isNewer(latest!, than: current) {
             a.messageText = Language.t("update.latest")
             a.informativeText = "v\(current)"
             _ = a.runModal()
