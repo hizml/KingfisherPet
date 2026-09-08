@@ -113,9 +113,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest
-            args: "--target universal-apple-darwin"
-            rustTargets: "aarch64-apple-darwin,x86_64-apple-darwin"
+          # Tauri 线专注 Windows;Mac 走上面的 native-mac(Swift 原生版,功能完整)。
+          # Tauri mac 包的窗口探测 Rust 侧只有 Win32 实现(其余是空桩),鸟行为残废,已裁定放弃。
           - platform: windows-latest
             args: ""
             rustTargets: ""
@@ -159,7 +158,7 @@ jobs:
           projectPath: windows
           tagName: ${{ github.ref_name }}
           releaseName: "翡 KingfisherPet ${{ github.ref_name }}"
-          releaseBody: "桌面宠物(Tauri):macOS(universal)+ Windows"
+          releaseBody: "桌面宠物(Tauri Windows 版;Mac 请用原生版 KingfisherPet-mac-native.zip"
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}

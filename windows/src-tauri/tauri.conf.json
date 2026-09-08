@@ -45,7 +45,10 @@
           "SimpChinese",
           "English"
         ],
-        "displayLanguageSelector": true
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "icons/nsis-header.bmp",
+        "sidebarImage": "icons/nsis-sidebar.bmp"
       },
       "wix": {
         "language": [
