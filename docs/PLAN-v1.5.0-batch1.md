@@ -39,29 +39,45 @@
 
 ## B · 天气联动（网络 + 设置 UI，需老板过目文案）
 
-**数据链**：
-- 天气：Open-Meteo current（免 key）：`api.open-meteo.com/v1/forecast?...&current=weather_code`
-- 定位：默认 ipapi.co IP 粗定位拿 lat/lon；设置窗手填城市则走 Open-Meteo
-  geocoding（`geocoding-api.open-meteo.com/v1/search?name=`）覆盖。
-- 刷新：30 分钟一次；**失败静默降级 = 无系数**，不弹窗、不重试轰炸，等下个周期自然重试。
+**数据链（双数据源，老板 2026-09-08 拍板要留和风口子）**：
+- **源 1（默认）Open-Meteo**：免 key。current：
+  `api.open-meteo.com/v1/forecast?...&current=weather_code`；城市解析走自家 geocoding
+  （`geocoding-api.open-meteo.com/v1/search?name=`）。
+- **源 2 和风天气**：用户在设置里填 API Key（必填）+ API Host（选填，默认
+  `devapi.qweather.com`，**以和风控制台分配的专属 Host 为准**——新账号多为
+  `xxx.re.qweather.com` 形式）。城市解析走和风 GeoAPI lookup
+  （`geoapi.qweather.com/v2/city/lookup`，中文城市名友好）。
+- 定位：默认 ipapi.co IP 粗定位拿 lat/lon；手填城市则按当前源走各自 geocoding 覆盖。
+- **归一化层**：两个 provider 对外只吐统一枚举 `{sunny, overcast, rain, snow}`——
+  Open-Meteo WMO 码 0–3→晴/阴、51–67→雨、71–77→雪；和风码 100–103→晴、
+  104/雾霾类→阴、300–399→雨、400–499→雪。权重逻辑只认枚举，与源无关。
+- 刷新：30 分钟一次；**失败静默降级 = 无系数**，不弹窗、不重试轰炸，等下个周期
+  自然重试。key 无效（和风 401/402）同样静默降级，只在设置界面标注状态
+  （「天气源不可用」，状态可见纪律），不弹窗。
+- key 存 UserDefaults（Mac）/ Tauri store（Win）本地明文——用户自己的免费 key，
+  风险可接受；后续如需再迁 Keychain，不在本批。
 
-**权重映射（初版）**：
-- weather_code 0–1（晴）：sun ×1.6、watch ×1.2
-- 雨 51–67 / 雪 71–77：外出类（fly/walk/dart/fish）×0.5，栖窗 perch ×1.5（躲雨语义）
-- 阴/雾等其余：×1.0 不干预
+**权重映射（初版，只认归一化枚举）**：
+- sunny：sun ×1.6、watch ×1.2
+- rain / snow：外出类（fly/walk/dart/fish）×0.5，栖窗 perch ×1.5（躲雨语义）
+- overcast：×1.0 不干预
 - 复用现有序列，无新动画。
 
 **明示纪律（硬约束）**：设置默认**关**；开启后才发首个网络请求；设置项文案写明
-「会请求 Open-Meteo 查询天气（约 30 分钟一次，含 IP 粗略定位）」。城市框留空 = IP 定位。
+「会请求所选天气源查询天气（约 30 分钟一次，Open-Meteo 源含 IP 粗略定位）」。
+设置 UI：开关 + 城市框（留空 = IP 定位）+ 数据源选择（Open-Meteo / 和风天气），
+选和风时展开 Key + Host 两个输入框。
 
 **涉及文件**：
-- Mac：新增 `Sources/KingfisherPet/WeatherService.swift`（拉取+缓存+通知），
-  `Behavior.swift` 订阅；`Settings.swift` / 设置窗加开关+城市框（注意设置窗滚动高度联动）
-- Win：新增 `windows/src/weather.ts`（前端 fetch 即可，Rust 不动），
-  `behavior.ts` 订阅；`settings.ts` 加开关+城市框
+- Mac：新增 `Sources/KingfisherPet/WeatherService.swift`（双 provider + 归一化 +
+  缓存 + 通知），`Behavior.swift` 订阅；`Settings.swift` / 设置窗加开关 + 城市框 +
+  数据源选择（选和风展开 Key/Host 框；注意设置窗滚动高度联动）
+- Win：新增 `windows/src/weather.ts`（前端 fetch 即可，Rust 不动；双 provider 对称），
+  `behavior.ts` 订阅；`settings.ts` 加同款三件套 UI
 
-**验证**：weather_code 注入单测（晴/雨/雪/无效四态）；真实城市实测一次；
-断网场景验证零弹窗零重试轰炸；勿扰模式下天气请求照常静默（与放音/全屏互不影响）。
+**验证**：weather_code 注入单测（晴/雨/雪/无效四态 × 双源映射表）；和风 key
+无效（401/402）静默降级 + 设置界面状态标注；真实城市双源各实测一次；断网场景
+验证零弹窗零重试轰炸；勿扰模式下天气请求照常静默（与放音/全屏互不影响）。
 
 ## C · 性能背书（测量收尾）
 
