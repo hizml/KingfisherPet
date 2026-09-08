@@ -50,5 +50,7 @@
 
 ## 分发(v1.6.0 批,等证书与引流节奏;老板拍板列 TODO)
 - [ ] Developer ID + 公证($99/年,免「右键打开」;自签代码侧已就绪)
-- [ ] 自动更新(Mac Sparkle / Win Tauri updater,依赖上面的签名)
+- [ ] 应用内自动更新,双端一块做(Mac Sparkle / Win Tauri updater;Mac 依赖上面的
+      Developer ID+公证,Win 只需 updater 签名密钥对入 CI secrets,不依赖证书——
+      2026-09-08 老板拍版不切分,v1.6.0 整批)
 - [ ] 30 秒宣传视频(配合公众号文章发布)
