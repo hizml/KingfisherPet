@@ -35,15 +35,9 @@ final class ShadowController {
         overlay.contentView = v
     }
 
-    /// 从当前主题目录加载 shadow.png
+    /// 从当前主题目录加载 shadow.png(统一经 SpriteLibrary.themedImage,评审:AssetLoader 统一)
     private func loadShadowAsset() {
-        let theme = SpriteLibrary.shared.currentTheme
-        if let url = Bundle.main.url(forResource: "shadow", withExtension: "png",
-                                     subdirectory: "Sprites/\(theme)"),
-           let img = NSImage(contentsOf: url),
-           let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-            shadowLayer.contents = cg
-        }
+        shadowLayer.contents = SpriteLibrary.shared.themedImage("shadow")
     }
 
     /// 主题切换:重载阴影贴图

@@ -120,6 +120,16 @@ final class SpriteLibrary {
     func sequence(_ state: String) -> [String]? { manifest.sequences[state] }
     func fps(_ state: String) -> Double { manifest.fps[state] ?? 8 }
 
+    /// 从当前主题目录加载单张贴图(阴影/树枝/特效/屎共用;评审待办:AssetLoader 统一——
+    /// 此前 Shadow/Branch/Effects/Poop 各写一份同构的 url+NSImage+cgImage 链)。
+    func themedImage(_ name: String) -> CGImage? {
+        guard let url = Bundle.main.url(forResource: name, withExtension: "png",
+                                        subdirectory: "Sprites/\(currentTheme)"),
+              let img = NSImage(contentsOf: url),
+              let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        return cg
+    }
+
     private func cgImage(of nsImage: NSImage) -> CGImage? {
         nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil)
     }

@@ -76,13 +76,9 @@ enum Effects {
     private static func sp(_ s: TimeInterval) -> TimeInterval { s / Settings.shared.speed }
 
     /// 加载当前主题的特效贴图(太阳/水花/音符/zzz/屎)。主题切换后新建特效自动用新主题。
+    /// 统一经 SpriteLibrary.themedImage(评审:AssetLoader 统一)。
     private static func effectImage(_ name: String) -> CGImage? {
-        let theme = SpriteLibrary.shared.currentTheme
-        guard let url = Bundle.main.url(forResource: name, withExtension: "png",
-                                        subdirectory: "Sprites/\(theme)"),
-              let img = NSImage(contentsOf: url),
-              let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
-        return cg
+        SpriteLibrary.shared.themedImage(name)
     }
 
     /// 当前太阳特效实例(同时只允许 1 个,防止堆积卡死)

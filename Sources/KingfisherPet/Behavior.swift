@@ -303,26 +303,37 @@ final class Behavior: PetViewDelegate {
                  onWin: onWin, wid: wid, flyOff: hitEdge)
     }
 
-    private func walkStep(startX: CGFloat, to targetX: CGFloat, duration: TimeInterval,
-                          onWin: Bool, wid: CGWindowID?, flyOff: Bool) {
-        guard let w = window else { finish(); return }
-        let y = w.frame.origin.y              // 表面是平的:行走时高度不变(避免瞬移)
+    /// 60fps 逐帧动画骨架:走/飞/俯冲三套 Timer 共用(评审待办:动画骨架提炼)。
+    /// 每帧回调 step(进度 t 0…1);代际取消(bump 后不再推进也不回调);
+    /// 每帧同步刷阴影;结束回调 done。窗口中途消失 → invalidate + done(收尾不悬挂)。
+    private func animateFrames(duration: TimeInterval,
+                               step: @escaping (CGFloat) -> Void,
+                               done: @escaping () -> Void) {
+        guard window != nil else { done(); return }
         let dur = sp(duration)                // 全局动画速度
         let g = gen
         let t0 = CACurrentMediaTime()
         let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] tm in
-            guard let self = self, let w = self.window else { tm.invalidate(); return }
-            guard self.gen == g else { tm.invalidate(); return }       // 被取消
+            guard let self = self, self.window != nil else { tm.invalidate(); done(); return }
+            guard self.gen == g else { tm.invalidate(); return }       // 被取消,不再回调
             let t = min(1, (CACurrentMediaTime() - t0) / dur)
-            let x = startX + (targetX - startX) * t
-            w.setFrameOrigin(self.clamp(CGPoint(x: x, y: y)))
+            step(CGFloat(t))
             self.shadow?.updateNow()
-            if t >= 1 {
-                tm.invalidate()
-                self.afterWalk(onWin: onWin, wid: wid, flyOff: flyOff)
-            }
+            if t >= 1 { tm.invalidate(); done() }
         }
         RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func walkStep(startX: CGFloat, to targetX: CGFloat, duration: TimeInterval,
+                          onWin: Bool, wid: CGWindowID?, flyOff: Bool) {
+        guard let w = window else { finish(); return }
+        let y = w.frame.origin.y              // 表面是平的:行走时高度不变(避免瞬移)
+        animateFrames(duration: duration,
+                      step: { [weak self] t in
+                        let x = startX + (targetX - startX) * t
+                        self?.window?.setFrameOrigin(self?.clamp(CGPoint(x: x, y: y)) ?? CGPoint(x: x, y: y))
+                      },
+                      done: { [weak self] in self?.afterWalk(onWin: onWin, wid: wid, flyOff: flyOff) })
     }
 
     /// 走完:在窗口上走到边 → 飞走(下一个窗口/别处);窗口没了 → 飞走;否则留下
@@ -431,29 +442,23 @@ final class Behavior: PetViewDelegate {
                                done: @escaping () -> Void) {
         guard let window = window else { done(); return }
         leavePerch()
-        let dur = sp(duration)                // 全局动画速度
         let start = window.frame.origin
         let c1 = CGPoint(x: start.x + (end.x - start.x) * 0.35,
                          y: start.y + (end.y - start.y) * 0.15)
         let c2 = CGPoint(x: end.x - (end.x - start.x) * 0.15,
                          y: end.y - (end.y - start.y) * 0.10)
-        let g = gen
-        let t0 = CACurrentMediaTime()
-        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] tm in
-            guard let self = self, let w = self.window else { tm.invalidate(); done(); return }
-            guard self.gen == g else { tm.invalidate(); return }       // 被取消,不再回调
-            let t = min(1, (CACurrentMediaTime() - t0) / dur)
-            let mt = 1 - t
-            var x = mt*mt*mt*start.x + 3*mt*mt*t*c1.x + 3*mt*t*t*c2.x + t*t*t*end.x
-            var y = mt*mt*mt*start.y + 3*mt*mt*t*c1.y + 3*mt*t*t*c2.y + t*t*t*end.y
-            let bob = sin(t * .pi * 6)
-            y += bob * 4
-            x += bob * 1.5
-            w.setFrameOrigin(CGPoint(x: x, y: y))
-            self.shadow?.updateNow()
-            if t >= 1 { tm.invalidate(); done() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
+        animateFrames(duration: duration,
+                      step: { [weak self] t in
+                        guard let self = self else { return }
+                        let mt = 1 - t
+                        var x = mt*mt*mt*start.x + 3*mt*mt*t*c1.x + 3*mt*t*t*c2.x + t*t*t*end.x
+                        var y = mt*mt*mt*start.y + 3*mt*mt*t*c1.y + 3*mt*t*t*c2.y + t*t*t*end.y
+                        let bob = sin(t * .pi * 6)          // 拍翅起伏
+                        y += bob * 4
+                        x += bob * 1.5
+                        self.window?.setFrameOrigin(CGPoint(x: x, y: y))
+                      },
+                      done: done)
     }
 
     // MARK: - 鸣唱
@@ -825,20 +830,14 @@ final class Behavior: PetViewDelegate {
     private func animateWindow(to origin: CGPoint, duration: TimeInterval, done: @escaping () -> Void) {
         guard let window = window else { done(); return }
         leavePerch()
-        let dur = sp(duration)                // 全局动画速度
         let start = window.frame.origin
-        let g = gen
-        let t0 = CACurrentMediaTime()
-        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] tm in
-            guard let self = self, let w = self.window else { tm.invalidate(); done(); return }
-            guard self.gen == g else { tm.invalidate(); return }       // 被取消
-            let t = min(1, (CACurrentMediaTime() - t0) / dur)
-            w.setFrameOrigin(CGPoint(x: start.x + (origin.x - start.x) * t,
-                                     y: start.y + (origin.y - start.y) * t))
-            self.shadow?.updateNow()
-            if t >= 1 { tm.invalidate(); done() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
+        animateFrames(duration: duration,
+                      step: { [weak self] t in
+                        let x = start.x + (origin.x - start.x) * t
+                        let y = start.y + (origin.y - start.y) * t
+                        self?.window?.setFrameOrigin(CGPoint(x: x, y: y))
+                      },
+                      done: done)
     }
 
     private func placeAtBottomRight() {

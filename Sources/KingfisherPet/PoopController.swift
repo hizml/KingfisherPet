@@ -46,12 +46,9 @@ final class PoopController {
     private var screen: NSScreen? { bird?.screen ?? NSScreen.main }
 
     /// 加载当前主题的屎堆贴图(供 Poop.buildBlob 用)。
+    /// 统一经 SpriteLibrary.themedImage(评审:AssetLoader 统一)。
     fileprivate static func effectImage(_ name: String) -> CGImage? {
-        let theme = SpriteLibrary.shared.currentTheme
-        guard let url = Bundle.main.url(forResource: name, withExtension: "png",
-                                        subdirectory: "Sprites/\(theme)"),
-              let img = NSImage(contentsOf: url),
-              let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        guard let cg = SpriteLibrary.shared.themedImage(name) else { return nil }
         // 裁掉透明边:贴图(poop/zzz 等)通常有大片透明留白,不裁的话内容会悬浮。
         // 取 alpha 非零区域的 bounding box,裁剪返回。
         return cropToAlpha(cg)

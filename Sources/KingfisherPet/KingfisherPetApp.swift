@@ -1,5 +1,4 @@
 import AppKit
-import ApplicationServices
 import ServiceManagement
 import Foundation
 import QuartzCore
@@ -58,15 +57,20 @@ enum KingfisherPetApp {
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusItem: NSStatusItem!
-    private var checkUpdateItem: NSMenuItem?
-    private var petController: PetWindowController!
+    var petController: PetWindowController!   // internal:WatchdogService.emergencyReset 经 owner 访问
     private var soundMenuItem: NSMenuItem!
     private var autoLoginMenuItem: NSMenuItem!
     private var shadowCtl: ShadowController!
-    private var branchCtl: BranchController!
-    private var crackCtl: CrackController!
-    private var poopCtl: PoopController!
+    var branchCtl: BranchController!
+    var crackCtl: CrackController!
+    var poopCtl: PoopController!
     private var settingsWindowController: SettingsWindowController?
+
+    // 独立服务类型(评审待办:AppDelegate 拆分——DND/Update/Watchdog 各自成类,
+    // 本类只负责装配与转发;emergencyReset 需要的子系统句柄经 owner 供给)
+    private let dnd = DndMonitor()
+    private let updater = UpdateService()
+    private let watchdog = WatchdogService()
 
     private static let kAutoLogin = "kingfisher.autoLogin"
 
@@ -119,12 +123,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // 勿扰模式(3s 巡检):①其他应用全屏(视频/游戏)→ 鸟隐身+静音,
-        // 绝不盖在视频上;②系统在放声音(听歌/看片)→ 鸟不叫。
-        let dndTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
-            self?.dndCheck()
-        }
-        RunLoop.main.add(dndTimer, forMode: .common)
+        // 勿扰模式(3s 巡检,AX 查询在后台队列):①其他应用全屏(视频/游戏)→ 鸟隐身+静音。
+        // 拆分至 DndMonitor(评审:AppDelegate 拆分 + AX 挪后台)
+        dnd.behaviorProvider = { [weak self] in self?.petController?.behavior }
+        dnd.start()
 
         // 多屏:屏幕布局变化(插拔外接屏、分辨率变更)时,裂纹重定位 + 鸟钳制回当前屏
         NotificationCenter.default.addObserver(
@@ -171,276 +173,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // CPU 自监控:每 15 秒记录进程 CPU% + 线程数 + effect 数 + 当前状态,定位唤醒卡死
         // (间隔 15s:熔断需 3 连击=45s,更频的 fork ps 唤醒太费电;注释此前误写 5s)
-        startWatchdog()
-        startAutoUpdateCheck()   // 启动 30s + 每 24h 静默查更新(有新版才提示一次)
+        startWatchdogService()
+        updater.start()   // 启动 30s + 每 24h 静默查更新(有新版才标注一次)
     }
 
-    /// 看门狗:定期记录资源占用。卡死时日志里有铁证。
-    // MARK: - 勿扰模式(全屏应用隐身 / 放音静音)
-    private var fsOnStreak = 0, fsOffStreak = 0
-
-    private var dndSkipLast = ""
-    private func dndCheck() {
-        // 鸟不在屏/睡着时仍要累计 streak(否则勿扰中隐藏鸟 → fsOffStreak 永不累计
-        // → dndActive 永真 → hatchIn 拒绝复活 = 死锁,只能重启);只跳过 enter/exitDnd 副作用
-        let behavior: Behavior? = petController?.behavior
-        let active = behavior?.isOnScreen == true && behavior?.isSleeping != true
-        if !active { dndSkip(behavior?.isOnScreen != true ? "offscreen" : "sleeping") } else { dndSkip("") }
-        // ① 全屏应用检测:AX "AXFullScreen" 窗口属性(授权已通但判定过 false,
-        // 铺观测定位:每 10 拍记前台 App/窗口数/每窗属性原始错误码,切一次全屏即可对账)
-        let fs = fullscreenAppOnBirdScreen(behavior?.birdScreen)
-        dndDiagTick += 1
-        // 观测脚手架门控:排障期才开(生产每 30s 一次 AX 逐窗查询+日志是纯负载)
-        if !fs && dndDiagTick % 10 == 0 && ProcessInfo.processInfo.environment["KF_DND_DIAG"] == "1" { fsDiagSnapshot() }
-        if fs { fsOnStreak += 1; fsOffStreak = 0 } else { fsOffStreak += 1; fsOnStreak = 0 }
-        if behavior?.dndActive != true && fsOnStreak >= 2 && active {
-            kfLog("dnd: 全屏应用,鸟隐身+静音")
-            behavior?.enterDnd()
-        } else if behavior?.dndActive == true && fsOffStreak >= 2 {
-            kfLog("dnd: 全屏退出,恢复")
-            if active { behavior?.exitDnd() }   // 鸟隐藏时只清标志,不强制显示(下次 hatchIn 自然复活)
-        }
-
-    }
-
-    /// 全屏应用检测 v4(最终方案):AX 辅助功能的 "AXFullScreen" 窗口属性。
-    /// 几何法 v1-v3 全部失败(自机实验实锤:全屏窗在 CGWindowList 只剩 33px 条状残影,
-    /// 任何基于窗口矩形的判定都不可能)。AX 是系统权威信号,Rectaangle/AltTab/System
-    /// Events 同款;该属性不在公开 SDK 常量(仅运行时字符串"AXFullScreen")。
-    /// 遍历前台 App 的【全部】窗口,任一全屏即判定(macOS 全屏=整个 App 独占 Space)。
-    /// 需要辅助功能权限,未授权时 fail-open 并提示一次。
-    /// v5 混合判定:原生全屏(AXFullScreen)或自绘全屏(无边框窗口盖满整屏)。
-    /// v4 只看 AXFullScreen,对咪咕等"自绘全屏"视频 App 失效(实测:AX 链路通、
-    /// 判定恒 false)。AX 的窗口矩形是真实 frame(含菜单栏区,不受 CGWindowList
-    /// 全屏 Space 残影问题影响);拖拽最大化的窗口不含菜单栏/Dock → 不误触发。
-    private func fullscreenAppOnBirdScreen(_ screen: NSScreen? = nil) -> Bool {
-        let scrFrame = screen?.frame ?? NSScreen.main?.frame ?? .zero
-        // v6 前台来源改 NSWorkspace 取 pid + AXUIElementCreateApplication 直连:
-        // systemWide 的 focusedApplication 对 Chromium 系(Edge/Electron)实测恒返回
-        // -25212 NoValue(原生 App 正常)——用户全屏看片恰是浏览器,检测从未生效。
-        // NSWorkspace 免权限不挑内核;按 pid 直连查窗口是 AltTab 等工具的同款做法。
-        guard let frontApp = NSWorkspace.shared.frontmostApplication,
-              frontApp.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return false }
-        let appEl = AXUIElementCreateApplication(frontApp.processIdentifier)
-        var winsRef: CFTypeRef?
-        let werr = AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &winsRef)
-        guard werr == .success, let wins = winsRef as? [AXUIElement] else {
-            // 授权未生效时此查询失败(本机 macOS 26 表现 -25204/-25212,非教科书 -25211);
-            // 连续 5 拍失败 → 弹窗引导开辅助功能(前台=自己的窗口激活场景除外)
-            axFailStreak += 1
-            if axFailStreak % 5 == 1 {
-                kfLog("ax: 取窗口失败 err=\(werr.rawValue) 连续\(axFailStreak)拍,前台=\(frontApp.localizedName ?? "nil")")
-            }
-            if axFailStreak >= 5 { promptAccessibilityOnce() }
-            return false
-        }
-        axFailStreak = 0
-        for win in wins {
-            var fsRef: CFTypeRef?
-            if AXUIElementCopyAttributeValue(win, "AXFullScreen" as CFString, &fsRef) == .success,
-               let fs = fsRef, (fs as? Bool) == true {
-                return true   // ① 原生全屏
-            }
-            if let f = axFrame(win), scrFrame.width > 0,
-               abs(f.origin.x - scrFrame.origin.x) <= 4, abs(f.origin.y - scrFrame.origin.y) <= 4,
-               f.width >= scrFrame.width - 4, f.height >= scrFrame.height - 4 {
-                return true   // ② 自绘全屏:窗口盖满整屏
-            }
-        }
-        return false
-    }
-
-    /// AX 窗口矩形(kAXPosition + kAXSize,AXValue 解包)
-    private func axFrame(_ win: AXUIElement) -> CGRect? {
-        var posRef: CFTypeRef?; var sizeRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(win, kAXPositionAttribute as CFString, &posRef) == .success,
-              AXUIElementCopyAttributeValue(win, kAXSizeAttribute as CFString, &sizeRef) == .success,
-              let pr = posRef, let sr = sizeRef else { return nil }
-        var p = CGPoint.zero; var sz = CGSize.zero
-        guard AXValueGetValue(pr as! AXValue, .cgPoint, &p),
-              AXValueGetValue(sr as! AXValue, .cgSize, &sz) else { return nil }
-        return CGRect(origin: p, size: sz)
-    }
-
-    /// 全屏检测诊断快照(低频):前台 App 名 + 每窗 AXFullScreen 的错误码/值
-    private func fsDiagSnapshot() {
-        // 与检测同源:NSWorkspace pid 直连(systemWide 对 Chromium 系 NoValue)
-        guard let frontApp = NSWorkspace.shared.frontmostApplication else {
-            kfLog("fsDiag: frontmostApplication=nil"); return }
-        guard frontApp.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
-            kfLog("fsDiag: 前台=自己(忽略)"); return }
-        let appEl = AXUIElementCreateApplication(frontApp.processIdentifier)
-        let name = frontApp.localizedName ?? "pid:\(frontApp.processIdentifier)"
-        var winsRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &winsRef) == .success,
-            let wins = winsRef as? [AXUIElement] else {
-            kfLog("fsDiag: 前台=\(name) 取窗口列表失败"); return
-        }
-        var parts: [String] = []
-        for (i, win) in wins.enumerated() {
-            var v: CFTypeRef?
-            let err = AXUIElementCopyAttributeValue(win, "AXFullScreen" as CFString, &v)
-            let val = err == .success ? "\(v as? Bool ?? false)" : "err\(err.rawValue)"
-            let fr = axFrame(win).map { String(format: "[%.0f,%.0f %.0fx%.0f]", $0.origin.x, $0.origin.y, $0.width, $0.height) } ?? "noFrame"
-            parts.append("w\(i):fs=\(val) \(fr)")
-        }
-        kfLog("fsDiag: 前台=\(name) 窗口\(wins.count)个 [\(parts.joined(separator: " "))]")
-    }
-
-    private var axFailStreak = 0
-    private var axPromptShown = false
-    /// AX 持续失败(授权未生效)→ 弹窗引导用户开辅助功能(用户要求:需要权限必须明示)
-    private func promptAccessibilityOnce() {
-        guard !axPromptShown else { return }
-        axPromptShown = true
-        kfLog("ax: 弹窗引导开启辅助功能")
-        NSApp.activate(ignoringOtherApps: true)
-        let a = NSAlert()
-        a.alertStyle = .informational
-        a.messageText = "翡 需要辅助功能权限"
-        let appPath = Bundle.main.bundleURL.path   // 发布版用户机器上路径各不相同,动态生成
-        a.informativeText = "勿扰模式(全屏看片/放音时鸟自动隐身静音)依赖辅助功能。\n\n请到 系统设置 → 隐私与安全性 → 辅助功能,删除旧的「翡」后重新添加并勾选(选择:\(appPath))"
-        a.addButton(withTitle: "打开系统设置")
-        a.addButton(withTitle: "稍后")
-        if a.runModal() == .alertFirstButtonReturn {
-            // 新版系统设置的辅助功能深链;打不开则退到隐私面板
-            let deep = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility")!
-            if !NSWorkspace.shared.open(deep) {
-                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
-            }
-        }
-    }
-
-    private var dndDiagTick = 0
-
-    // 放音静音已迁 SpriteLibrary.playPeep(叫前查;勿扰段只留全屏检测)。
-    // MediaRemote 探索史详见 SpriteLibrary.playPeep 注释。
-    private func dndSkip(_ why: String) {
-        if why != dndSkipLast { if !why.isEmpty { kfLog("dndCheck 跳过: \(why)") }; dndSkipLast = why }
-    }
-
-    private var watchdogTimer: Timer?
-
-    private func startWatchdog() {
-        guard watchdogTimer == nil else { return }
-        let pid = ProcessInfo.processInfo.processIdentifier
-        var highCpuStreak = 0
-        var watchdogBusy = false   // 防重入:上一个 ps 没完成不 fork 新的
-        let timer = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: true) { [weak self] _ in   // 15s:熔断需 3 连击=45s,5s 的 fork 唤醒太频(省电)
-            guard let self = self else { return }
-            guard !watchdogBusy else { return }   // 上一个 ps 还没完(系统高负载时 ps 会慢),跳过
-            watchdogBusy = true
-            // ps 在后台线程跑,不阻塞主线程(主线程阻塞 = 丢帧 = 卡顿加剧)
-            DispatchQueue.global(qos: .utility).async {
-                let task = Process()
-                task.executableURL = URL(fileURLWithPath: "/bin/ps")
-                task.arguments = ["-p", "\(pid)", "-o", "%cpu,rss"]
-                let pipe = Pipe()
-                task.standardOutput = pipe
-                do { try task.run() } catch { watchdogBusy = false; return }
-                // 超时保护:3 秒 ps 不返回就强杀(唤醒后系统高负载时 ps 可能卡)
-                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 3.0) {
-                    if task.isRunning { task.terminate() }
-                }
-                task.waitUntilExit()
-                guard task.terminationStatus == 0 else {
-                    DispatchQueue.main.async { watchdogBusy = false }
-                    return
-                }
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                var cpu: Double = 0
-                var rss: Double = 0
-                if let s = String(data: data, encoding: .utf8) {
-                    let lines = s.split(separator: "\n")
-                    if lines.count > 1 {
-                        let parts = lines[1].split(whereSeparator: { $0.isWhitespace }).filter { !$0.isEmpty }
-                        if parts.count >= 2 {
-                            cpu = Double(parts[0]) ?? 0
-                            rss = (Double(parts[1]) ?? 0) / 1024
-                        }
-                    }
-                }
-                // 回主线程记日志 + 检查熔断
-                DispatchQueue.main.async {
-                    watchdogBusy = false
-                    let state = self.petController?.behavior.currentStateForLog() ?? "?"
-                    let onWin = self.petController?.behavior.onWindow ?? false
-                    // 自己进程的窗口数(泄漏监控:CGWindowList 过滤本 pid)
-                    var winCount = -1
-                    if let infos = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] {
-                        let myPID = ProcessInfo.processInfo.processIdentifier
-                        winCount = infos.filter { ($0[kCGWindowOwnerPID as String] as? Int32) == myPID }.count
-                    }
-                    kfLog("WATCHDOG cpu=\(String(format: "%.1f", cpu))% rss=\(String(format: "%.0f", rss))MB effects=\(Effect.active.count) windows=\(winCount) state=\(state) onWindow=\(onWin)")
-                    // 窗口数熔断:正常常驻 ≤10(鸟/影/枝/裂纹/屎≤8/池);超 30 = 出现未知泄漏
-                    // → 熔断重置;超 50(重置无效)→ 自我重启,宁可闪一下也不拖死机器
-                    if winCount > 30 {
-                        kfLog("⚠️ WINDOW LEAK: windows=\(winCount) > 30 → 熔断重置")
-                        self.emergencyReset()
-                    }
-                    if winCount > 50 {
-                        kfLog("🚨 WINDOW LEAK CRITICAL: windows=\(winCount) > 50 → 自我重启")
-                        Self.relaunchLeakGuard()
-                    }
-                    if cpu > 40 {
-                        highCpuStreak += 1
-                        if highCpuStreak >= 3 {
-                            kfLog("⚠️ CIRCUIT BREAKER: cpu=\(cpu)% 持续 \(highCpuStreak*15)s → 熔断重置")
-                            self.emergencyReset()
-                            highCpuStreak = 0
-                        }
-                    } else {
-                        highCpuStreak = 0
-                    }
-                }
-            }
-        }
-        watchdogTimer = timer
-    }
-
-    /// 睡眠/锁屏时停 watchdog(夜里每 15s fork ps + 全窗口枚举,纯耗电)
-    private func stopWatchdog() {
-        watchdogTimer?.invalidate()
-        watchdogTimer = nil
-    }
-
-    /// 泄漏终极兜底:重启进程(窗口对象全清,泄漏清零)。带冷却,防重启风暴。
-    private static var lastRelaunchAt: CFTimeInterval = 0
-    private static func relaunchLeakGuard() {
-        guard CACurrentMediaTime() - lastRelaunchAt > 300 else { return }   // 5 分钟冷却
-        lastRelaunchAt = CACurrentMediaTime()
-        let url = Bundle.main.bundleURL
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            kfLog("relaunching (leak guard)")
-            let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-            proc.arguments = ["-n", url.path]
-            try? proc.run()
-            NSApp.terminate(nil)
-        }
-    }
-
-    /// 熔断重置:停一切 + 清一切 + 干净重启。不管根因是什么,保证不卡死系统。
-    private func emergencyReset() {
-        // 停所有 Behavior 定时器 + 代际 bump
-        petController?.behavior.suspend()
-        // 停所有常驻 timer
-        petController?.petView.suspendAnimation()
-        poopCtl?.suspend()
-        branchCtl?.suspend()
-        // 撤所有特效窗口
-        Effects.clearAll()
-        // 清裂纹 layer(保留裂纹数据,只移除 layer 树防 GPU 合成开销)
-        crackCtl?.purgeLayers()
-        // 短暂等待后干净恢复
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            guard let self = self else { return }
-            self.petController?.petView.resumeAnimation()
-            self.poopCtl?.resume()
-            self.branchCtl?.resume()
-            self.petController?.behavior.forceIdle()
-            kfLog("CIRCUIT BREAKER: 重置完成,恢复运行")
-        }
+    private func startWatchdogService() {
+        watchdog.owner = self
+        watchdog.start()
     }
 
     // MARK: - 自动化场景测试(KF_TEST)
@@ -603,7 +342,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         let cuItem = item(Language.t("menu.checkUpdate"), action: #selector(checkUpdate))
         menu.addItem(cuItem)
-        checkUpdateItem = cuItem
+        updater.menuItem = cuItem   // 拆分后由 UpdateService 持有
         menu.addItem(item(Language.t("menu.about"), action: #selector(showAbout)))
         menu.addItem(item(Language.t("menu.quit"), action: #selector(quit)))
         statusItem.menu = menu
@@ -691,7 +430,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 系统睡眠前:鸟入睡 + 停所有常驻 timer(逐帧/屎/树枝,防唤醒补发堆积卡死)+ 清场 + 隐藏裂纹。
     @objc private func systemWillSleep() {
         kfLog("willSleep effects=\(Effect.active.count)")
-        stopWatchdog()
+        watchdog.stop()
         petController?.behavior.sleepForUserAbsence(systemSleep: true)
         petController?.petView.suspendAnimation()
         poopCtl?.suspend()
@@ -713,7 +452,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 锁屏:鸟入睡(进程不挂起,自然 sleep + zzz + 禁声)。不清场,特效自然到期。
     @objc private func screenLocked() {
         kfLog("screenLocked effects=\(Effect.active.count)")
-        stopWatchdog()
+        watchdog.stop()
         petController?.behavior.sleepForUserAbsence(systemSleep: false)
         petController?.petView.suspendAnimation()   // 锁屏屏幕黑:停所有常驻 timer,防长时间高 CPU 发烫卡死
         poopCtl?.suspend()
@@ -731,7 +470,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 黑屏入睡(合盖只熄屏场景):鸟睡 + 停常驻定时器(跟锁屏同一条路)
     @objc private func screenDidSleep() {
         kfLog("screensDidSleep")
-        stopWatchdog()
+        watchdog.stop()
         petController?.behavior.sleepForUserAbsence(systemSleep: false)
         petController?.petView.suspendAnimation()
         poopCtl?.suspend()
@@ -769,7 +508,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 kfLog("wake resume cancelled: display asleep in 3s window")
                 return
             }
-            self.startWatchdog()
+            self.watchdog.start()
             if self.petController?.behavior.isVisible == true {   // 隐藏鸟不空转
                 self.petController?.petView.resumeAnimation()
                 self.poopCtl?.resume()
@@ -814,70 +553,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func checkUpdate() {
-        fetchLatest { latest in
-            let cur = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "dev"
-            self.checkUpdateItem?.title = Language.t("menu.checkUpdate")   // 看过详情,清标注
-            self.updateAlert(latest: latest, current: cur)
-        }
+        updater.checkNow()   // 拆分至 UpdateService(评审:AppDelegate 拆分)
     }
 
-    private func fetchLatest(_ done: @escaping (String?) -> Void) {
-        let url = URL(string: "https://api.github.com/repos/hizml/KingfisherPet/releases/latest")!
-        URLSession.shared.dataTask(with: url) { data, _, _ in
-            var latest: String?
-            if let data, let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                latest = obj["tag_name"] as? String
-            }
-            DispatchQueue.main.async { done(latest) }
-        }.resume()
-    }
-
-    /// 自动检查(静默):有新版只在菜单项上标注(不弹窗,用户点开才出详情);
-    /// 无新版/失败 → 清标注或不动,一声不吭
-    private func autoCheckUpdate() {
-        fetchLatest { latest in
-            let cur = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "dev"
-            let has = (latest != nil) && latest != "v" + cur
-            self.checkUpdateItem?.title = has
-                ? Language.t("update.found")
-                : Language.t("menu.checkUpdate")
-            if has { kfLog("update: 自动检查发现新版 \(latest!),菜单已标注") }
-        }
-    }
-    private var updateTimer: Timer?
-    private func startAutoUpdateCheck() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in self?.autoCheckUpdate() }
-        updateTimer = Timer.scheduledTimer(withTimeInterval: 24 * 3600, repeats: true) { [weak self] _ in
-            self?.autoCheckUpdate()
-        }
-    }
-    private func updateAlert(latest: String?, current: String) {
-        // 文案全部走 Language 字典(评审 B2:此前内联 zh?: 三元,绕过本地化体系)
-        let a = NSAlert()
-        if latest == nil {
-            a.messageText = Language.t("update.failed")
-            a.informativeText = Language.t("update.failedBody")
-            a.addButton(withTitle: Language.t("update.openReleases"))
-            if a.runModal() == .alertFirstButtonReturn {
-                NSWorkspace.shared.open(URL(string: "https://github.com/hizml/KingfisherPet/releases")!)
-            }
-            return
-        }
-        if latest == "v" + current {
-            a.messageText = Language.t("update.latest")
-            a.informativeText = "v\(current)"
-            _ = a.runModal()
-        } else {
-            a.messageText = Language.t("update.found") + " \(latest!)"
-            a.informativeText = String(format: Language.t("update.downloadBody"), current)
-            a.addButton(withTitle: Language.t("update.download"))
-            a.addButton(withTitle: Language.t("update.later"))
-            if a.runModal() == .alertFirstButtonReturn {
-                NSWorkspace.shared.open(URL(string: "https://github.com/hizml/KingfisherPet/releases/latest")!)
-            }
-        }
-    }
-    
     @objc private func showAbout() {
         let alert = NSAlert()
         alert.messageText = Language.t("about.title")

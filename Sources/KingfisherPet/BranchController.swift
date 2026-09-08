@@ -46,15 +46,9 @@ final class BranchController {
         overlay.contentView = v
     }
 
-    /// 从当前主题目录加载 branch.png
+    /// 从当前主题目录加载 branch.png(统一经 SpriteLibrary.themedImage,评审:AssetLoader 统一)
     private func loadBranchAsset() {
-        let theme = SpriteLibrary.shared.currentTheme
-        if let url = Bundle.main.url(forResource: "branch", withExtension: "png",
-                                     subdirectory: "Sprites/\(theme)"),
-           let img = NSImage(contentsOf: url),
-           let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-            branchLayer.contents = cg
-        }
+        branchLayer.contents = SpriteLibrary.shared.themedImage("branch")
     }
 
     /// 主题切换:重载树枝贴图
