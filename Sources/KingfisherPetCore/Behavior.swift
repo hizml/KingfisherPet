@@ -230,29 +230,28 @@ final class Behavior: PetViewDelegate {
         // 窗口正在被拖动 = 用户实时交互,优先级最高:推迟预设动作
         guard !busy, !perchWinMoving else { scheduleThink(); return }
         let isLow = (window?.frame.minY ?? 0) < (area.minY + 60)   // Dock 附近
-        // 活跃度越高,纯待机(idle)概率越低;省下的权重分给其他动作
-        let a = Settings.shared.activity               // 0…1
-        let idleBand = Int((1.0 - a) * 22)             // 0→22, 1→0
-        let walk = idleBand + max(1, Int((1.0 - a) * 20))   // 待机+走动一起,高活跃更倾向走
-        // 权重归一(评审:activity=1 时 sleep 兜底桶反占 ~37% 成最高频,与"高活跃"相悖):
-        // sleep 固定小桶 6,九个动作带(总 62)按剩余空间等比缩放 k=(100-walk-6)/62
-        // → 低活跃动作收敛(k≈0.84),高活跃动作放大(k≈1.5),sleep 恒 ≤6。
-        // Windows 端对齐公式见 docs/FIX-DIVISION-2026-09.md 评论区。
-        let k = max(0.5, (100.0 - Double(walk) - 6.0) / 62.0)
+        // 活跃度 + 昼夜节律(v1.5.0 A)共同决定权重带;公式收进 DayRhythm.thinkBands
+        // 纯函数(kf-tests 直打真实现,版本比较 bug 的教训:不打复制品),此处只管
+        // 按布局选桶执行。widths 顺序:fly/fish/sing/dart/watch/sun/peck/perch/poop。
+        let layout = DayRhythm.thinkBands(activity: Settings.shared.activity,
+                                          hour: DayRhythm.currentHour())
+        let idleBand = layout.idleBand
+        let walk = layout.walkEnd
+        let k = layout.k
         let bands: [(Double, () -> Void)] = [
-            (7,  { [weak self] in self?.startFly() }),
-            (8,  { [weak self] in self?.startFish() }),
-            (7,  { [weak self] in self?.startSing() }),
-            (7,  { [weak self] in self?.startDart() }),
-            (7,  { [weak self] in self?.startWatch() }),
-            (7,  { [weak self] in self?.startSun() }),
-            (6,  { [weak self] in
+            (layout.widths[0], { [weak self] in self?.startFly() }),
+            (layout.widths[1], { [weak self] in self?.startFish() }),
+            (layout.widths[2], { [weak self] in self?.startSing() }),
+            (layout.widths[3], { [weak self] in self?.startDart() }),
+            (layout.widths[4], { [weak self] in self?.startWatch() }),
+            (layout.widths[5], { [weak self] in self?.startSun() }),
+            (layout.widths[6], { [weak self] in
                 guard let self = self else { return }
                 if Settings.shared.peckScreen { self.startPeck() }
                 else { self.enter("idle"); self.scheduleThink() }
             }),
-            (6,  { [weak self] in self?.startPerchWindow() }),
-            (6,  { [weak self] in self?.startPoop() }),
+            (layout.widths[7], { [weak self] in self?.startPerchWindow() }),
+            (layout.widths[8], { [weak self] in self?.startPoop() }),
         ]
         var bounds: [(Int, () -> Void)] = [
             (walk, { [weak self] in
@@ -271,7 +270,7 @@ final class Behavior: PetViewDelegate {
             for (upper, action) in bounds where r < upper {
                 action(); return
             }
-            startSleep()   // 兜底:sleep 固定桶(≤6)+ 取整误差
+            startSleep()   // 兜底:sleep 份额(白天≈7.2:带宽和 61,/62 余量进兜底;深夜被昼夜系数放大)
         }
     }
 

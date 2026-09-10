@@ -77,6 +77,52 @@ enum TestMain {
         expect("双路皆死且暂停 → 照叫", !sw(0, 9999, false))
         expect("无时间戳但快照在推进 → 吞(活性②路独立成立)", sw(1, nil, true))
 
+        // MARK: - 昼夜节律(DayRhythm;Windows tests/dayrhythm.test.mjs 同一用例口径)
+        print("[昼夜节律]")
+        let day = DayRhythm.thinkBands(activity: 0.5, hour: 12)
+        expect("白天基准 idleBand=11", day.idleBand == 11, "got \(day.idleBand)")
+        expect("白天基准 walkEnd=21", day.walkEnd == 21, "got \(day.walkEnd)")
+        expect("白天 k≈1.177(原归一公式不变)", abs(day.k - 73.0 / 62.0) < 1e-9, "got \(day.k)")
+        expect("白天 sleep 兜底≈7.2(原公式原语义:带宽和 61,/62 余量进兜底)",
+               abs(day.sleepShare - (100.0 - 21.0 - 61.0 * 73.0 / 62.0)) < 1e-9, "got \(day.sleepShare)")
+        let deep = DayRhythm.thinkBands(activity: 0.5, hour: 3)
+        expect("深夜 sing/fish/dart 带归零", deep.widths[1...3].allSatisfy { $0 == 0 })
+        expect("深夜 k=白天×0.35", abs(deep.k - day.k * 0.35) < 1e-9)
+        expect("深夜 sleep 份额>50(节律压过活跃度)", deep.sleepShare > 50, "got \(deep.sleepShare)")
+        let dawn = DayRhythm.thinkBands(activity: 0.5, hour: 7)
+        expect("清晨晨鸣 sing×1.5", abs(dawn.widths[2] - 7 * 1.5) < 1e-9)
+        let dusk = DayRhythm.thinkBands(activity: 0.5, hour: 19)
+        expect("黄昏 k=白天×0.85", abs(dusk.k - day.k * 0.85) < 1e-9)
+        expect("黄昏晒夕阳 sun×1.3", abs(dusk.widths[5] - 7 * 1.3) < 1e-9)
+        let night23 = DayRhythm.thinkBands(activity: 0.5, hour: 23)
+        expect("夜 k=白天×0.5", abs(night23.k - day.k * 0.5) < 1e-9)
+        // 边界小时落段(5 深夜/6、8 清晨/9、16 白天/17、21 黄昏/22、23 夜)
+        expect("h5 落深夜", DayRhythm.factors(hour: 5).overall == 0.35)
+        expect("h6 落清晨", DayRhythm.factors(hour: 6).sing == 1.5)
+        expect("h8 落清晨", DayRhythm.factors(hour: 8).sing == 1.5)
+        expect("h9 落白天", DayRhythm.factors(hour: 9) == DayRhythm.Factors.base)
+        expect("h16 落白天", DayRhythm.factors(hour: 16) == DayRhythm.Factors.base)
+        expect("h17 落黄昏", DayRhythm.factors(hour: 17).overall == 0.85)
+        expect("h21 落黄昏", DayRhythm.factors(hour: 21).overall == 0.85)
+        expect("h22 落夜", DayRhythm.factors(hour: 22).overall == 0.5)
+        expect("h23 落夜", DayRhythm.factors(hour: 23).overall == 0.5)
+        // sleep 份额排序:深夜 > 夜 > 黄昏 > 白天(越夜越困);清晨最精神(晨鸣吃掉 doze)
+        let seg = { (h: Int) in DayRhythm.thinkBands(activity: 0.5, hour: h).sleepShare }
+        expect("sleep 份额 深夜>夜>黄昏>白天", seg(3) > seg(23) && seg(23) > seg(19) && seg(19) > seg(12),
+               "deep=\(seg(3)) n23=\(seg(23)) dusk=\(seg(19)) day=\(seg(12))")
+        expect("清晨最精神(sleep<白天)", seg(7) < seg(12), "dawn=\(seg(7)) day=\(seg(12))")
+        // 24h × 3 活跃度全扫:布局守恒(idle/walk 并入 walkEnd + 动作带×k + sleep = 100)
+        var conserveOK = true
+        for h in 0...23 {
+            for a in [0.2, 0.5, 0.8] {
+                let p = DayRhythm.thinkBands(activity: a, hour: h)
+                let actionTotal: Double = p.widths.reduce(0.0, +) * p.k
+                let total = Double(p.walkEnd) + actionTotal + p.sleepShare
+                if abs(total - 100) > 0.01 { conserveOK = false }
+            }
+        }
+        expect("24h×3 活跃度布局守恒(和=100)", conserveOK)
+
         // MARK: - 结果
         print("== \(passed) passed, \(failures) failed ==")
         if failures > 0 { exit(1) }
