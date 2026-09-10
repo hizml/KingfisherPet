@@ -969,6 +969,14 @@ FRAMES = [
     # 拉屎
     ("poop_0",     dict(wing="folded", butt_up=True, tail_wag=-5, sweat=True, body_dy=4)),
     ("poop_1",     dict(wing="folded", butt_up=True, tail_wag=5, sweat=True, body_dy=4)),
+    # 躲雨(v1.5.0 天气批):收拢蓬毛站姿、头埋,偶尔探头;大雨/雷暴/预警用,栖窗/地面两用
+    ("hide_0",     dict(wing="folded", fluff=True, look_down=True, eye_closed=True, body_dy=3)),
+    ("hide_1",     dict(wing="folded", fluff=True, look_down=True, body_dy=3)),
+    ("hide_2",     dict(wing="folded", fluff=True, head_raise_amt=8, body_dy=3)),
+    # 抖水(雨停转晴/预警解除):happy 变体,快速左右抖;水珠是运行时粒子(Effects),不进帧
+    ("shake_0",    dict(wing="folded", head_tilt=-5, tail_wag=-8, blush=True)),
+    ("shake_1",    dict(wing="folded", body_dy=-4, blush=True)),
+    ("shake_2",    dict(wing="folded", head_tilt=5, tail_wag=8, blush=True)),
 ]
 
 
@@ -991,7 +999,8 @@ def render_all_frames(theme, pal, post):
         "fps": {
             "idle": 4, "walk": 8, "fly": 10, "happy": 6, "sleep": 2,
             "dive": 8, "fly_fish": 10, "eat": 4, "sing": 6, "watch": 3,
-            "sun": 3, "hover": 10, "egg": 4, "dead": 1, "poop": 6, "peck": 8
+            "sun": 3, "hover": 10, "egg": 4, "dead": 1, "poop": 6, "peck": 8,
+            "hide": 3, "shake": 10
         },
         "sequences": {
             "idle":     ["idle_0", "idle_1", "idle_0", "idle_blink"],
@@ -1009,7 +1018,11 @@ def render_all_frames(theme, pal, post):
             "egg":      ["egg_0", "egg_0", "egg_1", "egg_1", "egg_2"],
             "dead":     ["dead"],
             "poop":     ["poop_0", "poop_1", "poop_0", "poop_1", "poop_0"],
-            "peck":     ["peck_0", "peck_1"]
+            "peck":     ["peck_0", "peck_1"],
+            # 躲雨:大部分时间埋头(闭眼/睁眼交替),偶尔探头张望
+            "hide":     ["hide_0", "hide_0", "hide_1", "hide_0", "hide_2"],
+            # 抖水:左右快速抖 + 中间小跳
+            "shake":    ["shake_0", "shake_1", "shake_2", "shake_1"]
         }
     }
     with open(os.path.join(OUT_BASE, theme, "sprites.json"), "w") as f:
@@ -1022,7 +1035,8 @@ def render_all_frames(theme, pal, post):
         ("dive", "dive_0"), ("eat0", "eat_0"), ("eat2", "eat_2"),
         ("sing", "sing_0"), ("watch", "watch_0"), ("sun", "sun_0"), ("peck", "peck_0"),
         ("egg0", "egg_0"), ("egg1", "egg_1"), ("egg2", "egg_2"), ("dead", "dead"),
-        ("poop", "poop_0"), ("shadow", "shadow"), ("branch", "branch"),
+        ("poop", "poop_0"), ("hide", "hide_0"), ("shake", "shake_0"),
+        ("shadow", "shadow"), ("branch", "branch"),
     ])
 
 

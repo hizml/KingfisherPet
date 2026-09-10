@@ -15,7 +15,9 @@
     "egg": 4,
     "dead": 1,
     "poop": 6,
-    "peck": 8
+    "peck": 8,
+    "hide": 3,
+    "shake": 10
   },
   "sequences": {
     "idle": [
@@ -99,6 +101,19 @@
     "peck": [
       "peck_0",
       "peck_1"
+    ],
+    "hide": [
+      "hide_0",
+      "hide_0",
+      "hide_1",
+      "hide_0",
+      "hide_2"
+    ],
+    "shake": [
+      "shake_0",
+      "shake_1",
+      "shake_2",
+      "shake_1"
     ]
   }
 }
