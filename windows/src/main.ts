@@ -16,6 +16,7 @@ import { setupAudio, playPeep, setSoundOn, setMediaMuted } from "./audio";
 import { settings, setSound, setActivity, setSpeed, setPeckScreen,
          setWeatherEnabled, setWeatherCity, setWeatherProvider, setWeatherKey, setWeatherHost } from "./settings";
 import { startWeather, stopWeather, weatherSettingsChanged, weather, onWeatherUpdate } from "./weathersvc";
+import { growth } from "./growthsvc";   // 成长系统(v1.5.x):启动推托盘状态行
 import { warnOnce } from "./log";
 import { isNewer } from "./shared.mjs";   // 纯函数抽出,tests/version.test.mjs 直测同一份源码
 import * as behavior from "./behavior";
@@ -67,6 +68,7 @@ async function main() {
       const id = e.payload;
       if (id === "call") behavior.callOver();
       else if (id === "sing") behavior.doSing();
+      else if (id === "feed") behavior.feedFish();   // 喂条鱼(成长系统)
       else if (id === "eat") behavior.doEat();
       else if (id === "fish") behavior.doFish();
       else if (id === "diag") collectDiagnostics();   // 诊断信息(写文件+记事本打开,定位坐标问题)
@@ -174,6 +176,8 @@ async function main() {
     // 状态变化同步设置窗(状态可见:正常/不可用/预警)
     if (settings.weatherEnabled) startWeather();
     onWeatherUpdate(() => emit("wx-state", { status: weather.status }));
+    // 成长系统(v1.5.x):启动即推托盘状态行(❤ 档位·亲密度);变化时 growth.syncTray 自推
+    growth.syncTray();
     await behavior.start();
     requestAnimationFrame(tick);
     // 跨不同 DPI 显示器:窗口物理尺寸不会自动跟着变(160 物理 ≠ 新屏的 160 逻辑),

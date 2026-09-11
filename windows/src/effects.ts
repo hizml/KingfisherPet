@@ -29,3 +29,17 @@ export function zzz(x: number, y: number) { fx("zzz", x, y); }
 export function sun(x: number, y: number, duration: number) { fx("sun", x, y, duration); }
 /// 抖水水珠(雨停/预警解除,shake 序列配套)
 export function droplets(x: number, y: number) { fx("droplets", x, y); }
+/// 访客飞过(v1.5.x 成长):x/y=本鸟中心(屏幕物理);舞台侧算进出路径与对唱停留
+export function visitorPass(x: number, y: number, onArrive: () => void) { fx2("visitor", x, y, onArrive); }
+/// 蛋摇摆(孵化彩蛋):x/y=蛋位(屏幕物理)
+export function eggWobble(x: number, y: number) { fx2("egg", x, y, null); }
+/// 小鸟跟班绕飞(孵化彩蛋):x/y=本鸟中心(屏幕物理)
+export function childFlight(x: number, y: number) { fx2("child", x, y, null); }
+/// 屏幕物理坐标直发版(成长演出拿到的已是屏幕坐标,不再做本地→屏幕换算)
+async function fx2(kind: string, px: number, py: number, cb: (() => void) | null) {
+  try {
+    await ensurePoopStage();
+    await emit("fx", { kind, x: px, y: py, dur: 0, spd: settings.speed });
+    if (cb) setTimeout(cb, 3400);   // 访客落定开唱的大致时刻(路径前段 42%×8s≈3.4s,Mac 同款参数)
+  } catch { /* */ }
+}

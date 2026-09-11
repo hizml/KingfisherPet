@@ -209,6 +209,79 @@ listen("fx", (e) => {
       requestAnimationFrame(() => { d.style.transform = `translate(${dx}px,${dy}px)`; d.style.opacity = "0"; });
       setTimeout(() => d.remove(), 600 * sp2);
     }
+  } else if (kind === "visitor" || kind === "child") {
+    // 访客鸟/小鸟跟班(v1.5.x 成长;macOS VisitorService 同款参数):
+    // visitor=屏边进→鸟旁停 2.2s(对唱)→飞出 8s;child=0.6× 绕鸟两圈 5.5s
+    const isChild = kind === "child";
+    const sz = (isChild ? 96 : 128) / DPR;   // 0.6× / 0.8× 逻辑尺寸
+    const img = imgEl("visitor_fly_2", sz, sz);
+    img.style.position = "absolute"; img.style.willChange = "left,top";
+    document.body.appendChild(img);
+    const stopAt = 0.42, pauseDur = 2.2, total = isChild ? 5.5 : 8.0;
+    const W = innerWidth, H = innerHeight;
+    // 路径:child=绕鸟两圈(48 点)+拉远;visitor=左/右进→停鸟旁→另一侧出
+    let pts = [];
+    if (isChild) {
+      for (let i = 0; i <= 48; i++) {
+        const a = (i / 48) * Math.PI * 4;
+        pts.push([x + Math.cos(a) * 130 / DPR, y + Math.sin(a) * 91 / DPR]);
+      }
+      pts.push([x + 312 / DPR, y + 195 / DPR]);
+    } else {
+      const fromLeft = Math.random() < 0.5;
+      const enter = [fromLeft ? -sz : W + sz, H * (0.15 + Math.random() * 0.3)];
+      const stop = [Math.min(Math.max(x + (fromLeft ? 90 : -90) / DPR, 90), W - 90), Math.max(y - 60 / DPR, 200)];
+      const exit = [fromLeft ? W + sz : -sz, H * (0.15 + Math.random() * 0.4)];
+      pts = [enter, stop, exit];
+    }
+    const flyDur = Math.max(0.1, total - (isChild ? 0 : pauseDur));
+    const pauseStart = isChild ? -1 : stopAt * flyDur;
+    const flySeq = ["visitor_fly_1", "visitor_fly_2", "visitor_fly_3", "visitor_fly_2"];
+    const idleSeq = ["visitor_idle_0", "visitor_idle_1", "visitor_idle_0", "visitor_idle_blink"];
+    const singSeq = ["visitor_sing_0", "visitor_sing_1"];
+    const t0 = performance.now();
+    let sang = false;
+    const step = (now) => {
+      const t = (now - t0) / 1000 / (1 / fxSpd);   // 受全局动画速度
+      if (t >= total) { img.remove(); return; }
+      const inPause = !isChild && t >= pauseStart && t < pauseStart + pauseDur;
+      let px, py, seq;
+      if (inPause) {
+        if (!sang && t >= pauseStart + 0.3) sang = true;   // 落定半拍后开唱(macOS 同款)
+        seq = sang ? singSeq : idleSeq;
+        px = pts[1][0]; py = pts[1][1];   // 停留点
+      } else {
+        const tt = (pauseStart >= 0 && t >= pauseStart + pauseDur) ? t - pauseDur : t;
+        const prog = Math.min(1, tt / flyDur);
+        const f = prog * (pts.length - 1);
+        const i = Math.min(pts.length - 2, Math.floor(f));
+        const seg = f - i;
+        px = pts[i][0] + (pts[i + 1][0] - pts[i][0]) * seg;
+        py = pts[i][1] + (pts[i + 1][1] - pts[i][1]) * seg;
+        seq = flySeq;
+      }
+      img.src = `${import.meta.env.BASE_URL}Sprites/${theme}/${seq[Math.floor(t / 0.12) % seq.length]}.png`;
+      img.style.left = (px - sz / 2) + "px";
+      img.style.top = (py - sz / 2) + "px";
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  } else if (kind === "egg") {
+    // 蛋摇摆(孵化彩蛋;macOS eggWobble 同款节奏):egg_1/2 交替,每四拍回 0,2.4s
+    const img = imgEl("egg_0", 140 / DPR, 140 / DPR);
+    img.style.position = "absolute";
+    img.style.left = (x - 70 / DPR) + "px";
+    img.style.top = (y - 70 / DPR) + "px";
+    document.body.appendChild(img);
+    const t0 = performance.now();
+    const step = (now) => {
+      const t = (now - t0) / 1000;
+      if (t >= 2.4) { img.remove(); return; }
+      const tick = Math.floor(t / 0.24);
+      img.src = `${import.meta.env.BASE_URL}Sprites/${theme}/egg_${tick % 4 === 3 ? 0 : (tick % 2 === 0 ? 1 : 2)}.png`;
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
   }
 });
 // 树枝(屏幕坐标):悬空落脚的预显树枝——鸟到之前树枝先到

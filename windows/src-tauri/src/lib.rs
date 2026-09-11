@@ -244,6 +244,15 @@ fn set_update_badge(app: tauri::AppHandle, on: bool) {
 /// (状态可见纪律:当前档/预警降级都在这行,不弹窗)。
 static WEATHER_TITLE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
+/// 成长状态行(v1.5.x):前端 growth 服务 invoke 推标题(None=未推,隐藏)。
+static GROWTH_TITLE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+#[tauri::command]
+fn set_growth_status(app: tauri::AppHandle, title: Option<String>) {
+    *GROWTH_TITLE.lock().unwrap() = title;
+    refresh_menu(&app);
+}
+
 #[tauri::command]
 fn set_weather_status(app: tauri::AppHandle, title: Option<String>) {
     *WEATHER_TITLE.lock().unwrap() = title;
@@ -356,6 +365,7 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
     let call = MenuItem::with_id(app, "call", t("召唤过来", "Call Over"), true, None::<&str>)?;
     let fish = MenuItem::with_id(app, "fish", t("去抓条鱼", "Catch a Fish"), true, None::<&str>)?;
     let sing = MenuItem::with_id(app, "sing", t("唱一个", "Sing"), true, None::<&str>)?;
+    let feed = MenuItem::with_id(app, "feed", t("喂条鱼", "Feed a Fish"), true, None::<&str>)?;
     let perch = MenuItem::with_id(app, "perch", t("停到窗口上", "Perch on a Window"), true, None::<&str>)?;
     let peck = MenuItem::with_id(app, "peck", t("啄一下", "Peck"), true, None::<&str>)?;
     let show = MenuItem::with_id(app, "show", t("显示 / 隐藏", "Show / Hide"), true, None::<&str>)?;
@@ -393,15 +403,23 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
     let quit = MenuItem::with_id(app, "quit", t("退出 翡", "Quit Fei"), true, None::<&str>)?;
 
     let items: Vec<&dyn IsMenuItem<tauri::Wry>> = vec![
-        &call, &fish, &sing, &perch, &peck, &show, &repair, &diag,
+        &call, &fish, &sing, &feed, &perch, &peck, &show, &repair, &diag,
         &m_theme, &sound, &autostart, &settings, &checkupd, &about, &quit,
     ];
     // 天气状态行(天气联动开启时由前端推标题;禁用项只展示)—— 插在最前(动作区之上,Mac 同位)
     let wx_title = WEATHER_TITLE.lock().unwrap().clone();
     let menu = Menu::with_items(app, &items)?;
+    let mut head: Vec<Box<dyn IsMenuItem<tauri::Wry>>> = Vec::new();
     if let Some(t) = wx_title {
-        let wx = MenuItem::with_id(app, "weather", t, false, None::<&str>)?;
-        menu.insert_items(&[&wx], 0)?;
+        head.push(Box::new(MenuItem::with_id(app, "weather", t, false, None::<&str>)?));
+    }
+    // 成长状态行(❤ 档位·亲密度;前端启动即推,故通常可见)—— 排天气行下
+    if let Some(t) = GROWTH_TITLE.lock().unwrap().clone() {
+        head.push(Box::new(MenuItem::with_id(app, "growth", t, false, None::<&str>)?));
+    }
+    if !head.is_empty() {
+        let refs: Vec<&dyn IsMenuItem<tauri::Wry>> = head.iter().map(|b| b.as_ref()).collect();
+        menu.insert_items(&refs, 0)?;
     }
     Ok(menu)
 }
@@ -452,7 +470,7 @@ pub fn run() {
         
 
 .invoke_handler(tauri::generate_handler![
-        open_url, set_update_badge, set_weather_status, front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, diag_append, assert_z_cmd, anim_guard])
+        open_url, set_update_badge, set_weather_status, set_growth_status, front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, diag_append, assert_z_cmd, anim_guard])
         .setup(|app| {
             crate::system::setup_power(app.handle().clone());   // 睡眠/锁屏/唤醒/会话 → emit sleep/wake/session-change
             // 设置窗主动拉状态(打开时):回语言/自启

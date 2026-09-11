@@ -16,6 +16,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { settings } from "./settings";
 import { thinkBands } from "./shared.mjs";   // 昼夜节律权重带(纯函数,tests 直测同一份源码)
 import { weather, onWeatherUpdate, type WeatherNow, type WeatherAlert } from "./weathersvc";
+import { growth } from "./growthsvc";   // 成长系统(v1.5.x;纯公式在 growth.mjs)
 import { setSleepMuted } from "./audio";
 import { warnOnce } from "./log";
 
@@ -282,6 +283,139 @@ export function weatherShake() {
     hold(0.8, () => finish());
   });
 }
+
+// ── 成长系统轻量版(v1.5.x;macOS Behavior 成长节对称)──
+let growthVisitorAt = 0;   // 访客冷却(2h,同彩蛋纪律)
+/// think 拍内插播检查:孵化彩蛋 > 主动来访 > 访客飞过 > 寒颤。
+/// 全部不进权重带(昼夜/天气双层公式冻结),概率直插(macOS growthTick 同款)。
+function growthTick(): boolean {
+  if (!onScreen || dndActive) return false;
+  if (growth.shouldHatch) { growthHatchEvent(); return true; }
+  if (Math.random() < growth.affectionChance) { affectionVisit(); return true; }
+  if (Date.now() - growthVisitorAt > 2 * 3600_000 && Math.random() < 0.006) {
+    growthVisitorAt = Date.now();
+    visitorEvent(); return true;
+  }
+  if (weather.now?.cold && Math.random() < 0.15) { weatherShiver(); return true; }
+  return false;
+}
+/// 主动来访:飞到光标附近看用户一眼(亲密度影响互动频率的落点)
+async function affectionVisit() {
+  beginAction();
+  enter("fly");
+  try {
+    const sc = await scale();
+    const a = await area();
+    const cur = await invoke<[number, number] | null>("cursor_pos_cmd");
+    const mx = cur ? cur[0] : (a.minX + a.maxX) / 2;
+    let tx = mx + (Math.random() * 320 - 160) * sc;
+    tx = Math.min(Math.max(tx, a.minX + 40 * sc), a.maxX - SIZE_P() - 40 * sc);
+    const ty = a.minY + (a.maxY - a.minY) * (0.35 + Math.random() * 0.25);
+    const o = await getOrigin();
+    setFacing(tx > o.x);
+    branch.hideBranch();
+    const feetY = ty + FEET_TOP_P();
+    if (feetY < a.maxY - 40 * sc) branch.showBranchAt(tx + SIZE_P() / 2, feetY);
+    animateFlight({ x: tx, y: ty }, 1.2, () => {
+      enter("watch");                       // 看你一眼
+      hold(1.3, () => {
+        if (growth.stage >= 3) playPeep();  // 亲近以上:叫一声打招呼
+        enter("happy");
+        hold(0.6, () => finish());
+      });
+    });
+  } catch { finish(); }
+}
+/// 访客飞过(舞台窗 overlay 演出;本鸟只在访客落定时应答对唱)
+function visitorEvent() {
+  emit("log", "growth: 访客飞过");
+  getOrigin().then(o => {
+    effects.visitorPass(o.x + SIZE_P() / 2, o.y + SIZE_P() / 2, () => {
+      if (!onScreen || dndActive || busy) return;
+      startSing();   // 应答一声(overlay 与行为机不打架,macOS 同款)
+    });
+  }).catch(() => {});
+}
+/// 寒颤(冷副档生效时插播;不动权重,纯演出)
+export function weatherShiver() {
+  if (!onScreen || dndActive) return;
+  beginAction();
+  enter("shiver");
+  hold(1.6, () => finish());
+}
+/// 炸毛:受惊(拖拽落地后 8%;啄裂屏幕后 25%)
+export function startPuff() {
+  if (!onScreen || dndActive) return;
+  beginAction();
+  playPeep();
+  enter("puff");
+  hold(0.9, () => finish());
+}
+/// 喂鱼(菜单):eat(自带叼鱼帧)→ happy;冷却 10 分钟内只播吃不给分
+export function feedFish() {
+  if (!onScreen || dndActive) return;
+  if (growth.feed()) growth.add(8);
+  beginAction();
+  enter("eat");
+  playPeep();
+  hold(1.4, () => {
+    enter("happy");
+    hold(0.7, () => finish());
+  });
+}
+/// 满级孵化彩蛋(一次性):下蛋 → 蛋摇摆 → 小鸟绕飞告别 → happy
+function growthHatchEvent() {
+  if (!onScreen || dndActive) return;
+  growth.markHatched();
+  emit("log", "growth: 满级孵化彩蛋");
+  beginAction();
+  enter("poop");          // 蹲姿(复用 poop 帧的用力体态,macOS 同款)
+  hold(1.2, () => {
+    getOrigin().then(o => {
+      effects.eggWobble(o.x + SIZE_P() * 0.8, o.y + FEET_TOP_P());
+      effects.childFlight(o.x + SIZE_P() / 2, o.y + SIZE_P() / 2);   // 绕飞(舞台侧按时间排)
+    }).catch(() => {});
+    enter("watch");                       // 盯着自己的蛋
+    hold(2.6, () => {
+      enter("happy");
+      playPeep();
+      hold(1.4, () => finish());
+    });
+  });
+}
+/// 觅食回巢(v1.5.x,捕鱼变体):飞落地 → 连啄叼虫 → 飞上高处 → 吞 → 满足
+async function startForage() {
+  beginAction();
+  leavePerchWin();
+  enter("fly");
+  try {
+    const a = await area();
+    const o = await getOrigin();
+    const spanX = Math.max(0, a.maxX - a.minX - SIZE_P() - 80 * _scale);   // 窄工作区防负跨度
+    const tx = Math.min(Math.max(a.minX + 40 * _scale + Math.random() * spanX, a.minX), a.maxX - SIZE_P());
+    const dest = { x: tx, y: a.maxY - FEET_TOP_P() };   // 地面
+    setFacing(tx > o.x);
+    branch.hideBranch();
+    animateFlight(dest, 1.1, () => {
+      enter("forage");                    // 啄两下 → 叼虫
+      hold(1.8, () => {
+        const span2 = Math.max(0, a.maxX - a.minX - SIZE_P() - 60 * _scale);
+        const px = a.minX + 30 * _scale + Math.random() * span2;
+        const dest2 = { x: Math.min(px, a.maxX - SIZE_P()), y: a.minY };   // 屏顶树枝
+        getOrigin().then(o2 => setFacing(dest2.x > o2.x)).catch(() => {});
+        branch.showBranchAt(dest2.x + SIZE_P() / 2, dest2.y + FEET_TOP_P());
+        enter("fly");
+        animateFlight(dest2, 1.0, () => {
+          enter("forage");                // 仰头吞咽帧
+          hold(0.9, () => {
+            enter("happy");
+            hold(0.6, () => finish());
+          });
+        });
+      });
+    });
+  } catch { finish(); }
+}
 /// 本地小时(昼夜节律 v1.5.0 A 用)。开发注入:devtools 里
 /// localStorage.setItem("kf_hour_override","3") 可在大白天看深夜行为,清掉恢复真实时间。
 function currentHour(): number {
@@ -291,6 +425,7 @@ function currentHour(): number {
 }
 async function think() {
   if (busy || perchMoving || performance.now() < wakeGraceUntil) { scheduleThink(); return; }   // 栖窗被用户拖动中:推迟预设动作
+  if (growthTick()) return;   // 成长插播(孵化/来访/访客/寒颤;概率直插不进权重带)
   // 活跃度 + 昼夜节律(v1.5.0 A)共同决定权重带;公式收进 shared.mjs thinkBands
   // 纯函数(tests/dayrhythm.test.mjs 直打真实现),此处只管按布局选桶执行。
   // widths 顺序:fly/fish/sing/dart/watch/sun/peck/perch/poop(macOS 同款)。
@@ -460,6 +595,7 @@ function peckBurst(remaining: number, willCrack: boolean) {
   }
   hold(0.3, () => {
     if (remaining > 1) peckBurst(remaining - 1, willCrack);
+    else if (willCrack && Math.random() < 0.25) startPuff();   // 啄裂屏幕:被自己吓一跳
     else finish();
   });
 }
@@ -542,6 +678,7 @@ async function startDart() {
 
 // 俯冲捕鱼:飞屏顶 → 俯冲屏底 → 水花 → 飞回吃(招牌动作)
 async function startFish() {
+  if (Math.random() < 0.25) { startForage(); return; }   // 25% 变体:地面觅食(v1.5.x)
   beginAction();
   leavePerchWin();
   branch.hideBranch();   // 起飞收枝(和 startFly/dart 一致;之前漏了 → 鸟飞走旧枝悬空)
@@ -569,6 +706,7 @@ async function startFish() {
             animateFlight({ x: perchX, y: perchY }, 0.95, () => {   // macOS 0.95
               enter("eat");
               playPeep();
+              growth.add(1);   // 自发捕鱼成功 +1
               hold(1.1, () => {
                 finish();
                 schedulePoopAfter(4 + Math.random() * 3);   // 吃完过会儿拉一坨
@@ -739,6 +877,7 @@ export async function dragDidEnd() {
         lastPerchRect = { x: best.left, y: best.topPhys };
         startPerchCheck();
       }
+      if (Math.random() < 0.08) { startPuff(); return; }   // 落地小概率炸毛(v1.5.x)
       finish();
     } else {
       startFly(300);   // 空中松手:飞远
@@ -751,6 +890,7 @@ export async function dragDidEnd() {
 export async function callOver() {
   if (dndActive) return;   // 勿扰中不召唤(窗口已隐藏,召唤=在全屏上飞)
   if (!onScreen) return;   // 隐藏时不响应(用户方案:唯一恢复入口=显示/隐藏)
+  growth.add(2);   // 召唤互动 +2(成长轻量版)
   leavePerchWin();
   enter("fly");
   try {
@@ -837,6 +977,7 @@ export async function start() {
 export function happyAction() {
   beginAction();
   playPeep();
+  growth.add(1);   // 亲密度 +1(成长轻量版)
   enter("happy");
   hold(0.8, () => finish());
 }

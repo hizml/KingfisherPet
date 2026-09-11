@@ -8,7 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "node --test tests/version.test.mjs tests/dayrhythm.test.mjs tests/weather.test.mjs"
+    "test": "node --test tests/version.test.mjs tests/dayrhythm.test.mjs tests/weather.test.mjs tests/growth.test.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2"
