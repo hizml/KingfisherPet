@@ -1049,6 +1049,36 @@ for _t, _pal in THEME_PALETTES.items():
     _missing = _cover_keys - set(_pal)
     assert not _missing, f"主题 {_t} 漏覆盖道具/嘴腔色键(将 flat 残留进成品): {_missing}"
 
+def mirror_to_windows():
+    """把产物镜像到 windows/public/(Windows 端 vite 直接打包 public,资源是独立的一棵树)。
+    之前靠手动拷贝,新增帧只进了 Resources、Win 侧缺帧(v1.5.0 hide/shake 实际踩到,
+    手动同步靠不住就上脚本):拷 *.png(排除 dev 用的 contact.png)+ sprites.json +
+    colors.json + peep wav。只增改不删(历史遗留多出的文件不在此处清理)。"""
+    import shutil
+    dst_base = os.path.join(os.path.dirname(__file__), "..", "windows", "public")
+    copied = 0
+    for theme in THEME_NAMES:
+        src = os.path.join(OUT_BASE, theme)
+        dst = os.path.join(dst_base, "Sprites", theme)
+        os.makedirs(dst, exist_ok=True)
+        for f in os.listdir(src):
+            if f == "contact.png":
+                continue
+            if f.endswith((".png", ".json")):
+                s, d = os.path.join(src, f), os.path.join(dst, f)
+                if (not os.path.exists(d)
+                        or os.path.getmtime(s) > os.path.getmtime(d)):
+                    shutil.copy2(s, d)
+                    copied += 1
+    for f in os.listdir(RES):
+        if f.startswith("peep_") and f.endswith(".wav"):
+            s, d = os.path.join(RES, f), os.path.join(dst_base, f)
+            if not os.path.exists(d) or os.path.getmtime(s) > os.path.getmtime(d):
+                shutil.copy2(s, d)
+                copied += 1
+    print(f"  mirrored {copied} files -> windows/public/")
+
+
 def main():
     os.makedirs(OUT_BASE, exist_ok=True)
     for theme in THEME_NAMES:
@@ -1056,6 +1086,7 @@ def main():
         post = POSTPROCESSORS[theme]
         render_all_frames(theme, pal, post)
     print("全部主题渲染完成。")
+    mirror_to_windows()
 
 
 def gen_colors():
