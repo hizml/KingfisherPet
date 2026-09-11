@@ -17,7 +17,13 @@
     "poop": 6,
     "peck": 8,
     "hide": 3,
-    "shake": 10
+    "shake": 10,
+    "puff": 6,
+    "shiver": 10,
+    "forage": 6,
+    "visitor_idle": 4,
+    "visitor_fly": 10,
+    "visitor_sing": 6
   },
   "sequences": {
     "idle": [
@@ -114,6 +120,38 @@
       "shake_1",
       "shake_2",
       "shake_1"
+    ],
+    "puff": [
+      "puff_0",
+      "puff_1"
+    ],
+    "shiver": [
+      "shiver_0",
+      "shiver_1",
+      "shiver_0",
+      "shiver_1"
+    ],
+    "forage": [
+      "forage_0",
+      "forage_0",
+      "forage_1",
+      "forage_2"
+    ],
+    "visitor_idle": [
+      "visitor_idle_0",
+      "visitor_idle_1",
+      "visitor_idle_0",
+      "visitor_idle_blink"
+    ],
+    "visitor_fly": [
+      "visitor_fly_1",
+      "visitor_fly_2",
+      "visitor_fly_3",
+      "visitor_fly_2"
+    ],
+    "visitor_sing": [
+      "visitor_sing_0",
+      "visitor_sing_1"
     ]
   }
 }

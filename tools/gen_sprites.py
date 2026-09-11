@@ -43,6 +43,8 @@ BASE_PALETTE = {
     "MOUTH":    (230, 120, 70, 255),
     "TONGUE":   (235, 110, 130, 255),
     "SWEAT":    (120, 200, 230, 255),
+    "WORM":     (232, 140, 150, 255),   # 觅食小虫(v1.5.x)
+    "WORM_D":   (198, 100, 116, 255),
     "BRANCH":   (104, 70, 40, 255),
     "BRANCH_L": (140, 98, 56, 255),
     "BRANCH_D": (90, 60, 34, 255),
@@ -84,6 +86,8 @@ THEME_PALETTES = {
         "TONGUE":   (255, 120, 190, 255),
         "SWEAT":    (0, 229, 255, 255),     # 青 汗滴
         "BLUSH":    (255, 90, 180, 255),    # 品红腮红
+        "WORM":     (255, 50, 160, 255),    # 品红虫
+        "WORM_D":   (210, 30, 130, 255),
     },
     "ink": {
         "TEAL":     (170, 162, 154, 255),   # 中亮→post_ink 渐变成淡墨,不再纯黑
@@ -115,6 +119,8 @@ THEME_PALETTES = {
         "TONGUE":   (92, 70, 64, 255),
         "SWEAT":    (120, 120, 120, 255),
         "BLUSH":    (150, 120, 112, 255),   # 淡墨腮
+        "WORM":     (92, 78, 72, 255),      # 墨虫
+        "WORM_D":   (60, 50, 46, 255),
     },
     "watercolor": {
         "TEAL":     (60, 150, 165, 235),
@@ -141,6 +147,8 @@ THEME_PALETTES = {
         "TONGUE":   (230, 150, 130, 235),
         "SWEAT":    (150, 190, 200, 230),
         "BLUSH":    (235, 160, 140, 220),
+        "WORM":     (215, 130, 140, 235),   # 水彩虫
+        "WORM_D":   (180, 95, 110, 235),
     },
 }
 
@@ -148,6 +156,30 @@ def palette_for(theme):
     p = dict(BASE_PALETTE)
     p.update(THEME_PALETTES.get(theme, {}))
     return p
+
+
+def visitor_palette(pal):
+    """访客鸟调色板:从【主题解析后的调色板】派生(继承 ink/水彩等风格覆盖),
+    彩色主题把主色相旋转(青→紫、橙→玫瑰)读作"另一只鸟";低饱和主题(水墨灰)
+    旋转后仍是灰 → 访客=另一只同风格灰鸟,靠"出现"本身区分,不破坏主题语言。"""
+    import colorsys
+    def shift(rgba, deg):
+        r, g, b, a = rgba[0]/255, rgba[1]/255, rgba[2]/255, rgba[3]
+        h, s, v = colorsys.rgb_to_hsv(r, g, b)
+        r2, g2, b2 = colorsys.hsv_to_rgb((h + deg/360.0) % 1.0, s, v)
+        return (int(r2*255), int(g2*255), int(b2*255), a)
+    def sat(rgba):
+        r, g, b = rgba[0]/255, rgba[1]/255, rgba[2]/255
+        _, s, _ = colorsys.rgb_to_hsv(r, g, b)
+        return s
+    v = dict(pal)
+    if sat(pal["TEAL"]) > 0.18:   # 彩色主题才旋转;水墨/近灰不动
+        v["TEAL"] = shift(pal["TEAL"], 130)
+        v["TEAL_D"] = shift(pal["TEAL_D"], 130)
+        v["ORANGE"] = shift(pal["ORANGE"], -40)
+        v["ORANGE_D"] = shift(pal["ORANGE_D"], -40)
+        v["BELLY"] = shift(pal["BELLY"], -40)
+    return v
 
 
 # ---- 系统字体(用于 zzz 等文字),带缓存 ----
@@ -189,7 +221,8 @@ def draw_kingfisher(W, H, pal, *, wing="folded", leg_phase=0.0, eye_closed=False
                     head_tilt=0.0, hide_legs=False, fish_in_beak=False,
                     look_down=False, x_eye=False, tongue=False,
                     fluff=False, tail_wag=0.0, butt_up=False, sweat=False,
-                    fish_bite=0.0, head_raise_amt=0.0, head_jab=0.0):
+                    fish_bite=0.0, head_raise_amt=0.0, head_jab=0.0,
+                    worm_in_beak=False):
     """画一只翠鸟,返回 RGBA Image。wing: folded / midup / up / middown / spread。
     pal:调色板 dict(色名 -> RGBA)。"""
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -341,6 +374,13 @@ def draw_kingfisher(W, H, pal, *, wing="folded", leg_phase=0.0, eye_closed=False
                        (fcx + 6*s, fcy + fl/2 + 9*s)], fill=C("FISH_DARK"))   # 尾在下
             if bite < 0.6:
                 d.ellipse([fcx - 2*s, fcy - fl/2, fcx + 3*s, fcy - fl/2 + 4*s], fill=C("EYE"))  # 眼靠头(上)
+
+    # ---- 叼虫(觅食,v1.5.x):嘴尖垂一截两节小粉虫,微弯 ----
+    if worm_in_beak:
+        wx = (hx - 70*s)
+        wy = by + 6*s
+        d.ellipse([wx - 4*s, wy, wx + 4*s, wy + 11*s], fill=C("WORM"))
+        d.ellipse([wx - 2*s, wy + 9*s, wx + 6*s, wy + 18*s], fill=C("WORM_D"))   # 尾节歪向一侧
 
     # ---- 红晕 ----
     if blush:
@@ -977,6 +1017,28 @@ FRAMES = [
     ("shake_0",    dict(wing="folded", head_tilt=-5, tail_wag=-8, blush=True)),
     ("shake_1",    dict(wing="folded", body_dy=-4, blush=True)),
     ("shake_2",    dict(wing="folded", head_tilt=5, tail_wag=8, blush=True)),
+    # 炸毛(v1.5.x):受惊蓬毛+瞪眼+小跳,再蓬毛回落
+    ("puff_0",     dict(wing="folded", fluff=True, alert=True, mouth_open=True, body_dy=-3)),
+    ("puff_1",     dict(wing="folded", fluff=True, alert=True)),
+    # 寒颤(v1.5.x):蓬毛缩脖左右快速交替(冷天)
+    ("shiver_0",   dict(wing="folded", fluff=True, head_tilt=-3, tail_wag=-4, body_dy=2)),
+    ("shiver_1",   dict(wing="folded", fluff=True, head_tilt=3, tail_wag=4, body_dy=2)),
+    # 觅食(v1.5.x):低头深啄 → 叼虫抬头 → 仰头吞咽
+    ("forage_0",   dict(wing="folded", look_down=True, head_jab=1.0)),
+    ("forage_1",   dict(wing="folded", head_raise_amt=6, worm_in_beak=True)),
+    ("forage_2",   dict(wing="folded", head_up=True, mouth_open=True)),
+]
+
+# 访客鸟帧(v1.5.x):复用既有姿态,换访客调色板渲染(见 visitor_palette)
+VISITOR_FRAMES = [
+    ("visitor_idle_0",    dict(wing="folded", body_dy=0)),
+    ("visitor_idle_1",    dict(wing="folded", body_dy=-3)),
+    ("visitor_idle_blink", dict(wing="folded", eye_closed=True)),
+    ("visitor_fly_1",     dict(wing="midup")),
+    ("visitor_fly_2",     dict(wing="up")),
+    ("visitor_fly_3",     dict(wing="middown")),
+    ("visitor_sing_0",    dict(wing="folded", head_up=True, mouth_open=True)),
+    ("visitor_sing_1",    dict(wing="midup",  head_up=True, mouth_open=True)),
 ]
 
 
@@ -984,6 +1046,10 @@ def render_all_frames(theme, pal, post):
     print(f"=== 主题 {theme}({THEME_NAMES[theme]})===")
     for name, kw in FRAMES:
         render(name, theme, pal, post, **kw)
+    # 访客鸟:同主题风格、访客调色板(另一只鸟)
+    vpal = visitor_palette(pal)
+    for name, kw in VISITOR_FRAMES:
+        render(name, theme, vpal, post, **kw)
 
     # 阴影 + 树枝 + 特效
     render_shadow(theme)
@@ -1000,7 +1066,9 @@ def render_all_frames(theme, pal, post):
             "idle": 4, "walk": 8, "fly": 10, "happy": 6, "sleep": 2,
             "dive": 8, "fly_fish": 10, "eat": 4, "sing": 6, "watch": 3,
             "sun": 3, "hover": 10, "egg": 4, "dead": 1, "poop": 6, "peck": 8,
-            "hide": 3, "shake": 10
+            "hide": 3, "shake": 10,
+            "puff": 6, "shiver": 10, "forage": 6,
+            "visitor_idle": 4, "visitor_fly": 10, "visitor_sing": 6
         },
         "sequences": {
             "idle":     ["idle_0", "idle_1", "idle_0", "idle_blink"],
@@ -1022,7 +1090,17 @@ def render_all_frames(theme, pal, post):
             # 躲雨:大部分时间埋头(闭眼/睁眼交替),偶尔探头张望
             "hide":     ["hide_0", "hide_0", "hide_1", "hide_0", "hide_2"],
             # 抖水:左右快速抖 + 中间小跳
-            "shake":    ["shake_0", "shake_1", "shake_2", "shake_1"]
+            "shake":    ["shake_0", "shake_1", "shake_2", "shake_1"],
+            # 炸毛:受惊蓬起再回落
+            "puff":     ["puff_0", "puff_1"],
+            # 寒颤:蓬毛缩脖左右抖
+            "shiver":   ["shiver_0", "shiver_1", "shiver_0", "shiver_1"],
+            # 觅食:啄两下 → 叼虫 → 吞
+            "forage":   ["forage_0", "forage_0", "forage_1", "forage_2"],
+            # 访客鸟(独立 overlay 播放器消费,不是本鸟状态)
+            "visitor_idle": ["visitor_idle_0", "visitor_idle_1", "visitor_idle_0", "visitor_idle_blink"],
+            "visitor_fly":  ["visitor_fly_1", "visitor_fly_2", "visitor_fly_3", "visitor_fly_2"],
+            "visitor_sing": ["visitor_sing_0", "visitor_sing_1"]
         }
     }
     with open(os.path.join(OUT_BASE, theme, "sprites.json"), "w") as f:
@@ -1036,6 +1114,8 @@ def render_all_frames(theme, pal, post):
         ("sing", "sing_0"), ("watch", "watch_0"), ("sun", "sun_0"), ("peck", "peck_0"),
         ("egg0", "egg_0"), ("egg1", "egg_1"), ("egg2", "egg_2"), ("dead", "dead"),
         ("poop", "poop_0"), ("hide", "hide_0"), ("shake", "shake_0"),
+        ("puff", "puff_0"), ("shiver", "shiver_0"), ("forage", "forage_1"),
+        ("visitor", "visitor_idle_0"), ("visitorfly", "visitor_fly_2"),
         ("shadow", "shadow"), ("branch", "branch"),
     ])
 
