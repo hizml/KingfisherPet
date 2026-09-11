@@ -15,6 +15,7 @@ import { hideShadow } from "./shadow";
 import { invoke } from "@tauri-apps/api/core";
 import { settings } from "./settings";
 import { thinkBands } from "./shared.mjs";   // 昼夜节律权重带(纯函数,tests 直测同一份源码)
+import { weather, onWeatherUpdate, type WeatherNow, type WeatherAlert } from "./weathersvc";
 import { setSleepMuted } from "./audio";
 import { warnOnce } from "./log";
 
@@ -195,6 +196,92 @@ function scheduleThink() {
 }
 
 let wakeGraceUntil = 0;   // 唤醒宽限:此刻前 think 推迟(系统正在恢复,别抢)
+// ── 天气联动(v1.5.0 B;macOS Behavior 天气节对称)──
+let wxF: object | null = null;                       // 当前权重系数(null=无系数)
+let wxLastMain: string | null = null;                // 上次主档(迁移彩蛋对比;空档重置)
+let wxLastAlertIDs = new Set<string>();              // 上次预警 ID 集
+const wxEggAt: Record<string, number> = {};          // 彩蛋 → 上次触发时刻(2h 冷却)
+function wxUpdate() {
+  if (!weather.now) { wxF = null; wxLastMain = null; return; }   // 失败/关闭:空档重置基准
+  wxF = weather.factors();
+  wxTransition(weather.now);
+  wxAlertTransition(weather.alerts);
+}
+/// 状态迁移彩蛋:对比上次主档,只触发一次(2h 冷却;事件走 beginAction 即过代际取消)
+function wxTransition(snap: WeatherNow) {
+  const prev = wxLastMain;
+  wxLastMain = snap.main;
+  if (prev == null || prev === snap.main) return;
+  if ((prev === "rainLight" || prev === "rainHeavy") && (snap.main === "sunny" || snap.main === "overcast")) {
+    wxFireEgg("rainStop", weatherShake);             // 雨停转晴:happy + 抖水
+  } else if (prev !== "snowLight" && prev !== "snowHeavy" && (snap.main === "snowLight" || snap.main === "snowHeavy")) {
+    wxFireEgg("firstSnow", startWatch);              // 初雪:好奇张望
+  } else if (snap.main === "thunder") {
+    wxFireEgg("thunder", weatherRetreat);            // 雷暴来袭:飞栖窗躲雨
+  }
+}
+/// 预警事件层(和风源专属):按 ID 去重,首现中断动作躲藏,全部解除 happy 出关
+function wxAlertTransition(alerts: WeatherAlert[]) {
+  const ids = new Set(alerts.map(a => a.id));
+  const hasNew = alerts.some(a => !wxLastAlertIDs.has(a.id));
+  if (hasNew) {
+    emit("log", "weather: 预警首现 " + alerts.map(a => a.type + a.level).join(","));
+    wxFireEgg("alertAppear", weatherRetreat);
+  } else if (wxLastAlertIDs.size > 0 && ids.size === 0) {
+    emit("log", "weather: 预警全部解除");
+    wxFireEgg("alertClear", weatherShake);
+  }
+  wxLastAlertIDs = ids;
+}
+/// 彩蛋执行口:2h 冷却 + 隐藏/勿扰不表演(勿扰只标菜单,状态可见层的事)
+function wxFireEgg(kind: string, perform: () => void) {
+  const now = Date.now();
+  if (wxEggAt[kind] != null && now - wxEggAt[kind] < 2 * 3600_000) return;
+  wxEggAt[kind] = now;
+  if (!onScreen || dndActive) return;
+  emit("log", "weather: 彩蛋 " + kind + " 触发");
+  perform();
+}
+/// 雷暴/预警躲雨:中断当前动作 → 飞栖窗(没有/太高就原地)→ hide 数秒(栖窗/地面两用)
+export function weatherRetreat() {
+  if (!onScreen || dndActive) return;
+  beginAction();   // 中断进行中的动作链(代际 bump,macOS 同款)
+  enter("fly");
+  (async () => {
+    try {
+      const sc = await scale();
+      const perch = await invoke<[number, number, number] | null>("front_perch_cmd", { birdW: SIZE * sc });
+      if (!perch) { playHide(); return; }
+      const a = await area();
+      if (perch[1] - FEET_TOP_P() < a.minY) { playHide(); return; }   // 窗台太高:原地躲
+      const o = await getOrigin();
+      setFacing(perch[0] > o.x);
+      branch.hideBranch();
+      animateFlight({ x: perch[0], y: perch[1] - FEET_TOP_P() }, 1.1, () => {
+        perchedHwnd = perch[2];
+        lastPerchRect = null;
+        startPerchCheck();
+        playHide();
+      });
+    } catch { playHide(); }
+  })();
+}
+function playHide() {
+  enter("hide");
+  hold(5 + Math.random() * 4, () => finish());
+}
+/// 雨停转晴/预警解除:抖水(水珠粒子)→ happy 出关
+export function weatherShake() {
+  if (!onScreen || dndActive) return;
+  beginAction();
+  enter("shake");
+  playPeep();
+  effects.droplets(80, 80);   // 鸟身中心(窗口 160 逻辑,中心即 80,80)
+  hold(1.4, () => {
+    enter("happy");
+    hold(0.8, () => finish());
+  });
+}
 /// 本地小时(昼夜节律 v1.5.0 A 用)。开发注入:devtools 里
 /// localStorage.setItem("kf_hour_override","3") 可在大白天看深夜行为,清掉恢复真实时间。
 function currentHour(): number {
@@ -207,7 +294,7 @@ async function think() {
   // 活跃度 + 昼夜节律(v1.5.0 A)共同决定权重带;公式收进 shared.mjs thinkBands
   // 纯函数(tests/dayrhythm.test.mjs 直打真实现),此处只管按布局选桶执行。
   // widths 顺序:fly/fish/sing/dart/watch/sun/peck/perch/poop(macOS 同款)。
-  const { idleBand, walkEnd, k, widths } = thinkBands(settings.activity, currentHour());
+  const { idleBand, walkEnd, k, widths } = thinkBands(settings.activity, currentHour(), wxF ?? undefined);
   const actions: Array<() => void> = [
     () => startFly(),
     () => startFish(),
@@ -706,6 +793,7 @@ export function setup(ops: {
   setFacing = (right: boolean) => { facingRight = right; rawFacing(right); };   // 记录朝向(effects 出口偏移用)
   playPeep = ops.playPeep ?? (() => {});
   onMoved = ops.onMoved ?? (() => {});
+  onWeatherUpdate(wxUpdate);   // 天气快照更新 → 权重/彩蛋/预警(服务侧已保证主线程回调)
 }
 
 export async function start() {

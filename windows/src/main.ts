@@ -13,7 +13,9 @@ import { clearCracks } from "./crack";   // crack 窗懒创建:首次 crackAt �
 import { setupBranch } from "./branch";
 import { setupTheme, setTheme } from "./theme";
 import { setupAudio, playPeep, setSoundOn, setMediaMuted } from "./audio";
-import { settings, setSound, setActivity, setSpeed, setPeckScreen } from "./settings";
+import { settings, setSound, setActivity, setSpeed, setPeckScreen,
+         setWeatherEnabled, setWeatherCity, setWeatherProvider, setWeatherKey, setWeatherHost } from "./settings";
+import { startWeather, stopWeather, weatherSettingsChanged, weather, onWeatherUpdate } from "./weathersvc";
 import { warnOnce } from "./log";
 import { isNewer } from "./shared.mjs";   // 纯函数抽出,tests/version.test.mjs 直测同一份源码
 import * as behavior from "./behavior";
@@ -89,6 +91,12 @@ async function main() {
         const n = Number(v.split(":")[1]);
         if (Number.isFinite(n)) setSpeed(Math.min(1.5, Math.max(0.5, n)));
       }
+      // 天气联动(v1.5.0):设置窗载荷,变更即重启天气服务(开着=换源/城市/Key 即刷)
+      else if (v.startsWith("weather_on:")) { setWeatherEnabled(v.split(":")[1] === "true"); weatherSettingsChanged(); }
+      else if (v.startsWith("weather_city:")) { setWeatherCity(decodeURIComponent(v.slice("weather_city:".length))); weatherSettingsChanged(); }
+      else if (v.startsWith("weather_provider:")) { setWeatherProvider(v.split(":")[1]); weatherSettingsChanged(); }
+      else if (v.startsWith("weather_key:")) { setWeatherKey(decodeURIComponent(v.slice("weather_key:".length))); weatherSettingsChanged(); }
+      else if (v.startsWith("weather_host:")) { setWeatherHost(decodeURIComponent(v.slice("weather_host:".length))); weatherSettingsChanged(); }
       syncSettingsOutlets();   // 回推:托盘勾选(Rust ui-state)+ 设置窗滑杆
     });
     // 设置窗打开/已开 → 推当前真实值。载荷带 Rust 侧权威 lang(settings.json 持久化):
@@ -162,6 +170,10 @@ async function main() {
     listen("session-change", () => location.reload());   // RDP 会话恢复 → 重载自愈(贴图/合成器丢失)
     listen<boolean>("dnd", (e) => behavior.dndSet(e.payload));         // 全屏应用 → 鸟隐身+静音
     listen<boolean>("media", (e) => setMediaMuted(e.payload));         // 放音中 → 不叫
+    // 天气联动(v1.5.0):默认关 = 明示纪律,设置开着才启动(开启后即发首个请求);
+    // 状态变化同步设置窗(状态可见:正常/不可用/预警)
+    if (settings.weatherEnabled) startWeather();
+    onWeatherUpdate(() => emit("wx-state", { status: weather.status }));
     await behavior.start();
     requestAnimationFrame(tick);
     // 跨不同 DPI 显示器:窗口物理尺寸不会自动跟着变(160 物理 ≠ 新屏的 160 逻辑),

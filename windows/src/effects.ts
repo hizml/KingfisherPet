@@ -27,3 +27,5 @@ export function notes(x: number, y: number) { fx("notes", x, y); }
 export function zzz(x: number, y: number) { fx("zzz", x, y); }
 /// 太阳(日光浴),duration 秒
 export function sun(x: number, y: number, duration: number) { fx("sun", x, y, duration); }
+/// 抖水水珠(雨停/预警解除,shake 序列配套)
+export function droplets(x: number, y: number) { fx("droplets", x, y); }

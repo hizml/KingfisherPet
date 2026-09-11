@@ -14,6 +14,12 @@
       border: 1px solid #bbb; border-radius: 6px; background: #fff; }
     .themes button.on { background: #0e7c86; color: #fff; border-color: #0e7c86; }
     label.chk { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+    .wx .note { font-size: 11px; color: #777; margin: 4px 0 8px; }
+    .wx .wxrow { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+    .wx .wxrow .k { width: 58px; flex: none; color: #555; }
+    .wx .wxrow input, .wx .wxrow select { flex: 1; padding: 3px 6px; border: 1px solid #bbb;
+      border-radius: 6px; font: inherit; background: #fff; min-width: 0; }
+    .wx .wxstat { font-size: 11px; color: #777; margin-top: 6px; }
   </style>
 </head>
 <body>
@@ -30,6 +36,21 @@
   </div>
   <div class="row">
     <label class="chk"><input id="peck" type="checkbox" checked /><span>啄屏幕 Peck Screen</span></label>
+  </div>
+  <div class="row wx">
+    <div class="lbl"><span>天气联动 Weather</span></div>
+    <label class="chk"><input id="wxOn" type="checkbox" /><span>启用天气联动</span></label>
+    <div class="note" id="wxNote">开启后将请求所选天气源查询天气(约 30 分钟一次);城市留空时用 IP 粗略定位。</div>
+    <div class="wxrow"><span class="k">城市</span><input id="wxCity" type="text" placeholder="留空 = IP 定位" /></div>
+    <div class="wxrow"><span class="k">数据源</span>
+      <select id="wxProv">
+        <option value="open-meteo">Open-Meteo(免费,无需 Key)</option>
+        <option value="qweather">和风天气(需 API Key)</option>
+      </select>
+    </div>
+    <div class="wxrow qw-only" hidden><span class="k">API Key</span><input id="wxKey" type="password" /></div>
+    <div class="wxrow qw-only" hidden><span class="k">API Host</span><input id="wxHost" type="text" placeholder="devapi.qweather.com" /></div>
+    <div class="wxstat" id="wxStat">状态:未开启</div>
   </div>
   <div class="row">
     <div class="lbl"><span>主题 Theme</span></div>
@@ -91,6 +112,39 @@
     spd.oninput = () => { spdV.textContent = Number(spd.value).toFixed(2); clearTimeout(spdT); spdT = setTimeout(() => emit("setting", "speed:" + spd.value), 250); };
     snd.onchange = () => emit("setting", "sound:" + snd.checked);
     peck.onchange = () => emit("setting", "peck:" + peck.checked);
+    // ── 天气联动(v1.5.0):默认关,开启才发首个请求;载荷走主窗 setting 事件重启服务 ──
+    const wxOn = document.getElementById("wxOn"), wxCity = document.getElementById("wxCity"),
+          wxProv = document.getElementById("wxProv"), wxKey = document.getElementById("wxKey"),
+          wxHost = document.getElementById("wxHost"), wxStat = document.getElementById("wxStat");
+    const paintQW = () => {
+      const qw = wxProv.value === "qweather";
+      for (const el of document.querySelectorAll(".qw-only")) el.hidden = !qw;
+    };
+    wxOn.checked = localStorage.getItem("kf_weather_on") === "1";
+    wxCity.value = localStorage.getItem("kf_weather_city") || "";
+    wxProv.value = localStorage.getItem("kf_weather_provider") === "qweather" ? "qweather" : "open-meteo";
+    wxKey.value = localStorage.getItem("kf_weather_key") || "";
+    wxHost.value = localStorage.getItem("kf_weather_host") || "";
+    paintQW();
+    wxOn.onchange = () => emit("setting", "weather_on:" + wxOn.checked);
+    wxProv.onchange = () => { paintQW(); emit("setting", "weather_provider:" + wxProv.value); };
+    // 文本框:失焦/回车才提交(逐键触发服务重启=请求轰炸)
+    const commitOnDone = (el, key) => {
+      el.onchange = () => emit("setting", key + ":" + encodeURIComponent(el.value.trim()));
+      el.onkeydown = (ev) => { if (ev.key === "Enter") el.blur(); };
+    };
+    commitOnDone(wxCity, "weather_city");
+    commitOnDone(wxKey, "weather_key");
+    commitOnDone(wxHost, "weather_host");
+    const zhUI = () => (localStorage.getItem("kf_lang") || "system") === "zh"
+      || ((localStorage.getItem("kf_lang") || "system") === "system"
+          && (navigator.language || "en").toLowerCase().startsWith("zh"));
+    const paintWxStat = (st) => {
+      if (!zhUI()) { wxStat.textContent = "Status: " + (st === "ok" ? "ok" : st === "unavailable" ? "unavailable (degraded silently)" : "off"); return; }
+      wxStat.textContent = "状态:" + (st === "ok" ? "正常" : st === "unavailable" ? "天气源不可用(已静默降级,不干预行为)" : "未开启");
+    };
+    paintWxStat(localStorage.getItem("kf_weather_on") === "1" ? "ok" : "off");
+    listen("wx-state", (e) => paintWxStat(e.payload?.status));   // 主窗天气状态变化 → 实时标注
     // 主窗回推的当前值(打开时同步真实状态)
     listen("settings-sync", (e) => {
       const v = e.payload;

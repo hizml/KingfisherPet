@@ -240,6 +240,16 @@ fn set_update_badge(app: tauri::AppHandle, on: bool) {
     refresh_menu(&app);   // 重建菜单让标注生效(自带 250ms 防抖)
 }
 
+/// 天气状态行(v1.5.0):前端天气服务 invoke 推标题(None=隐藏)。菜单里是禁用展示项
+/// (状态可见纪律:当前档/预警降级都在这行,不弹窗)。
+static WEATHER_TITLE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+#[tauri::command]
+fn set_weather_status(app: tauri::AppHandle, title: Option<String>) {
+    *WEATHER_TITLE.lock().unwrap() = title;
+    refresh_menu(&app);
+}
+
 /// 持久化小设置(Rust 侧目前只存语言;前端数值走 localStorage)
 fn prefs_file() -> std::path::PathBuf {
     let dir = std::env::var("APPDATA")
@@ -347,7 +357,14 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
         &call, &fish, &sing, &perch, &peck, &show, &repair, &diag,
         &m_theme, &sound, &autostart, &settings, &checkupd, &about, &quit,
     ];
-    Menu::with_items(app, &items)
+    // 天气状态行(天气联动开启时由前端推标题;禁用项只展示)—— 插在最前(动作区之上,Mac 同位)
+    let wx_title = WEATHER_TITLE.lock().unwrap().clone();
+    let menu = Menu::with_items(app, &items)?;
+    if let Some(t) = wx_title {
+        let wx = MenuItem::with_id(app, "weather", t, false, None::<&str>)?;
+        menu.insert_items(&[&wx], 0)?;
+    }
+    Ok(menu)
 }
 
 /// 重建托盘菜单(切换勾选/语言后)
@@ -396,7 +413,7 @@ pub fn run() {
         
 
 .invoke_handler(tauri::generate_handler![
-        open_url, set_update_badge,front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, diag_append, assert_z_cmd, anim_guard])
+        open_url, set_update_badge, set_weather_status, front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, diag_append, assert_z_cmd, anim_guard])
         .setup(|app| {
             crate::system::setup_power(app.handle().clone());   // 睡眠/锁屏/唤醒/会话 → emit sleep/wake/session-change
             // 设置窗主动拉状态(打开时):回语言/自启

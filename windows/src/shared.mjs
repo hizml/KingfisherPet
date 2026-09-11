@@ -31,14 +31,17 @@ export function dayFactors(hour) {
 /// widths 顺序(未乘 k):fly/fish/sing/dart/watch/sun/peck/perch/poop;
 /// sleepShare = 兜底份额(overall<1 时动作带变窄、余量自然落进 sleep,越夜越大,
 /// "超界进 sleep"语义不变)。
-export function thinkBands(activity, hour) {
+/// wx:天气权重(weather.mjs weatherFactors 产物,普通对象;缺省 = 不干预)。
+/// 昼夜 × 天气双层在唯一合成点相乘(macOS DayRhythm.thinkBands(activity:hour:weather:) 同构)。
+export function thinkBands(activity, hour, wx) {
   const f = dayFactors(hour);
+  const w = Object.assign({ overall: 1, fly: 1, fish: 1, sing: 1, dart: 1, watch: 1, sun: 1, perch: 1, walk: 1 }, wx);
   const a = Math.min(1, Math.max(0, activity));
   const idleBand = Math.round((1 - a) * 22);
-  const walkEnd = idleBand + Math.max(1, Math.round((1 - a) * 20));
-  const k = Math.max(0.5, (100 - walkEnd - 6) / 62) * f.overall;
-  const mul = [1, f.fish, f.sing, f.dart, 1, f.sun, 1, 1, 1];
-  const widths = [7, 8, 7, 7, 7, 7, 6, 6, 6].map((w, i) => w * mul[i]);
-  const sleepShare = Math.max(0, 100 - walkEnd - widths.reduce((s, w) => s + w, 0) * k);
+  const walkEnd = idleBand + Math.max(1, Math.round(Math.round((1 - a) * 20) * w.walk));
+  const k = Math.max(0.5, (100 - walkEnd - 6) / 62) * f.overall * w.overall;
+  const mul = [w.fly, f.fish * w.fish, f.sing * w.sing, f.dart * w.dart, w.watch, f.sun * w.sun, 1, w.perch, 1];
+  const widths = [7, 8, 7, 7, 7, 7, 6, 6, 6].map((w2, i) => w2 * mul[i]);
+  const sleepShare = Math.max(0, 100 - walkEnd - widths.reduce((s, w2) => s + w2, 0) * k);
   return { idleBand, walkEnd, k, widths, sleepShare };
 }
