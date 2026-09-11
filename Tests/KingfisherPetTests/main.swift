@@ -123,6 +123,126 @@ enum TestMain {
         }
         expect("24h×3 活跃度布局守恒(和=100)", conserveOK)
 
+        // MARK: - 天气归一化(WeatherService;Windows tests/weather.test.mjs 同一映射同一用例口径)
+        print("[天气归一化]")
+        // Open-Meteo WMO 码表(逐码断言;未知码→nil)
+        expect("OM 0/1/2 晴", [0, 1, 2].allSatisfy { WeatherService.mainFromOpenMeteo(code: $0, windSpeed: 0) == .sunny })
+        expect("OM 3 阴", WeatherService.mainFromOpenMeteo(code: 3, windSpeed: 0) == .overcast)
+        expect("OM 45/48 雾", [45, 48].allSatisfy { WeatherService.mainFromOpenMeteo(code: $0, windSpeed: 0) == .fog })
+        expect("OM 毛雨/冻毛雨/小雨/阵雨轻 → 小雨",
+               [51, 53, 56, 57, 61, 80].allSatisfy { WeatherService.mainFromOpenMeteo(code: $0, windSpeed: 0) == .rainLight })
+        expect("OM 密毛雨/中大雨/冻雨/阵雨强 → 大雨",
+               [55, 63, 65, 66, 67, 81, 82].allSatisfy { WeatherService.mainFromOpenMeteo(code: $0, windSpeed: 0) == .rainHeavy })
+        expect("OM 95/96/99 雷暴", [95, 96, 99].allSatisfy { WeatherService.mainFromOpenMeteo(code: $0, windSpeed: 0) == .thunder })
+        expect("OM 71/77/85 小雪", [71, 77, 85].allSatisfy { WeatherService.mainFromOpenMeteo(code: $0, windSpeed: 0) == .snowLight })
+        expect("OM 73/75/86 大雪", [73, 75, 86].allSatisfy { WeatherService.mainFromOpenMeteo(code: $0, windSpeed: 0) == .snowHeavy })
+        expect("OM 未知码 nil", WeatherService.mainFromOpenMeteo(code: 42, windSpeed: 0) == nil)
+        // 风速并档:>10.8 m/s → wind,与码位主档取更凶
+        expect("OM 风 10.9 覆盖晴", WeatherService.mainFromOpenMeteo(code: 0, windSpeed: 10.9) == .wind)
+        expect("OM 风 10.8 边界不触发", WeatherService.mainFromOpenMeteo(code: 0, windSpeed: 10.8) == .sunny)
+        expect("OM 雷暴压过风", WeatherService.mainFromOpenMeteo(code: 95, windSpeed: 30) == .thunder)
+        expect("OM 大雨压过风", WeatherService.mainFromOpenMeteo(code: 63, windSpeed: 20) == .rainHeavy)
+        expect("OM 阴+风 → 风", WeatherService.mainFromOpenMeteo(code: 3, windSpeed: 15) == .wind)
+        // 和风码表(v7 官方对照;302–304 才是雷阵雨,313 是冻雨)
+        expect("QW 100–103,150–153 晴",
+               ([Int](100...103) + [Int](150...153)).allSatisfy { WeatherService.mainFromQWeather(code: $0, windScale: 0) == .sunny })
+        expect("QW 104 阴", WeatherService.mainFromQWeather(code: 104, windScale: 0) == .overcast)
+        expect("QW 500–515 雾霾沙 → fog(能见度类)",
+               [502, 507, 515].allSatisfy { WeatherService.mainFromQWeather(code: $0, windScale: 0) == .fog })
+        expect("QW 阵雨/小中雨/毛毛雨/夜阵雨 → 小雨",
+               [300, 301, 305, 306, 309, 350, 351].allSatisfy { WeatherService.mainFromQWeather(code: $0, windScale: 0) == .rainLight })
+        expect("QW 大/暴/特大暴雨/跨级雨/冻雨 → 大雨",
+               [307, 308, 310, 311, 312, 313, 314, 316, 318].allSatisfy { WeatherService.mainFromQWeather(code: $0, windScale: 0) == .rainHeavy })
+        expect("QW 302/303/304 雷阵雨 → 雷暴", [302, 303, 304].allSatisfy { WeatherService.mainFromQWeather(code: $0, windScale: 0) == .thunder })
+        expect("QW 小中雪/雨夹雪/阵雪/夜阵雪 → 小雪",
+               [400, 401, 404, 405, 406, 407, 408, 457].allSatisfy { WeatherService.mainFromQWeather(code: $0, windScale: 0) == .snowLight })
+        expect("QW 大雪/暴雪/跨级雪 → 大雪",
+               [402, 403, 409, 410, 456].allSatisfy { WeatherService.mainFromQWeather(code: $0, windScale: 0) == .snowHeavy })
+        expect("QW 399 未知雨保守轻档", WeatherService.mainFromQWeather(code: 399, windScale: 0) == .rainLight)
+        expect("QW 499 未知雪保守轻档", WeatherService.mainFromQWeather(code: 499, windScale: 0) == .snowLight)
+        expect("QW 900 热归晴", WeatherService.mainFromQWeather(code: 900, windScale: 0) == .sunny)
+        expect("QW 901 冷归阴", WeatherService.mainFromQWeather(code: 901, windScale: 0) == .overcast)
+        expect("QW windScale≥6 → wind", WeatherService.mainFromQWeather(code: 100, windScale: 6) == .wind)
+        expect("QW windScale=5 不触发", WeatherService.mainFromQWeather(code: 100, windScale: 5) == .sunny)
+        expect("QW 雷暴压过风", WeatherService.mainFromQWeather(code: 304, windScale: 9) == .thunder)
+        // 温度副档
+        expect("温度 33→热", WeatherService.tempFlags(tempC: 33).hot && !WeatherService.tempFlags(tempC: 33).cold)
+        expect("温度 32 边界不热", !WeatherService.tempFlags(tempC: 32).hot)
+        expect("温度 4→冷", WeatherService.tempFlags(tempC: 4).cold && !WeatherService.tempFlags(tempC: 4).hot)
+        expect("温度 5 边界不冷", !WeatherService.tempFlags(tempC: 5).cold)
+        expect("温度 nil 双 false", { let f = WeatherService.tempFlags(tempC: nil); return !f.hot && !f.cold }())
+
+        // MARK: - 天气权重表 + 昼夜×天气合成(PLAN-B 权重映射)
+        print("[天气权重]")
+        expect("sunny sun×1.6 watch×1.2", {
+            let f = WeatherFactors.factors(main: .sunny, hot: false, cold: false)
+            return f.sun == 1.6 && f.watch == 1.2 && f.overall == 1
+        }())
+        expect("overcast 全不干预", WeatherFactors.factors(main: .overcast, hot: false, cold: false) == .neutral)
+        expect("rainLight 外出×0.7 栖窗×1.3", {
+            let f = WeatherFactors.factors(main: .rainLight, hot: false, cold: false)
+            return f.fly == 0.7 && f.fish == 0.7 && f.dart == 0.7 && f.perch == 1.3
+        }())
+        expect("rainHeavy 外出×0.3 栖窗×1.6", {
+            let f = WeatherFactors.factors(main: .rainHeavy, hot: false, cold: false)
+            return f.fly == 0.3 && f.perch == 1.6
+        }())
+        expect("thunder 整体×0.3 外出=0 watch 保留", {
+            let f = WeatherFactors.factors(main: .thunder, hot: false, cold: false)
+            return f.overall == 0.3 && f.fly == 0 && f.fish == 0 && f.dart == 0 && f.watch == 1
+        }())
+        expect("snowLight walk×0.8 watch×1.5", {
+            let f = WeatherFactors.factors(main: .snowLight, hot: false, cold: false)
+            return f.walk == 0.8 && f.watch == 1.5
+        }())
+        expect("snowHeavy 外出×0.4 栖窗/watch×1.5", {
+            let f = WeatherFactors.factors(main: .snowHeavy, hot: false, cold: false)
+            return f.fly == 0.4 && f.perch == 1.5 && f.watch == 1.5
+        }())
+        expect("fog fly×0.5 watch×1.5", {
+            let f = WeatherFactors.factors(main: .fog, hot: false, cold: false)
+            return f.fly == 0.5 && f.watch == 1.5
+        }())
+        expect("wind fly×0.3 栖窗×1.5", {
+            let f = WeatherFactors.factors(main: .wind, hot: false, cold: false)
+            return f.fly == 0.3 && f.perch == 1.5
+        }())
+        expect("hot 副档叠乘(sunny+hot: sun 1.6×0.5, fish×1.2)", {
+            let f = WeatherFactors.factors(main: .sunny, hot: true, cold: false)
+            return abs(f.sun - 0.8) < 1e-9 && abs(f.fish - 1.2) < 1e-9
+        }())
+        expect("cold 副档叠乘(sunny+cold: sun 1.6×1.6, fly×0.8)", {
+            let f = WeatherFactors.factors(main: .sunny, hot: false, cold: true)
+            return abs(f.sun - 2.56) < 1e-9 && abs(f.fly - 0.8) < 1e-9
+        }())
+        // 合成:昼夜 × 天气在同一 thinkBands 相乘
+        let plainDay = DayRhythm.thinkBands(activity: 0.5, hour: 12)
+        let thunderDay = DayRhythm.thinkBands(activity: 0.5, hour: 12,
+                                              weather: WeatherFactors.factors(main: .thunder, hot: false, cold: false))
+        expect("雷暴白天 k=×0.3 且外出带=0", abs(thunderDay.k - plainDay.k * 0.3) < 1e-9
+               && thunderDay.widths[0] == 0 && thunderDay.widths[1] == 0 && thunderDay.widths[3] == 0)
+        expect("雷暴白天 sleep 兜底 >50", thunderDay.sleepShare > 50, "got \(thunderDay.sleepShare)")
+        let rainLightDay = DayRhythm.thinkBands(activity: 0.5, hour: 12,
+                                                weather: WeatherFactors.factors(main: .rainLight, hot: false, cold: false))
+        expect("小雨 fly带宽 7×0.7,栖窗带宽 6×1.3", abs(rainLightDay.widths[0] - 7 * 0.7) < 1e-9
+               && abs(rainLightDay.widths[7] - 6 * 1.3) < 1e-9)
+        let snowLightDay = DayRhythm.thinkBands(activity: 0.5, hour: 12,
+                                                weather: WeatherFactors.factors(main: .snowLight, hot: false, cold: false))
+        expect("小雪 walkEnd 收缩 21→19(walk×0.8)", snowLightDay.walkEnd == 19, "got \(snowLightDay.walkEnd)")
+        var wxConserveOK = true
+        for h in [3, 8, 12, 19, 23] {
+            for main in [WeatherKind.sunny, .rainHeavy, .thunder, .snowLight, .wind, .fog] {
+                let f = WeatherFactors.factors(main: main, hot: main == .sunny, cold: false)
+                let p = DayRhythm.thinkBands(activity: 0.5, hour: h, weather: f)
+                let actionTotal: Double = p.widths.reduce(0.0, +) * p.k
+                let total = Double(p.walkEnd) + actionTotal + p.sleepShare
+                // 守恒;唯一例外:增益叠加(清晨晨鸣×晴天等)带宽和超 100 → sleep 钳 0,
+                // 尾部桶(poop)变不可达——结构无害,鸟只是那个时段特别精神
+                if !(abs(total - 100) <= 0.01 || (p.sleepShare == 0 && total >= 100)) { wxConserveOK = false }
+            }
+        }
+        expect("昼夜×天气 6 档×5 时段布局守恒(或增益叠加钳 0)", wxConserveOK)
+
         // MARK: - 结果
         print("== \(passed) passed, \(failures) failed ==")
         if failures > 0 { exit(1) }

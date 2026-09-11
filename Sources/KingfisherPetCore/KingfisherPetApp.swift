@@ -62,6 +62,7 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
     private let dnd = DndMonitor()
     private let updater = UpdateService()
     private let watchdog = WatchdogService()
+    private let weather = WeatherService.shared   // 天气联动(v1.5.0 B;设置开着才 start)
 
     private static let kAutoLogin = "kingfisher.autoLogin"
 
@@ -166,6 +167,8 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
         // (间隔 15s:熔断需 3 连击=45s,更频的 fork ps 唤醒太费电;注释此前误写 5s)
         startWatchdogService()
         updater.start()   // 启动 30s + 每 24h 静默查更新(有新版才标注一次)
+        // 天气联动(v1.5.0 B):默认关 = 明示纪律,设置开着才启动(开启后即发首个请求)
+        if Settings.shared.weatherEnabled { weather.start() }
     }
 
     private func startWatchdogService() {
@@ -188,7 +191,7 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
                 guard let self = self else { return }
                 let st = self.petController?.behavior.currentStateForLog() ?? "?"
-                let okStates: Set<String> = ["idle","walk","fly","sing","watch","sun","sleep","eat","peck","poop","happy","hover"]
+                let okStates: Set<String> = ["idle","walk","fly","sing","watch","sun","sleep","eat","peck","poop","happy","hover","hide","shake"]
                 var winCount = -1
                 if let infos = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] {
                     let myPID = ProcessInfo.processInfo.processIdentifier
@@ -209,7 +212,7 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self = self else { return }
                 let beh = self.petController?.behavior
                 let st = beh?.currentStateForLog() ?? "?"
-                let okStates: Set<String> = ["idle","walk","fly","sing","watch","sun","sleep","eat","peck","poop","happy"]
+                let okStates: Set<String> = ["idle","walk","fly","sing","watch","sun","sleep","eat","peck","poop","happy","hide","shake"]
                 let ok = (beh?.isVisible ?? false) && okStates.contains(st) && Effect.active.count <= 3   // 苏醒后 think 已开跑,任意合法状态
                 done(ok, "state=\(st) effects=\(Effect.active.count) visible=\(beh?.isVisible ?? false)")
                 // 注:唤醒后 refall=0(屎不重落)由 runner 在日志段内 grep 断言
@@ -251,7 +254,7 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
                 let shown = (beh?.isVisible ?? false) && (self.petController?.window?.isVisible ?? false)
                 let st = beh?.currentStateForLog() ?? "?"
                 // 破壳 1.4s 后 think 已开跑,sleep/walk 等都合法;只要活着+可见+不在 dead
-                let alive = ["idle","walk","fly","sing","watch","sun","sleep","eat","peck","poop","happy","egg"].contains(st)
+                let alive = ["idle","walk","fly","sing","watch","sun","sleep","eat","peck","poop","happy","hide","shake","egg"].contains(st)
                 done(shown && alive, "visible=\(shown) state=\(st)")
             }
         default:
@@ -309,6 +312,14 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(item(Language.t("menu.perch"), action: #selector(doPerch)))
         menu.addItem(item(Language.t("menu.peck"), action: #selector(doPeck)))
         menu.addItem(item(Language.t("menu.toggleVisibility"), action: #selector(toggleVisibility)))
+        // 天气状态行(状态可见层):禁用项,只展示当前档/预警;天气关时隐藏。
+        // 语言切换重建菜单后重新注入并刷新标题。
+        let wxItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        wxItem.isEnabled = false
+        wxItem.isHidden = true
+        menu.addItem(wxItem)
+        weather.statusMenuItem = wxItem
+        weather.refreshMenuTitle()
         menu.addItem(.separator())
         soundMenuItem = item(Language.t("menu.soundOn"), action: #selector(toggleSound))
         menu.addItem(soundMenuItem)
@@ -517,6 +528,10 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
             soundMenuItem.title = Language.t(Settings.shared.soundOn ? "menu.soundOn" : "menu.soundOff")
         case "kingfisher.settings.theme":
             SpriteLibrary.shared.reload(theme: Settings.shared.theme)
+        case "kingfisher.settings.weatherEnabled", "kingfisher.settings.weatherCity",
+             "kingfisher.settings.weatherProvider", "kingfisher.settings.weatherKey",
+             "kingfisher.settings.weatherHost":
+            weather.settingsChanged()   // 开着 → 重启换源/换城市即刷;关 → stop 清系数
         default: break
         }
     }

@@ -142,6 +142,38 @@ enum Effects {
         e.close(after: sp(0.7))
     }
 
+    /// 抖水水珠:鸟身周围一圈小水滴向外甩出淡出(shake 序列配套,复用 splash_drop 贴图)
+    static func droplets(at point: CGPoint, on screen: NSScreen?) {
+        let size = CGSize(width: 200, height: 200)
+        let e = Effect(centeredAt: point, size: size, on: screen) { v in
+            guard let layer = v.layer else { return }
+            let c = CGPoint(x: size.width / 2, y: size.height / 2)
+            let n = 14
+            for i in 0..<n {
+                let ang = CGFloat(i) / CGFloat(n) * 2 * .pi + .random(in: -0.2...0.2)
+                let dist: CGFloat = .random(in: 52...76)
+                let drop = CALayer()
+                let ds: CGFloat = .random(in: 6...9)
+                drop.bounds = CGRect(x: 0, y: 0, width: ds, height: ds)
+                drop.position = c
+                drop.contents = effectImage("splash_drop")
+                drop.contentsGravity = .resize
+                let pos = CABasicAnimation(keyPath: "position")
+                pos.fromValue = NSValue(point: CGPoint(x: c.x + cos(ang) * 10, y: c.y + sin(ang) * 10))
+                pos.toValue = NSValue(point: CGPoint(x: c.x + cos(ang) * dist,
+                                                     y: c.y + sin(ang) * dist * 0.8))
+                pos.duration = sp(0.5)
+                pos.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                let op = CABasicAnimation(keyPath: "opacity")
+                op.fromValue = 0.95; op.toValue = 0; op.duration = sp(0.55)
+                drop.opacity = 0
+                drop.add(pos, forKey: "p"); drop.add(op, forKey: "o")
+                layer.addSublayer(drop)
+            }
+        }
+        e.close(after: sp(0.7))
+    }
+
     /// 音符:在 point(屏幕坐标,鸟头上方)处 ♪ 上浮淡出
     static func notes(at point: CGPoint, on screen: NSScreen?) {
         let size = CGSize(width: 120, height: 120)

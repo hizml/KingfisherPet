@@ -46,18 +46,23 @@ public enum DayRhythm {
     }
 
     /// think() 权重带布局(纯函数,kf-tests 直打这里——测试必须打真实现,不是复制品)。
-    /// 把原先散在 Behavior.think() 的活跃度公式收拢于此,叠加昼夜系数。
+    /// 把原先散在 Behavior.think() 里的活跃度公式收拢于此,叠加昼夜系数与天气系数
+    /// (v1.5.0 B:双层在唯一合成点相乘,昼夜 × 天气,任一层为 neutral 即不干预)。
     /// widths 顺序(未乘 k):fly/fish/sing/dart/watch/sun/peck/perch/poop。
     /// sleepShare = 兜底桶份额(walk + 带宽×k 之外余下的部分,恒 ≥ 0)。
-    public static func thinkBands(activity: Double, hour: Int)
+    public static func thinkBands(activity: Double, hour: Int,
+                                  weather: WeatherFactors? = nil)
         -> (idleBand: Int, walkEnd: Int, k: Double, widths: [Double], sleepShare: Double) {
         let f = factors(hour: hour)
+        let w = weather ?? .neutral
         let a = min(1, max(0, activity))
         let idleBand = Int(((1.0 - a) * 22).rounded())
-        let walkEnd = idleBand + max(1, Int(((1.0 - a) * 20).rounded()))
-        let k = max(0.5, (100.0 - Double(walkEnd) - 6.0) / 62.0) * f.overall
+        let walkExtra = max(1, Int(((1.0 - a) * 20).rounded()))
+        let walkEnd = idleBand + max(1, Int((Double(walkExtra) * w.walk).rounded()))
+        let k = max(0.5, (100.0 - Double(walkEnd) - 6.0) / 62.0) * f.overall * w.overall
         let base: [Double] = [7, 8, 7, 7, 7, 7, 6, 6, 6]
-        let mul: [Double] = [1, f.fish, f.sing, f.dart, 1, f.sun, 1, 1, 1]
+        let mul: [Double] = [w.fly, f.fish * w.fish, f.sing * w.sing, f.dart * w.dart,
+                             w.watch, f.sun * w.sun, 1, w.perch, 1]
         let widths = zip(base, mul).map(*)
         let sleepShare = max(0, 100.0 - Double(walkEnd) - widths.reduce(0, +) * k)
         return (idleBand, walkEnd, k, widths, sleepShare)

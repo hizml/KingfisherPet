@@ -39,6 +39,33 @@ final public class Settings {
         set { set(K.theme, newValue) }
     }
 
+    // MARK: - 天气联动(v1.5.0;默认关 = 明示纪律:开启才发首个网络请求)
+    var weatherEnabled: Bool {
+        get { Defaults.bool(forKey: K.weatherEnabled, default: false) }
+        set { set(K.weatherEnabled, newValue) }
+    }
+    /// 城市名;空 = IP 粗定位
+    var weatherCity: String {
+        get { Defaults.string(forKey: K.weatherCity, default: "") }
+        set { set(K.weatherCity, newValue) }
+    }
+    /// 数据源:open-meteo(默认免 key)/ qweather(和风)
+    var weatherProvider: String {
+        get { let p = Defaults.string(forKey: K.weatherProvider, default: "open-meteo")
+              return p == "qweather" ? "qweather" : "open-meteo" }   // 脏值回默认
+        set { set(K.weatherProvider, newValue == "qweather" ? "qweather" : "open-meteo") }
+    }
+    /// 和风 API Key(用户自己的免费 key,本地明文,风险可接受;迁 Keychain 不在本批)
+    var weatherKey: String {
+        get { Defaults.string(forKey: K.weatherKey, default: "") }
+        set { set(K.weatherKey, newValue) }
+    }
+    /// 和风 API Host(选填;以控制台分配的专属 Host 为准,默认 devapi)
+    var weatherHost: String {
+        get { Defaults.string(forKey: K.weatherHost, default: "devapi.qweather.com") }
+        set { set(K.weatherHost, newValue) }
+    }
+
     /// clamp + NaN/Inf 防护:畸形值(外部数据/脏存储)一律回默认,不进存储不进行为链
     private static func clamp(_ v: Double, lo: Double, hi: Double, fallback: Double) -> Double {
         v.isFinite ? min(max(v, lo), hi) : fallback
@@ -69,6 +96,11 @@ final public class Settings {
         static let soundOn  = "kingfisher.settings.soundOn"
         static let peckScreen = "kingfisher.settings.peckScreen"
         static let theme    = "kingfisher.settings.theme"
+        static let weatherEnabled = "kingfisher.settings.weatherEnabled"
+        static let weatherCity    = "kingfisher.settings.weatherCity"
+        static let weatherProvider = "kingfisher.settings.weatherProvider"
+        static let weatherKey     = "kingfisher.settings.weatherKey"
+        static let weatherHost    = "kingfisher.settings.weatherHost"
     }
     private enum Defaults {
         static func double(forKey key: String, default def: Double) -> Double {
@@ -88,10 +120,12 @@ final public class Settings {
 // MARK: - 设置窗口
 
 /// 独立设置窗口(NSWindow + 纯 AppKit 控件,实时生效)。
-/// 活跃度/速度滑块、声音开关、主题下拉。
-final class SettingsWindowController: NSObject, NSWindowDelegate {
+/// 活跃度/速度滑块、声音开关、主题下拉、天气联动区。
+final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDelegate {
 
     private var window: NSWindow?
+    /// 观察者只注册一次:换数据源会复用控制器重建窗口,重复 add 会收到重复回调
+    private var observersInstalled = false
     private weak var activitySlider: NSSlider?
     private weak var activityLabel: NSTextField?
     private weak var speedSlider: NSSlider?
@@ -99,6 +133,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private weak var soundButton: NSButton?
     private weak var peckButton: NSButton?
     private weak var themePopup: NSPopUpButton?
+    // 天气区(v1.5.0)
+    private weak var weatherButton: NSButton?
+    private weak var weatherStatusLabel: NSTextField?
 
     func show() {
         if window == nil { buildWindow() }
@@ -222,6 +259,106 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         root.addSubview(peckBtn)
         peckButton = peckBtn
 
+        // ── 天气联动区(v1.5.0;默认关,开启才发首个请求——文案明示网络行为)──
+        y = separator(root, top: y, margin: margin)
+        y -= 20
+        place(label(Language.t("settings.weather")), root, top: &y, margin: margin)
+        y -= 24
+        let wxBtn = NSButton(checkboxWithTitle: Language.t("settings.weather.enable"),
+                             target: self, action: #selector(weatherToggled(_:)))
+        wxBtn.state = s.weatherEnabled ? .on : .off
+        wxBtn.frame = NSRect(x: margin, y: y, width: root.bounds.width - margin * 2, height: 22)
+        wxBtn.autoresizingMask = [.width]
+        root.addSubview(wxBtn)
+        weatherButton = wxBtn
+        // 明示文案(小字两行)
+        y -= 30
+        let note = NSTextField(wrappingLabelWithString: Language.t("settings.weather.note"))
+        note.font = NSFont.systemFont(ofSize: 11)
+        note.textColor = .secondaryLabelColor
+        note.frame = NSRect(x: margin, y: y - 4, width: root.bounds.width - margin * 2, height: 30)
+        note.autoresizingMask = [.width]
+        root.addSubview(note)
+        // 城市
+        y -= 28
+        let cityTitle = label(Language.t("settings.weather.city"))
+        cityTitle.font = NSFont.systemFont(ofSize: 12)
+        cityTitle.sizeToFit()
+        cityTitle.frame.origin = NSPoint(x: margin, y: y)
+        root.addSubview(cityTitle)
+        let cityField = NSTextField()
+        cityField.placeholderString = Language.t("settings.weather.cityPlaceholder")
+        cityField.stringValue = s.weatherCity
+        cityField.delegate = self
+        cityField.font = NSFont.systemFont(ofSize: 12)
+        cityField.frame = NSRect(x: margin + 56, y: y - 2, width: root.bounds.width - margin * 2 - 56, height: 24)
+        cityField.autoresizingMask = [.width]
+        cityField.identifier = NSUserInterfaceItemIdentifier("wx.city")
+        root.addSubview(cityField)
+        // 数据源(选和风时下方多出 Key/Host 两行:重建窗口换布局,比动态增删行稳)
+        y -= 30
+        let provTitle = label(Language.t("settings.weather.provider"))
+        provTitle.font = NSFont.systemFont(ofSize: 12)
+        provTitle.sizeToFit()
+        provTitle.frame.origin = NSPoint(x: margin, y: y)
+        root.addSubview(provTitle)
+        let provPopup = NSPopUpButton(frame: NSRect(x: margin + 56, y: y - 4,
+                                                    width: root.bounds.width - margin * 2 - 56, height: 26),
+                                      pullsDown: false)
+        provPopup.addItem(withTitle: "Open-Meteo")
+        provPopup.lastItem?.representedObject = "open-meteo"
+        provPopup.addItem(withTitle: "和风天气")
+        provPopup.lastItem?.representedObject = "qweather"
+        for it in provPopup.itemArray where (it.representedObject as? String) == s.weatherProvider {
+            provPopup.select(it)
+        }
+        provPopup.target = self
+        provPopup.action = #selector(weatherProviderChanged(_:))
+        provPopup.autoresizingMask = [.width]
+        root.addSubview(provPopup)
+        // 和风专属两行:Key(密码框)+ Host
+        if s.weatherProvider == "qweather" {
+            y -= 32
+            let keyTitle = label(Language.t("settings.weather.key"))
+            keyTitle.font = NSFont.systemFont(ofSize: 12)
+            keyTitle.sizeToFit()
+            keyTitle.frame.origin = NSPoint(x: margin, y: y)
+            root.addSubview(keyTitle)
+            let keyField = NSSecureTextField()
+            keyField.stringValue = s.weatherKey
+            keyField.delegate = self
+            keyField.font = NSFont.systemFont(ofSize: 12)
+            keyField.frame = NSRect(x: margin + 56, y: y - 2, width: root.bounds.width - margin * 2 - 56, height: 24)
+            keyField.autoresizingMask = [.width]
+            keyField.identifier = NSUserInterfaceItemIdentifier("wx.key")
+            root.addSubview(keyField)
+            y -= 32
+            let hostTitle = label(Language.t("settings.weather.host"))
+            hostTitle.font = NSFont.systemFont(ofSize: 12)
+            hostTitle.sizeToFit()
+            hostTitle.frame.origin = NSPoint(x: margin, y: y)
+            root.addSubview(hostTitle)
+            let hostField = NSTextField()
+            hostField.placeholderString = "devapi.qweather.com"
+            hostField.stringValue = s.weatherHost
+            hostField.delegate = self
+            hostField.font = NSFont.systemFont(ofSize: 12)
+            hostField.frame = NSRect(x: margin + 56, y: y - 2, width: root.bounds.width - margin * 2 - 56, height: 24)
+            hostField.autoresizingMask = [.width]
+            hostField.identifier = NSUserInterfaceItemIdentifier("wx.host")
+            root.addSubview(hostField)
+        }
+        // 状态行(状态可见纪律:失败/正常/关闭都在这标)
+        y -= 26
+        let status = NSTextField(labelWithString: weatherStatusText())
+        status.font = NSFont.systemFont(ofSize: 11)
+        status.textColor = .secondaryLabelColor
+        status.sizeToFit()
+        status.frame.origin = NSPoint(x: margin, y: y)
+        status.autoresizingMask = [.width]
+        root.addSubview(status)
+        weatherStatusLabel = status
+
         // Y 轴滚动(几何全部钉常量,不从 contentView.bounds 取值——它实测返回过
         // 640×560 的 2× 假值,前两轮滚动全毁在它手里):
         // ①内容高度按真实布局收口;②frame 变高后平移全部子视图(坐标系不会自动重映射);
@@ -244,9 +381,42 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         kfLog("settings 几何: root=\(Int(root.bounds.width))x\(Int(root.bounds.height)) view=320x\(Int(viewH)) 最后控件top=\(Int(y + grow))")
         window = w
 
-        // 监听外部变化(如菜单改了声音),同步控件
-        NotificationCenter.default.addObserver(self, selector: #selector(externalChange(_:)),
-                                               name: Settings.didChangeNotification, object: nil)
+        // 监听外部变化(如菜单改了声音),同步控件(只装一次:重建窗口不复装)
+        if !observersInstalled {
+            observersInstalled = true
+            NotificationCenter.default.addObserver(self, selector: #selector(externalChange(_:)),
+                                                   name: Settings.didChangeNotification, object: nil)
+            // 天气快照/状态更新 → 刷新状态行(状态可见)
+            NotificationCenter.default.addObserver(self, selector: #selector(weatherStatusChanged),
+                                                   name: WeatherService.didUpdate, object: nil)
+        }
+    }
+
+    // MARK: - 文本框提交(回车/失焦时才写设置——避免逐键触发重启请求轰炸)
+    func controlTextDidEndEditing(_ obj: Notification) {
+        guard let tf = obj.object as? NSTextField else { return }
+        let s = Settings.shared
+        switch tf.identifier?.rawValue {
+        case "wx.city": s.weatherCity = tf.stringValue.trimmingCharacters(in: .whitespaces)
+        case "wx.key": s.weatherKey = tf.stringValue.trimmingCharacters(in: .whitespaces)
+        case "wx.host": s.weatherHost = tf.stringValue.trimmingCharacters(in: .whitespaces)
+        default: break
+        }
+    }
+
+    @objc private func weatherStatusChanged() {
+        weatherStatusLabel?.stringValue = weatherStatusText()
+    }
+
+    private func weatherStatusText() -> String {
+        switch WeatherService.shared.status {
+        case .off: return String(format: Language.t("settings.weather.status"),
+                                 Language.t("settings.weather.status.off"))
+        case .ok: return String(format: Language.t("settings.weather.status"),
+                                Language.t("settings.weather.status.ok"))
+        case .unavailable: return String(format: Language.t("settings.weather.status"),
+                                         Language.t("settings.weather.status.unavailable"))
+        }
     }
 
     // MARK: - 控件回调
@@ -269,6 +439,17 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     @objc private func peckToggled(_ b: NSButton) {
         Settings.shared.peckScreen = (b.state == .on)
     }
+    @objc private func weatherToggled(_ b: NSButton) {
+        Settings.shared.weatherEnabled = (b.state == .on)
+    }
+    @objc private func weatherProviderChanged(_ p: NSPopUpButton) {
+        guard let id = p.selectedItem?.representedObject as? String else { return }
+        Settings.shared.weatherProvider = id
+        // 换源要增删 Key/Host 行:关掉按新布局重建(内容少,重建最稳)
+        closeWindow()
+        self.window = nil
+        show()
+    }
 
     /// 外部改了设置:同步本窗口控件(避免 UI 与状态不同步)
     @objc private func externalChange(_ n: Notification) {
@@ -280,6 +461,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             activityLabel?.stringValue = activityText(s.activity)
         case "kingfisher.settings.peckScreen":
             peckButton?.state = s.peckScreen ? .on : .off
+        case "kingfisher.settings.weatherEnabled":
+            weatherButton?.state = s.weatherEnabled ? .on : .off
+            weatherStatusLabel?.stringValue = weatherStatusText()
         case "kingfisher.settings.speed":
             speedSlider?.doubleValue = Double(s.speed)
             speedLabel?.stringValue = String(format: "%.1f×", s.speed)

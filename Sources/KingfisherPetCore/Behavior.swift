@@ -46,6 +46,14 @@ final class Behavior: PetViewDelegate {
         self.window = window
         view.delegate = self
         view.onMoved = { [weak self] in self?.shadow?.updateNow() }
+        // 天气快照更新 → 重算权重系数 + 迁移彩蛋/预警反应(主线程;服务侧已保证)
+        weatherObserver = NotificationCenter.default.addObserver(
+            forName: WeatherService.didUpdate, object: nil, queue: .main
+        ) { [weak self] _ in self?.weatherDidUpdate() }
+    }
+
+    deinit {
+        if let o = weatherObserver { NotificationCenter.default.removeObserver(o) }
     }
 
     /// 开始一个新动作:取消所有进行中的 hold/动画/定时器(代际 bump)
@@ -195,7 +203,7 @@ final class Behavior: PetViewDelegate {
     }
 
     private static let restingStates: Set<String> =
-        ["idle", "eat", "sing", "watch", "sun", "sleep", "happy", "poop", "peck"]
+        ["idle", "eat", "sing", "watch", "sun", "sleep", "happy", "poop", "peck", "hide", "shake"]
     func isResting() -> Bool { Self.restingStates.contains(current) }
     private func finish() {
         busy = false; enter("idle"); scheduleThink()
@@ -210,6 +218,114 @@ final class Behavior: PetViewDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + sp(t)) { [weak self] in
             guard let self = self, self.gen == g else { return }
             done()
+        }
+    }
+
+    // MARK: - 天气联动(v1.5.0 B)
+    /// 当前天气权重系数;nil = 无系数(天气关闭/查询失败静默降级),行为与从前一致
+    private var weatherF: WeatherFactors?
+    private var weatherObserver: NSObjectProtocol?
+    /// 上次快照主档(迁移彩蛋对比);nil = 尚无基准/出现空档(失败降级),跨空档不触发
+    private var lastWeatherMain: WeatherKind?
+    /// 上次预警 ID 集(首现/解除判定)
+    private var lastAlertIDs: Set<String> = []
+    /// 彩蛋种类 → 上次触发时刻(2h 冷却:防边界天气在 30min 刷新间来回跳连发)
+    private var lastEggAt: [String: Date] = [:]
+
+    private func weatherDidUpdate() {
+        let svc = WeatherService.shared
+        guard let snap = svc.now else {
+            weatherF = nil
+            lastWeatherMain = nil   // 空档重置基准:恢复后不从旧档算迁移
+            return
+        }
+        var f = WeatherFactors.factors(main: snap.main, hot: snap.hot, cold: snap.cold)
+        if svc.alertActive { f.overall *= 0.3 }   // 预警生效:整体低活跃直至解除
+        weatherF = f
+        handleWeatherTransition(snap)
+        handleAlertTransition()
+    }
+
+    /// 状态迁移彩蛋:对比上次缓存主档,只触发一次(2h 冷却;事件走 beginAction 即过代际取消)
+    private func handleWeatherTransition(_ snap: WeatherNow) {
+        let prev = lastWeatherMain
+        lastWeatherMain = snap.main
+        guard let prev, prev != snap.main else { return }
+        if (prev == .rainLight || prev == .rainHeavy),
+           (snap.main == .sunny || snap.main == .overcast) {
+            fireEgg("rainStop") { $0.weatherShake() }            // 雨停转晴:happy + 抖水
+        } else if !(prev == .snowLight || prev == .snowHeavy),
+                  (snap.main == .snowLight || snap.main == .snowHeavy) {
+            fireEgg("firstSnow") { $0.startWatch() }             // 初雪:好奇张望
+        } else if snap.main == .thunder {
+            fireEgg("thunder") { $0.weatherRetreat() }           // 雷暴来袭:飞栖窗躲雨
+        }
+    }
+
+    /// 预警事件层(和风源专属):按 ID 去重,首现中断动作躲藏,全部解除播 happy 出关
+    private func handleAlertTransition() {
+        let svc = WeatherService.shared
+        let ids = Set(svc.alerts.map { $0.id })
+        let hasNew = svc.alerts.contains { !lastAlertIDs.contains($0.id) }
+        if hasNew {
+            kfLog("weather: 预警首现 \(svc.alerts.map { $0.type + $0.level })")
+            fireEgg("alertAppear") { $0.weatherRetreat() }
+        } else if !lastAlertIDs.isEmpty && ids.isEmpty {
+            kfLog("weather: 预警全部解除")
+            fireEgg("alertClear") { $0.weatherShake() }          // 出关:happy + 抖水
+        }
+        lastAlertIDs = ids
+    }
+
+    /// 彩蛋执行口:2h 冷却 + 隐藏/勿扰不表演(勿扰只标菜单,状态可见层的事)
+    private func fireEgg(_ kind: String, _ perform: (Behavior) -> Void) {
+        if let at = lastEggAt[kind], Date().timeIntervalSince(at) < 2 * 3600 { return }
+        lastEggAt[kind] = Date()
+        guard onScreen, !dndActive else { return }
+        kfLog("weather: 彩蛋 \(kind) 触发")
+        perform(self)
+    }
+
+    /// 雷暴/预警躲雨:中断当前动作 → 飞栖窗(太高/没有就原地上方)→ 躲雨 hide 数秒。
+    /// hide 素材栖窗/地面两用;鸟在树枝上也直接原地躲。
+    func weatherRetreat() {
+        guard onScreen, !dndActive, let window = window else { return }
+        beginAction()                          // 中断进行中的动作链(代际 bump)
+        if let perch = WindowTracker.frontPerch(birdWidth: size.width),
+           !wouldOvershootTop(surfaceY: perch.point.y) {
+            enter("fly")
+            let target = clampPerch(CGPoint(x: perch.point.x, y: perch.point.y - feetOffset))
+            view?.facingRight = target.x > window.frame.origin.x
+            animateFlight(to: target, duration: 1.1) { [weak self] in
+                guard let self = self else { return }
+                self.onWindow = true
+                self.perchedID = perch.id
+                if let f = WindowTracker.frameOfWindow(id: perch.id) { self.perchedWinFrame = f }
+                self.startPerchCheck()
+                self.playHide()
+            }
+        } else {
+            playHide()                         // 没有可栖窗口:原地躲(栖枝/地面同样成立)
+        }
+    }
+
+    private func playHide() {
+        enter("hide")
+        hold(Double.random(in: 5...9)) { [weak self] in self?.finish() }
+    }
+
+    /// 雨停转晴/预警解除:抖水(带水珠粒子)→ happy 出关
+    func weatherShake() {
+        guard onScreen, !dndActive else { return }
+        beginAction()
+        enter("shake")
+        SpriteLibrary.shared.playPeep()
+        let w = window?.frame ?? .zero
+        Effects.droplets(at: CGPoint(x: w.midX, y: w.midY), on: screen)
+        hold(1.4) { [weak self] in
+            guard let self = self, self.current == "shake" else { return }
+            self.enter("happy")
+            self.hold(0.8) { [weak self] in self?.finish() }
         }
     }
 
@@ -230,11 +346,12 @@ final class Behavior: PetViewDelegate {
         // 窗口正在被拖动 = 用户实时交互,优先级最高:推迟预设动作
         guard !busy, !perchWinMoving else { scheduleThink(); return }
         let isLow = (window?.frame.minY ?? 0) < (area.minY + 60)   // Dock 附近
-        // 活跃度 + 昼夜节律(v1.5.0 A)共同决定权重带;公式收进 DayRhythm.thinkBands
-        // 纯函数(kf-tests 直打真实现,版本比较 bug 的教训:不打复制品),此处只管
-        // 按布局选桶执行。widths 顺序:fly/fish/sing/dart/watch/sun/peck/perch/poop。
+        // 活跃度 + 昼夜节律(v1.5.0 A)+ 天气(v1.5.0 B)共同决定权重带;公式收进
+        // DayRhythm.thinkBands 纯函数(kf-tests 直打真实现,版本比较 bug 的教训:不打复制品),
+        // 此处只管按布局选桶执行。widths 顺序:fly/fish/sing/dart/watch/sun/peck/perch/poop。
         let layout = DayRhythm.thinkBands(activity: Settings.shared.activity,
-                                          hour: DayRhythm.currentHour())
+                                          hour: DayRhythm.currentHour(),
+                                          weather: weatherF)
         let idleBand = layout.idleBand
         let walk = layout.walkEnd
         let k = layout.k
