@@ -250,6 +250,45 @@ fn set_weather_status(app: tauri::AppHandle, title: Option<String>) {
     refresh_menu(&app);
 }
 
+/// 性能采样(v1.5.0 C 性能背书,看门狗 30s 节拍):差分 CPU% + 工作集 RSS 一行入 kflog。
+/// CPU% = Δ(内核+用户时间)/Δ墙钟(与 macOS ps %cpu 同口径,多核可 >100)。
+/// 首拍只记基线不出日志(没有差分)。macOS 侧对应 WatchdogService 的 WATCHDOG 行。
+#[cfg(windows)]
+fn perf_sample() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static LAST_CPU_100NS: AtomicU64 = AtomicU64::new(0);
+    static LAST_WALL_MS: AtomicU64 = AtomicU64::new(0);
+    use windows::Win32::Foundation::FILETIME;
+    use windows::Win32::System::Diagnostics::Debug::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
+    use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
+    unsafe {
+        let (mut fc, mut fe, mut fk, mut fu) =
+            (FILETIME::default(), FILETIME::default(), FILETIME::default(), FILETIME::default());
+        if GetProcessTimes(GetCurrentProcess(), &mut fc, &mut fe, &mut fk, &mut fu).is_err() {
+            return;
+        }
+        let lo_hi = |ft: &FILETIME| ((ft.dwHighDateTime as u64) << 32) | ft.dwLowDateTime as u64;
+        let cpu_100ns = lo_hi(&fk) + lo_hi(&fu);
+        let wall_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+        let prev_cpu = LAST_CPU_100NS.swap(cpu_100ns, Ordering::Relaxed);
+        let prev_wall = LAST_WALL_MS.swap(wall_ms, Ordering::Relaxed);
+        let mut rss_mb = 0.0f64;
+        let mut pmc = PROCESS_MEMORY_COUNTERS::default();
+        if GetProcessMemoryInfo(GetCurrentProcess(), &mut pmc,
+                                std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32).is_ok() {
+            rss_mb = pmc.WorkingSetSize as f64 / 1048576.0;
+        }
+        if prev_cpu == 0 || wall_ms <= prev_wall { return; }   // 首拍:只记基线
+        let d_cpu_ms = (cpu_100ns - prev_cpu) as f64 / 10_000.0;
+        let d_wall_ms = (wall_ms - prev_wall) as f64;
+        let cpu_pct = d_cpu_ms / d_wall_ms * 100.0;
+        crate::kflog::kflog(&format!("PERF cpu={:.1}% rss={:.0}MB", cpu_pct, rss_mb));
+    }
+}
+#[cfg(not(windows))]
+fn perf_sample() {}   // mac dev:真数据走原生 WatchdogService(ps 采样),这里不重复
+
 /// 持久化小设置(Rust 侧目前只存语言;前端数值走 localStorage)
 fn prefs_file() -> std::path::PathBuf {
     let dir = std::env::var("APPDATA")
@@ -469,6 +508,7 @@ pub fn run() {
                     let boot = std::time::Instant::now();
                     loop {
                         std::thread::sleep(std::time::Duration::from_secs(30));
+                        perf_sample();
                         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
                             .map(|d| d.as_secs()).unwrap_or(0);
                         let hb = LAST_HB.load(Ordering::Relaxed);
