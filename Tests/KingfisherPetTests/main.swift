@@ -243,6 +243,36 @@ enum TestMain {
         }
         expect("昼夜×天气 6 档×5 时段布局守恒(或增益叠加钳 0)", wxConserveOK)
 
+        // MARK: - 成长系统(Growth;Windows tests/growth.test.mjs 同一用例口径)
+        print("[成长系统]")
+        expect("档位换算:19 陌生/20 相识/39 相识/40 熟悉/59 熟悉/60 亲近/80 亲密/100 缘定一生", {
+            Growth.Stage.of(intimacy: 19) == .stranger && Growth.Stage.of(intimacy: 20) == .acquainted
+            && Growth.Stage.of(intimacy: 39) == .acquainted && Growth.Stage.of(intimacy: 40) == .familiar
+            && Growth.Stage.of(intimacy: 59) == .familiar && Growth.Stage.of(intimacy: 60) == .close
+            && Growth.Stage.of(intimacy: 80) == .intimate && Growth.Stage.of(intimacy: 100) == .bonded
+        }())
+        expect("档位换算越界防御:-1/999", Growth.Stage.of(intimacy: -1) == .stranger
+               && Growth.Stage.of(intimacy: 999) == .bonded)
+        expect("来访概率单调升且 stranger=0", {
+            let ps = [Growth.Stage.stranger, .acquainted, .familiar, .close, .intimate, .bonded].map { $0.affectionChance }
+            return ps[0] == 0 && ps == ps.sorted() && ps.last! <= 0.05
+        }())
+        let gSaved = Growth.shared.intimacy
+        let gHatched = Growth.shared.hatched
+        Growth.shared.intimacy = 95
+        expect("add 钳制到 100:95+8 → 100(实际生效 5)", Growth.shared.add(8) == 5 && Growth.shared.intimacy == 100)
+        expect("shouldHatch:满级未孵化", Growth.shared.hatched == false && Growth.shared.shouldHatch == true)
+        Growth.shared.markHatched()
+        expect("markHatched 后 shouldHatch=false", Growth.shared.shouldHatch == false)
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        expect("喂鱼冷却:首喂通过", Growth.shared.feedAllowed(now: t0) == true)
+        expect("喂鱼冷却:t+9min 拒绝", Growth.shared.feedAllowed(now: t0.addingTimeInterval(9 * 60)) == false)
+        expect("喂鱼冷却:t+10min01s 放行", Growth.shared.feedAllowed(now: t0.addingTimeInterval(601)) == true)
+        // 还原(别污染宿主机设置)
+        Growth.shared.intimacy = gSaved
+        if !gHatched { UserDefaults.standard.removeObject(forKey: "kingfisher.growth.hatched") }
+        UserDefaults.standard.removeObject(forKey: "kingfisher.growth.lastFeedAt")
+
         // MARK: - 结果
         print("== \(passed) passed, \(failures) failed ==")
         if failures > 0 { exit(1) }

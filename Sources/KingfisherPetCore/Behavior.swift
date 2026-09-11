@@ -140,6 +140,7 @@ final class Behavior: PetViewDelegate {
         beginAction()
         SpriteLibrary.shared.playPeep()
         enter("happy")
+        Growth.shared.add(1)   // 亲密度 +1(成长轻量版)
         hold(0.8) { [weak self] in
             guard let self = self, self.current == "happy" else { return }
             self.finish()
@@ -175,6 +176,10 @@ final class Behavior: PetViewDelegate {
             } else {
                 onWindow = false       // 踩 Dock/地面
             }
+            if Int.random(in: 0..<100) < 8 {   // 落地小概率炸毛(被吓一跳)
+                startPuff()
+                return
+            }
             enter("idle")
             busy = false
             scheduleThink()
@@ -203,7 +208,8 @@ final class Behavior: PetViewDelegate {
     }
 
     private static let restingStates: Set<String> =
-        ["idle", "eat", "sing", "watch", "sun", "sleep", "happy", "poop", "peck", "hide", "shake"]
+        ["idle", "eat", "sing", "watch", "sun", "sleep", "happy", "poop", "peck",
+         "hide", "shake", "puff", "shiver", "forage"]
     func isResting() -> Bool { Self.restingStates.contains(current) }
     private func finish() {
         busy = false; enter("idle"); scheduleThink()
@@ -329,6 +335,121 @@ final class Behavior: PetViewDelegate {
         }
     }
 
+    // MARK: - 成长系统轻量版(v1.5.x batch2)
+    /// 访客冷却(2h;防边界连发,同彩蛋纪律)
+    private var lastVisitorAt: Date?
+
+    /// think 拍内检查:孵化彩蛋(到 100 一次性)> 主动来访 > 访客飞过 > 寒颤插播。
+    /// 全部不进权重带(昼夜/天气双层公式冻结),概率直插,与彩蛋同款模式。
+    private func growthTick() -> Bool {
+        guard onScreen, !dndActive else { return false }
+        if Growth.shared.shouldHatch { growthHatchEvent(); return true }
+        if Double.random(in: 0...1) < Growth.shared.stage.affectionChance {
+            affectionVisit(); return true
+        }
+        if let last = lastVisitorAt, Date().timeIntervalSince(last) < 2 * 3600 { /* 冷却中 */ }
+        else if Double.random(in: 0...1) < 0.006 {
+            lastVisitorAt = Date()
+            visitorEvent(); return true
+        }
+        if WeatherService.shared.now?.cold == true, Double.random(in: 0...1) < 0.15 {
+            weatherShiver(); return true
+        }
+        return false
+    }
+
+    /// 主动来访:飞到光标附近看用户一眼(亲密度影响互动频率的落点)
+    private func affectionVisit() {
+        guard let window = window, let scr = screen else { finish(); return }
+        beginAction()
+        enter("fly")
+        let a = scr.visibleFrame
+        let mx = NSEvent.mouseLocation.x
+        // 光标侧偏一点(不来 exact 位置,停在旁边看)
+        var tx = mx + CGFloat.random(in: -160...160)
+        tx = min(max(tx, a.minX + 40), a.maxX - size.width - 40)
+        let ty = a.minY + a.height * CGFloat.random(in: 0.35...0.6)
+        let dest = clamp(CGPoint(x: tx, y: ty))
+        view?.facingRight = dest.x > window.frame.origin.x
+        perchBranchIfNeeded(at: dest)
+        animateFlight(to: dest, duration: 1.2) { [weak self] in
+            guard let self = self else { return }
+            self.enter("watch")                       // 看你一眼
+            self.hold(1.3) { [weak self] in
+                guard let self = self else { return }
+                if Growth.shared.stage.rawValue >= Growth.Stage.close.rawValue {   // 亲近以上:叫一声打招呼
+                    SpriteLibrary.shared.playPeep()
+                }
+                self.enter("happy")
+                self.hold(0.6) { [weak self] in self?.finish() }
+            }
+        }
+    }
+
+    /// 访客飞过(overlay 演出,不占本鸟动作;本鸟只在访客落定时应答对唱)
+    private func visitorEvent() {
+        guard let window = window else { return }
+        kfLog("growth: 访客飞过")
+        VisitorService.shared.visitorPass(near: window.frame, on: screen) { [weak self] in
+            guard let self = self, self.onScreen, !self.dndActive, !self.busy else { return }
+            self.startSing()   // 应答一声(访客是 overlay,与行为机不打架)
+        }
+    }
+
+    /// 寒颤(冷副档生效时的插播;不动权重,纯演出)
+    func weatherShiver() {
+        guard onScreen, !dndActive else { return }
+        beginAction()
+        enter("shiver")
+        hold(1.6) { [weak self] in self?.finish() }
+    }
+
+    /// 炸毛:受惊(拖拽落地后小概率;啄裂屏幕后小概率)
+    func startPuff() {
+        guard onScreen, !dndActive else { return }
+        beginAction()
+        SpriteLibrary.shared.playPeep()
+        enter("puff")
+        hold(0.9) { [weak self] in self?.finish() }
+    }
+
+    /// 喂鱼(菜单):eat(自带叼鱼帧)→ happy;冷却 10 分钟内只播吃不给分
+    func feedFish() {
+        guard onScreen, !dndActive else { return }
+        let scored = Growth.shared.feedAllowed()
+        if scored { Growth.shared.add(8) }
+        beginAction()
+        enter("eat")
+        SpriteLibrary.shared.playPeep()
+        hold(1.4) { [weak self] in
+            guard let self = self else { return }
+            self.enter("happy")
+            self.hold(0.7) { [weak self] in self?.finish() }
+        }
+    }
+
+    /// 满级孵化彩蛋(一次性):下蛋 → 蛋摇摆 → 小鸟绕飞告别 → happy
+    private func growthHatchEvent() {
+        guard onScreen, !dndActive, let window = window, let scr = screen else { return }
+        Growth.shared.markHatched()
+        kfLog("growth: 满级孵化彩蛋")
+        beginAction()
+        enter("poop")          // 蹲姿(复用 poop 帧的用力体态,不下屎)
+        hold(1.2) { [weak self] in
+            guard let self = self else { return }
+            let feet = CGPoint(x: window.frame.midX + 40, y: window.frame.minY + 20)
+            VisitorService.shared.eggWobble(at: feet, on: scr)
+            self.enter("watch")                      // 盯着自己的蛋
+            self.hold(2.6) { [weak self] in
+                guard let self = self else { return }
+                VisitorService.shared.childFlight(around: window.frame, on: scr)
+                self.enter("happy")
+                SpriteLibrary.shared.playPeep()
+                self.hold(1.4) { [weak self] in self?.finish() }
+            }
+        }
+    }
+
     // MARK: - 定时思考
     private func scheduleThink() {
         thinkTimer?.invalidate()
@@ -345,6 +466,8 @@ final class Behavior: PetViewDelegate {
     private func think() {
         // 窗口正在被拖动 = 用户实时交互,优先级最高:推迟预设动作
         guard !busy, !perchWinMoving else { scheduleThink(); return }
+        // 成长插播(孵化彩蛋/主动来访/访客飞过/寒颤):概率直插,不进权重带
+        if growthTick() { return }
         let isLow = (window?.frame.minY ?? 0) < (area.minY + 60)   // Dock 附近
         // 活跃度 + 昼夜节律(v1.5.0 A)+ 天气(v1.5.0 B)共同决定权重带;公式收进
         // DayRhythm.thinkBands 纯函数(kf-tests 直打真实现,版本比较 bug 的教训:不打复制品),
@@ -508,6 +631,7 @@ final class Behavior: PetViewDelegate {
     // MARK: - 俯冲捕鱼(招牌):自然轨迹上顶→悬停→直下俯冲
     func startFish() {
         guard let window = window, let scr = screen else { finish(); return }
+        if Int.random(in: 0..<100) < 25 { startForage(); return }   // 25% 变体:地面觅食(v1.5.x)
         beginAction()
         let a = scr.visibleFrame
         let topY = a.maxY - size.height
@@ -540,6 +664,7 @@ final class Behavior: PetViewDelegate {
                 self.animateWindow(to: dest, duration: 0.95) {
                     self.enter("eat")
                     SpriteLibrary.shared.playPeep()
+                    Growth.shared.add(1)   // 自发捕鱼成功 +1
                     self.hold(1.1) {
                         self.finish()
                         self.schedulePoop(after: Double.random(in: 4...7))
@@ -655,6 +780,9 @@ final class Behavior: PetViewDelegate {
         hold(0.3) { [weak self] in
             guard let self = self else { return }
             if remaining > 1 { self.peckBurst(remaining: remaining - 1, crack: crack) }
+            else if crack, Int.random(in: 0..<100) < 25 {
+                self.startPuff()          // 啄裂屏幕:被自己吓一跳(小概率)
+            }
             else { self.finish() }
         }
     }
@@ -756,6 +884,40 @@ final class Behavior: PetViewDelegate {
             perchWinMoving = false
         }
         perchedWinFrame = f
+    }
+
+    // MARK: - 觅食回巢(v1.5.x,捕鱼变体):飞落地 → 连啄叼虫 → 飞上高处 → 吞 → 满足
+    func startForage() {
+        guard let window = window, let scr = screen else { finish(); return }
+        beginAction()
+        leavePerch()
+        enter("fly")
+        let a = scr.visibleFrame
+        let tx = CGFloat.random(in: (a.minX + 40) ... max(a.minX + 41, a.maxX - size.width - 40))
+        let dest = clamp(CGPoint(x: tx, y: a.minY - feetOffset))   // 地面
+        view?.facingRight = dest.x > window.frame.origin.x
+        animateFlight(to: dest, duration: 1.1) { [weak self] in
+            guard let self = self else { return }
+            self.enter("forage")                     // 啄两下 → 叼虫
+            self.hold(1.8) { [weak self] in
+                guard let self = self, self.current != "dead" else { return }
+                let a2 = self.area
+                let px = CGFloat.random(in: (a2.minX + 30) ... max(a2.minX + 31, a2.maxX - self.size.width - 30))
+                let dest2 = self.clamp(CGPoint(x: px, y: a2.maxY - self.size.height))   // 屏顶树枝
+                self.view?.facingRight = dest2.x > (self.window?.frame.origin.x ?? dest2.x)
+                self.perchBranchIfNeeded(at: dest2)
+                self.enter("fly")
+                self.animateFlight(to: dest2, duration: 1.0) { [weak self] in
+                    guard let self = self else { return }
+                    self.enter("forage")             // 仰头吞咽帧
+                    self.hold(0.9) { [weak self] in
+                        guard let self = self else { return }
+                        self.enter("happy")
+                        self.hold(0.6) { [weak self] in self?.finish() }
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - 打盹
@@ -897,6 +1059,7 @@ final class Behavior: PetViewDelegate {
     // MARK: - 外部控制
     func callOver() {
         guard let window = window, let scr = screen else { return }
+        Growth.shared.add(2)   // 召唤互动 +2(成长轻量版)
         beginAction()
         enter("fly")
         let a = scr.visibleFrame

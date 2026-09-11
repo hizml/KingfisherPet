@@ -51,6 +51,7 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
     var petController: PetWindowController!   // internal:WatchdogService.emergencyReset 经 owner 访问
     private var soundMenuItem: NSMenuItem!
     private var autoLoginMenuItem: NSMenuItem!
+    private weak var growthMenuItem: NSMenuItem?
     private var shadowCtl: ShadowController!
     var branchCtl: BranchController!
     var crackCtl: CrackController!
@@ -78,6 +79,11 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(
             self, selector: #selector(settingsChanged(_:)),
             name: Settings.didChangeNotification, object: nil)
+
+        // 成长系统(v1.5.x):亲密度变化 → 刷托盘状态行(状态可见)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(growthChanged),
+            name: Growth.didChangeNotification, object: nil)
 
         // 开机自启
         if UserDefaults.standard.bool(forKey: Self.kAutoLogin) {
@@ -116,9 +122,13 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // 勿扰模式(3s 巡检,AX 查询在后台队列):①其他应用全屏(视频/游戏)→ 鸟隐身+静音。
-        // 拆分至 DndMonitor(评审:AppDelegate 拆分 + AX 挪后台)
-        dnd.behaviorProvider = { [weak self] in self?.petController?.behavior }
-        dnd.start()
+        // 拆分至 DndMonitor(评审:AppDelegate 拆分 + AX 挪后台)。
+        // KF_TEST 场景测试禁用:环境里恰好有全屏应用会把鸟隐身,场景 nondeterministic
+        // (growth_acts 实测踩到:t+6 进 DND,puff 被守卫挡掉 = 误报 FAIL)
+        if ProcessInfo.processInfo.environment["KF_TEST"] == nil {
+            dnd.behaviorProvider = { [weak self] in self?.petController?.behavior }
+            dnd.start()
+        }
 
         // 多屏:屏幕布局变化(插拔外接屏、分辨率变更)时,裂纹重定位 + 鸟钳制回当前屏
         NotificationCenter.default.addObserver(
@@ -197,7 +207,7 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
                 guard let self = self else { return }
                 let st = self.petController?.behavior.currentStateForLog() ?? "?"
-                let okStates: Set<String> = ["idle","walk","fly","sing","watch","sun","sleep","eat","peck","poop","happy","hover","hide","shake"]
+                let okStates: Set<String> = ["idle","walk","fly","sing","watch","sun","sleep","eat","peck","poop","happy","hover","hide","shake","puff","shiver","forage"]
                 var winCount = -1
                 if let infos = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] {
                     let myPID = ProcessInfo.processInfo.processIdentifier
@@ -218,7 +228,7 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self = self else { return }
                 let beh = self.petController?.behavior
                 let st = beh?.currentStateForLog() ?? "?"
-                let okStates: Set<String> = ["idle","walk","fly","sing","watch","sun","sleep","eat","peck","poop","happy","hide","shake"]
+                let okStates: Set<String> = ["idle","walk","fly","sing","watch","sun","sleep","eat","peck","poop","happy","hide","shake","puff","shiver","forage"]
                 let ok = (beh?.isVisible ?? false) && okStates.contains(st) && Effect.active.count <= 3   // 苏醒后 think 已开跑,任意合法状态
                 done(ok, "state=\(st) effects=\(Effect.active.count) visible=\(beh?.isVisible ?? false)")
                 // 注:唤醒后 refall=0(屎不重落)由 runner 在日志段内 grep 断言
@@ -260,7 +270,7 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
                 let shown = (beh?.isVisible ?? false) && (self.petController?.window?.isVisible ?? false)
                 let st = beh?.currentStateForLog() ?? "?"
                 // 破壳 1.4s 后 think 已开跑,sleep/walk 等都合法;只要活着+可见+不在 dead
-                let alive = ["idle","walk","fly","sing","watch","sun","sleep","eat","peck","poop","happy","hide","shake","egg"].contains(st)
+                let alive = ["idle","walk","fly","sing","watch","sun","sleep","eat","peck","poop","happy","hide","shake","puff","shiver","forage","egg"].contains(st)
                 done(shown && alive, "visible=\(shown) state=\(st)")
             }
         case "weather_acts":
@@ -282,6 +292,37 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
                 let st = self.petController?.behavior.currentStateForLog() ?? "?"
                 let ok = ["hide", "idle", "fly"].contains(st)
                 done(ok, "hide-state=\(st)")
+            }
+        case "growth_acts":
+            // 成长新动作端到端:喂鱼(eat→happy)→ 寒颤 → 炸毛(素材缺失=帧不渲染现形)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                self?.petController?.behavior.feedFish()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) { [weak self] in
+                self?.petController?.behavior.weatherShiver()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 7.0) { [weak self] in
+                self?.petController?.behavior.startPuff()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 9.0) { [weak self] in
+                guard let self = self else { return }
+                let st = self.petController?.behavior.currentStateForLog() ?? "?"
+                let ok = st == "puff" || st == "idle"
+                done(ok, "state=\(st)(puff 应已渲染)")
+            }
+        case "growth_hatch":
+            // 满级孵化:注入 100 → think 拍触发 → 蹲(poop)→盯(watch)→happy
+            // 测完清注入(别污染宿主机鸟的成长进度)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                Growth.shared.intimacy = 100
+                kfLog("TEST hatch injected=100 shouldHatch=\(Growth.shared.shouldHatch)")
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 12.0) { [weak self] in
+                guard let self = self else { return }
+                let ok = !Growth.shared.shouldHatch && Growth.shared.hatched
+                UserDefaults.standard.removeObject(forKey: "kingfisher.growth.intimacy")
+                UserDefaults.standard.removeObject(forKey: "kingfisher.growth.hatched")
+                done(ok, "hatched=\(Growth.shared.hatched)(事件应已播)")
             }
         default:
             done(false, "unknown-scenario")
@@ -335,9 +376,15 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(item(Language.t("menu.callOver"), action: #selector(callOver)))
         menu.addItem(item(Language.t("menu.fish"), action: #selector(doFish)))
         menu.addItem(item(Language.t("menu.sing"), action: #selector(doSing)))
+        menu.addItem(item(Language.t("menu.feed"), action: #selector(doFeed)))
         menu.addItem(item(Language.t("menu.perch"), action: #selector(doPerch)))
         menu.addItem(item(Language.t("menu.peck"), action: #selector(doPeck)))
         menu.addItem(item(Language.t("menu.toggleVisibility"), action: #selector(toggleVisibility)))
+        // 成长状态行(状态可见纪律):❤ 档位·亲密度;孵化后变「缘定一生(已孵化)」
+        let growthItem = NSMenuItem(title: Growth.shared.menuTitle, action: nil, keyEquivalent: "")
+        growthItem.isEnabled = false
+        menu.addItem(growthItem)
+        growthMenuItem = growthItem
         // 天气状态行(状态可见层):禁用项,只展示当前档/预警;天气关时隐藏。
         // 语言切换重建菜单后重新注入并刷新标题。
         let wxItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -417,6 +464,14 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
         behavior.startSing()
     }
 
+    @objc private func doFeed() {   // 喂条鱼(成长系统):eat+happy;加分/冷却都在 feedFish 内
+        let behavior = petController.behavior
+        guard behavior.isOnScreen else { return }
+        behavior.feedFish()
+    }
+    @objc private func growthChanged() {
+        growthMenuItem?.title = Growth.shared.menuTitle
+    }
     @objc private func doPerch() {
         let behavior = petController.behavior
         guard behavior.isOnScreen else { return }   // 隐藏时不响应(与 Windows 一致;恢复入口只有显示/隐藏)
