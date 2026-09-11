@@ -188,7 +188,7 @@ public final class WeatherService {
                 guard let obj,
                       let lat = (obj["latitude"] as? NSNumber)?.doubleValue,
                       let lon = (obj["longitude"] as? NSNumber)?.doubleValue else {
-                    self.fail("IP 定位失败(断网?)"); return
+                    self.fail("IP 定位失败(ipapi 不可达/限流或断网)"); return
                 }
                 done(lat, lon)
             }

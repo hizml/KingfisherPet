@@ -162,6 +162,12 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.petController.behavior.startPoop()
             }
         }
+        if ProcessInfo.processInfo.environment["KF_OPEN_SETTINGS"] != nil {
+            // 调试:自动弹设置窗(验证新 UI 区块用)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                self?.showSettings()
+            }
+        }
 
         // CPU 自监控:每 15 秒记录进程 CPU% + 线程数 + effect 数 + 当前状态,定位唤醒卡死
         // (间隔 15s:熔断需 3 连击=45s,更频的 fork ps 唤醒太费电;注释此前误写 5s)
@@ -256,6 +262,26 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
                 // 破壳 1.4s 后 think 已开跑,sleep/walk 等都合法;只要活着+可见+不在 dead
                 let alive = ["idle","walk","fly","sing","watch","sun","sleep","eat","peck","poop","happy","hide","shake","egg"].contains(st)
                 done(shown && alive, "visible=\(shown) state=\(st)")
+            }
+        case "weather_acts":
+            // 天气新动作端到端(v1.5.0 B):抖水(shake 序列+水珠粒子)→ 躲雨(飞栖窗+hide 序列)。
+            // 素材缺失/序列名错在这里现形(状态不对=帧没渲染);快照正立性由 runner 像素校验
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                self?.petController?.behavior.weatherShake()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+                guard let self = self else { return }
+                let st = self.petController?.behavior.currentStateForLog() ?? "?"
+                kfLog("TEST wx shake state=\(st)")
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self] in
+                self?.petController?.behavior.weatherRetreat()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 9.0) { [weak self] in
+                guard let self = self else { return }
+                let st = self.petController?.behavior.currentStateForLog() ?? "?"
+                let ok = ["hide", "idle", "fly"].contains(st)
+                done(ok, "hide-state=\(st)")
             }
         default:
             done(false, "unknown-scenario")

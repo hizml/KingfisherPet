@@ -158,7 +158,7 @@ async function locate(): Promise<{ lat: number; lon: number }> {
   if (!city) {
     const ip = await jget("https://ipapi.co/json/");
     if (typeof ip?.latitude !== "number" || typeof ip?.longitude !== "number") {
-      throw new Error("IP 定位失败(断网?)");
+      throw new Error("IP 定位失败(ipapi 不可达/限流或断网)");
     }
     return { lat: ip.latitude, lon: ip.longitude };
   }

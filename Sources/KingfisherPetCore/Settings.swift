@@ -363,21 +363,25 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
         // 640×560 的 2× 假值,前两轮滚动全毁在它手里):
         // ①内容高度按真实布局收口;②frame 变高后平移全部子视图(坐标系不会自动重映射);
         // ③只开纵向滚动,内容宽钉 320;④非 flipped document 默认显示底部,显式滚回顶部。
-        let viewH: CGFloat = 308
-        let contentH = max((viewH - margin) - y + margin, viewH)
-        let grow = contentH - viewH
+        // v1.5.0:窗口高度自适应内容(天气区进设置窗后内容 500+,固定 308 会把新功能
+        // 藏在折叠线下);内容超过 760 才回落到滚动。
+        let baseH: CGFloat = 308
+        let contentH = max((baseH - margin) - y + margin, baseH)
+        let viewH = min(contentH, 760)
+        let grow = contentH - baseH
         if grow != 0 { for sv in root.subviews { sv.frame.origin.y += grow } }
         root.frame = NSRect(x: 0, y: 0, width: 320, height: contentH)
         let scroll = NSScrollView()
-        scroll.frame = NSRect(x: 0, y: 0, width: 320, height: viewH)   // 钉常量
-        scroll.hasVerticalScroller = true
+        scroll.frame = NSRect(x: 0, y: 0, width: 320, height: viewH)
+        scroll.hasVerticalScroller = viewH < contentH
         scroll.hasHorizontalScroller = false
         scroll.scrollerStyle = .overlay
         scroll.drawsBackground = false
         scroll.documentView = root
         scroll.autoresizingMask = [.width, .height]
         w.contentView = scroll
-        scroll.contentView.scroll(NSPoint(x: 0, y: max(0, contentH - viewH)))   // 初始置顶
+        w.setContentSize(NSSize(width: 320, height: viewH))
+        if viewH < contentH { scroll.contentView.scroll(NSPoint(x: 0, y: max(0, contentH - viewH))) }   // 初始置顶
         kfLog("settings 几何: root=\(Int(root.bounds.width))x\(Int(root.bounds.height)) view=320x\(Int(viewH)) 最后控件top=\(Int(y + grow))")
         window = w
 
