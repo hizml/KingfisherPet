@@ -259,7 +259,7 @@ fn perf_sample() {
     static LAST_CPU_100NS: AtomicU64 = AtomicU64::new(0);
     static LAST_WALL_MS: AtomicU64 = AtomicU64::new(0);
     use ::windows::Win32::Foundation::FILETIME;
-    use ::windows::Win32::System::Diagnostics::Debug::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
+    use ::windows::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
     use ::windows::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
     unsafe {
         let (mut fc, mut fe, mut fk, mut fu) =
