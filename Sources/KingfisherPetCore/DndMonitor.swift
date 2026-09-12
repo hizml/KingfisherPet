@@ -63,7 +63,8 @@ final class DndMonitor {
                     behavior.enterDnd()
                 } else if behavior.dndActive == true && self.fsOffStreak >= 2 {
                     kfLog("dnd: 全屏退出,恢复")
-                    if active { behavior.exitDnd() }   // 鸟隐藏时只清标志,不强制显示(下次 hatchIn 自然复活)
+                    // 评审 A3:鸟隐藏时【真的】只清标志(此前是空话)——否则 dndActive 永真,hatchIn 永久被挡
+                    if active { behavior.exitDnd() } else { behavior.clearDndFlag() }
                 }
             }
         }
@@ -148,15 +149,12 @@ final class DndMonitor {
         guard !axPromptShown else { return }
         axPromptShown = true
         kfLog("ax: 弹窗引导开启辅助功能")
-        NSApp.activate(ignoringOtherApps: true)
-        let a = NSAlert()
-        a.alertStyle = .informational
-        a.messageText = "翡 需要辅助功能权限"
         let appPath = Bundle.main.bundleURL.path   // 发布版用户机器上路径各不相同,动态生成
-        a.informativeText = "勿扰模式(全屏看片/放音时鸟自动隐身静音)依赖辅助功能。\n\n请到 系统设置 → 隐私与安全性 → 辅助功能,删除旧的「翡」后重新添加并勾选(选择:\(appPath))"
-        a.addButton(withTitle: "打开系统设置")
-        a.addButton(withTitle: "稍后")
-        if a.runModal() == .alertFirstButtonReturn {
+        // 评审 A6:自绘弹窗(替换 NSAlert runModal;勿在巡检回调里模态阻塞)
+        KFDialog.show(title: "翡 需要辅助功能权限",
+                      message: "勿扰模式(全屏看片/放音时鸟自动隐身静音)依赖辅助功能。\n\n请到 系统设置 → 隐私与安全性 → 辅助功能,删除旧的「翡」后重新添加并勾选(选择:\(appPath))",
+                      buttons: ["打开系统设置", "稍后"]) { idx in
+            guard idx == 0 else { return }
             // 新版系统设置的辅助功能深链;打不开则退到隐私面板
             let deep = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility")!
             if !NSWorkspace.shared.open(deep) {

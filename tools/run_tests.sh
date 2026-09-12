@@ -87,7 +87,11 @@ if ! swift build -c release --product KingfisherPet > /tmp/kf_test_build.log 2>&
   exit 1
 fi
 # 打包(不启动):场景需要 bundle 资源(裸二进制帧数=0,快照会空)
-KF_NO_LAUNCH=1 ./build.sh >/dev/null 2>&1
+# 评审 B6:退出码必查——打包失败拿旧 .app 继续测会全绿假象(与「旧二进制全绿」同构)
+if ! KF_NO_LAUNCH=1 ./build.sh >/dev/null 2>&1; then
+  echo "❌ build.sh 打包失败(拿旧包测会出假绿,中止)"
+  exit 1
+fi
 BIN="$APP_BIN"
 
 SCENARIOS=("${@:-smoke sleepwake themecycle vis_toggle}")

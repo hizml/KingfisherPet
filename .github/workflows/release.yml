@@ -27,12 +27,23 @@ jobs:
       APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7(pin SHA,评审 B1)
 
       - name: SwiftPM 编译(release)
         run: swift build -c release --product KingfisherPet
 
+      - name: 纯逻辑单测门(评审 B8:tag 直发不再绕过测试)
+        run: swift run -c release kf-tests
+
       - name: 组装 .app(与 build.sh 一致)
+        env:
+          KF_SIGN_P12_B64: ${{ secrets.KF_SIGN_P12_B64 }}
+          KF_SIGN_P12_PASS: ${{ secrets.KF_SIGN_P12_PASS }}
+          APPLE_DEV_ID_P12_B64: ${{ secrets.APPLE_DEV_ID_P12_B64 }}
+          APPLE_DEV_ID_P12_PASS: ${{ secrets.APPLE_DEV_ID_P12_PASS }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           APP="build/KingfisherPet.app"
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/Sprites"
@@ -41,7 +52,7 @@ jobs:
             t=$(basename "$d"); mkdir -p "$APP/Contents/Resources/Sprites/$t"
             # 分条容错(对齐 build.sh):一条 || true 会因任一 json 缺失丢掉整主题 png(评审)
             cp "$d"*.png "$APP/Contents/Resources/Sprites/$t/" || echo "::warning::$t 缺 png"
-            cp "$d"sprites.json "$APP/Contents/Resources/Sprites/$t/" || echo "::error::$t 缺 sprites.json"
+            cp "$d"sprites.json "$APP/Contents/Resources/Sprites/$t/" || { echo "::error::$t 缺 sprites.json(主题丢 manifest=切主题鸟静止,评审 B3)"; exit 1; }
             cp "$d"colors.json "$APP/Contents/Resources/Sprites/$t/" || echo "::warning::$t 缺 colors.json"
             rm -f "$APP/Contents/Resources/Sprites/$t/contact.png"
           done
@@ -108,7 +119,8 @@ jobs:
               rm build/KingfisherPet-mac-native.zip
               cd build && zip -qry KingfisherPet-mac-native.zip KingfisherPet.app && cd ..
             else
-              echo "::warning::公证失败——包已 Developer ID 签名但未公证,用户首次打开需右键"
+              echo "::error::公证失败——v1.6.0 起签名+公证是发版承诺,不出半吊子产物(评审 B2)"
+              exit 1
             fi
           elif [ -n "$KF_SIGN_P12_B64" ]; then
             echo "$KF_SIGN_P12_B64" | base64 -d > /tmp/kf.p12
@@ -132,7 +144,7 @@ jobs:
           fi
 
       - name: 传到 Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2(pin SHA,评审 B1)
         with:
           name: "翡 KingfisherPet ${{ github.ref_name }}"
           tag_name: ${{ github.ref_name }}
@@ -152,13 +164,13 @@ jobs:
             rustTargets: ""
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7(pin SHA,评审 B1)
 
       - uses: actions/setup-node@v7
         with:
           node-version: 20
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # stable(pin SHA,评审 B1)
         with:
           targets: ${{ matrix.rustTargets }}
 
@@ -182,8 +194,12 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           node -e "const fs=require('fs');const p='windows/src-tauri/tauri.conf.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));j.version=process.argv[1];fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n');console.log('tauri version →',j.version)" "$VERSION"
 
+      - name: 纯逻辑单测门(node --test;评审 B8)
+        working-directory: windows
+        run: npm ci && npm test
+
       - name: 构建 + 发 release(tauri-action)
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@fce9c6108b31ea247710505d3aaaa893ee6768d4 # v0(pin SHA,评审 B1)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # v1.6.0 updater 产物签名(createUpdaterArtifacts 需要私钥;tauri-action 自动产 latest.json)

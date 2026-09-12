@@ -99,6 +99,7 @@ public final class Growth {
     /// true=本次可喂(并占下冷却时刻);false=冷却中
     public func feedAllowed(now: Date = Date()) -> Bool {
         if let last = UserDefaults.standard.object(forKey: Self.kLastFeedAt) as? Date,
+           now >= last,   // 评审 A9:时钟回拨(负 interval)不进冷却判定,否则回拨多久锁多久
            now.timeIntervalSince(last) < Self.feedCooldown {
             return false
         }

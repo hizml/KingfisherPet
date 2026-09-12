@@ -63,16 +63,24 @@
       const bar = document.createElement("div");
       bar.style.cssText = "height:100%;width:0%;background:#0e7c86;transition:width .2s;";
       prog.appendChild(bar); elM.after(prog);
+      const st = document.createElement("div");
+      st.textContent = L.installing; st.style.cssText = "color:#777;font-size:12px;";
       btn(L.installB, true, () => {
         emit("do-update", null).catch(() => {});
         elB.textContent = "";
-        const st = document.createElement("div");
-        st.textContent = L.installing; st.style.cssText = "color:#777;font-size:12px;";
         elB.appendChild(st);
         prog.style.display = "block";
       });
       btn(L.later, false, close);
       listen<number>("update-progress", (e) => { bar.style.width = (e.payload ?? 0) + "%"; }).catch(() => {});
+      // 评审 W3:失败/无包 → 恢复按钮(重试 + 前往下载),不再死屏
+      listen("update-fail", () => {
+        elB.textContent = "";
+        btn(L.go, true, () => { open(REL).then(() => close(), () => {}); });
+        btn(L.closeB, false, close);
+        st.remove();   // 「正在更新…」撤掉
+        prog.style.display = "none";
+      }).catch(() => {});
     }
     else if (t === "found") { elT.textContent = L.foundT; elM.textContent = L.foundM(latest, cur);
       btn(L.go, true, () => { open(REL).then(() => close(), () => {}); }); btn(L.later, false, close); }

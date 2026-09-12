@@ -34,5 +34,6 @@ export const FEED_COOLDOWN_MS = 10 * 60 * 1000;
 /// 喂鱼冷却判定(纯函数:now/lastAt 毫秒注入可测)。true=可喂
 export function feedAllowed(nowMs, lastFeedAtMs) {
   if (lastFeedAtMs == null) return true;
+  if (nowMs < lastFeedAtMs) return true;   // 评审 A9:时钟回拨(负 interval)不进冷却,否则回拨多久锁多久
   return nowMs - lastFeedAtMs >= FEED_COOLDOWN_MS;
 }

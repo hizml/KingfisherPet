@@ -175,10 +175,15 @@ async function main() {
     });
     listen("check-update", () => doCheckUpdate(false));
     // v1.6.0:弹窗「立即更新」→ 下载验签安装 → 自动重启;失败回退浏览器下载
+    // 评审 W3:全路径通知弹窗(无包/失败都 emit update-fail)——按钮清空后不能让用户对死屏
     listen("do-update", async () => {
       try {
         const up = await checkUpdate();
-        if (!up?.available) { emit("log", "update: 点了更新但 updater 无可用包"); return; }
+        if (!up?.available) {
+          emit("log", "update: 点了更新但 updater 无可用包");
+          emit("update-fail", { why: "no-package" }).catch(() => {});
+          return;
+        }
         let received = 0, total = 0;
         await up.downloadAndInstall((ev) => {
           if (ev.event === "Started" && ev.data.contentLength) total = ev.data.contentLength;
@@ -191,6 +196,7 @@ async function main() {
         await relaunch();
       } catch (e) {
         emit("log", "update: 应用内更新失败(" + String(e) + "),回退浏览器下载");
+        emit("update-fail", { why: String(e) }).catch(() => {});
         invoke("open_url", { url: "https://github.com/hizml/KingfisherPet/releases/latest" }).catch(() => {});
       }
     });

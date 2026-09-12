@@ -36,7 +36,7 @@ Mac 原生 Swift + Windows Tauri 双平台,行为照着当年的它比着做,再
 | macOS(Tauri 版) | `.dmg` / `.app.tar.gz` |
 | Windows | `x64-setup.exe`(NSIS,中/英可选)或 `zh-CN.msi` / `en-US.msi` |
 
-> **签名**:本地与 CI 用同一张自签证书(非 Apple Developer ID)——首次运行若提示"无法验证开发者",右键 App → 打开;Windows SmartScreen 选"仍要运行"。签名固定意味着辅助功能授权一次、升级不失效。
+> **签名**:v1.6.0 起 CI 产物用 **Developer ID 签名 + Apple 公证**——下载 zip 解压双击即开,无"无法验证开发者"拦截;本地开发构建退回固定自签证书(签名固定=辅助功能授权一次、升级不失效)。Windows SmartScreen 仍选"仍要运行"(自签,见分发说明)。
 >
 > **辅助功能授权(Mac 可选)**:勿扰模式(全屏看片鸟自动隐身)需要;未授权时鸟会弹窗引导,一键直达系统设置。不给也能用,只是没有勿扰。
 
@@ -99,7 +99,7 @@ python3 -m venv .venv && .venv/bin/pip install pillow
 ./build.sh
 ```
 
-产物:`build/KingfisherPet.app`,直接双击或 `open` 即可。签名:优先用钥匙串里的"KingfisherPet Dev"自签证书(签名固定,辅助功能授权不随重打包失效),没有则回退 ad-hoc。
+产物:`build/KingfisherPet.app`,直接双击或 `open` 即可。签名三级择优:钥匙串有 Developer ID 证书则正式签名(hardened runtime+timestamp)→ 退回"KingfisherPet Dev"自签(签名固定,辅助功能授权不随重打包失效)→ ad-hoc。正式分发走 CI(签名+公证+staple)。
 
 ## 目录结构
 
@@ -198,7 +198,7 @@ Grab the latest from [Releases](https://github.com/hizml/KingfisherPet/releases/
 | macOS (Tauri) | `.dmg` / `.app.tar.gz` |
 | Windows | `x64-setup.exe` (NSIS, zh/en selectable) or `zh-CN.msi` / `en-US.msi` |
 
-> **Signing**: local and CI builds share one self-signed certificate (not an Apple Developer ID) — on macOS right-click → Open on first run; on Windows SmartScreen "More info → Run anyway". The signature is stable, so a one-time Accessibility grant survives upgrades.
+> **Signing**: since v1.6.0, CI builds are signed with a **Developer ID certificate and notarized by Apple** — download, unzip, double-click, no Gatekeeper dance. Local dev builds fall back to a stable self-signed certificate (so a one-time Accessibility grant survives upgrades). On Windows, SmartScreen may still ask "More info → Run anyway".
 >
 > **Accessibility (optional, macOS)**: the DND mode (auto-hide during fullscreen video) needs it; if missing, the bird pops a dialog with a shortcut to System Settings. Everything else works without it.
 

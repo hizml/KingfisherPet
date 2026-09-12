@@ -104,6 +104,7 @@ public final class WeatherService {
                 URLQueryItem(name: "latitude", value: String(format: "%.4f", lat)),
                 URLQueryItem(name: "longitude", value: String(format: "%.4f", lon)),
                 URLQueryItem(name: "current", value: "weather_code,temperature_2m,wind_speed_10m"),
+                URLQueryItem(name: "windspeed_unit", value: "ms"),   // 评审 A5:默认 kmh,阈值 10.8 是 m/s——不加此参微风就进 wind 档
                 URLQueryItem(name: "timezone", value: "auto"),
             ]
             Self.getJSON(comp.url!) { obj in
@@ -139,7 +140,10 @@ public final class WeatherService {
             guard let self else { return }
             let loc = String(format: "%.2f,%.2f", lon, lat)   // 和风 location = 经,纬
             // 天气 + 预警同一周期同查(预警是和风口子专属福利)
-            Self.getJSON(Self.qwURL(host: host, path: "/v7/weather/now", loc: loc, key: key)) { wobj in
+            guard let nowURL = Self.qwURL(host: host, path: "/v7/weather/now", loc: loc, key: key) else {
+                self.fail("和风 Host 无效(\(host))"); return
+            }
+            Self.getJSON(nowURL) { wobj in
                 guard let wobj, (wobj["code"] as? String) == "200",
                       let n = wobj["now"] as? [String: Any],
                       let codeStr = n["code"] as? String, let code = Int(codeStr) else {
@@ -150,7 +154,14 @@ public final class WeatherService {
                 let main = Self.mainFromQWeather(code: code, windScale: windScale)
                 guard let main else { self.fail("和风未知码 \(code)"); return }
                 let (hot, cold) = Self.tempFlags(tempC: temp)
-                Self.getJSON(Self.qwURL(host: host, path: "/v7/warning/now", loc: loc, key: key)) { aobj in
+                guard let warnURL = Self.qwURL(host: host, path: "/v7/warning/now", loc: loc, key: key) else {
+                    self.succeed(now: WeatherNow(main: main, hot: hot, cold: cold,
+                                                 tempC: temp,
+                                                 raw: "QW#\(code) wind\(windScale) t\(temp.map { String(format: "%.0f", $0) } ?? "?")°"),
+                                 alerts: [])   // 预警 URL 构不出:预警置空,天气照常
+                    return
+                }
+                Self.getJSON(warnURL) { aobj in
                     // 预警查询失败不拖垮天气本身:预警置空、天气照常
                     var alerts: [WeatherAlert] = []
                     if let aobj, (aobj["code"] as? String) == "200",
@@ -171,11 +182,21 @@ public final class WeatherService {
         }
     }
 
-    private static func qwURL(host: String, path: String, loc: String, key: String) -> URL {
-        var comp = URLComponents(string: "https://\(host)\(path)")!
+    /// host 清洗(评审 A4):剥误粘的协议前缀/空白;清洗后仍非法返回 nil → 调用方静默降级
+    public static func sanitizedHost(_ raw: String) -> String? {
+        var h = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        for prefix in ["https://", "http://"] where h.hasPrefix(prefix) { h = String(h.dropFirst(prefix.count)) }
+        h = h.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !h.isEmpty, h.allSatisfy({ $0.isLetter || $0.isNumber || ".-".contains($0) }) else { return nil }
+        return h
+    }
+
+    private static func qwURL(host: String, path: String, loc: String, key: String) -> URL? {
+        guard let host = sanitizedHost(host),
+              var comp = URLComponents(string: "https://\(host)\(path)") else { return nil }   // 评审 A4:用户输入不配强解包
         comp.queryItems = [URLQueryItem(name: "location", value: loc),
                            URLQueryItem(name: "key", value: key)]
-        return comp.url!
+        return comp.url
     }
 
     // MARK: - 定位(城市名 → 各源 geocoding;留空 → ipapi.co IP 粗定位)
@@ -401,9 +422,17 @@ public struct WeatherAlert {
         default: return 0
         }
     }
-    /// 菜单后缀:「橙色预警」;未知级别原样带出
+    /// 菜单后缀:「橙色预警」。评审 W9:level 字段自带「色」(如"黄色"),直接拼接会出
+    /// 「黄色色预警」——按 rank 重建名称,未知级别原样带出
     var levelSuffix: String {
-        rank > 0 ? level + "色预警" : level
+        switch rank {
+        case 5: return "红色预警"
+        case 4: return "橙色预警"
+        case 3: return "黄色预警"
+        case 2: return "蓝色预警"
+        case 1: return "白色预警"
+        default: return level
+        }
     }
 }
 

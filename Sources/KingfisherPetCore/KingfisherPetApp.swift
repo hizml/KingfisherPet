@@ -591,8 +591,8 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             self.watchdog.start()
-            if self.petController?.behavior.isVisible == true {   // 隐藏鸟不空转
-                self.petController?.petView.resumeAnimation()
+            if self.petController?.behavior.isVisible == true,   // 隐藏鸟不空转
+               self.petController?.behavior.dndActive == false {   // 评审 A7:勿扰中唤醒也不空转(窗口还 orderOut 着)
                 self.poopCtl?.resume()
                 self.branchCtl?.resume()
             }

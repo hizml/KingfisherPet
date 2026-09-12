@@ -21,7 +21,7 @@
    - `Contents/MacOS`(可执行)
    - `Contents/Resources/Sprites/<theme>/`(每个主题一个子目录,各含 png + sprites.json)
    - `Contents/Resources/peep_*.wav`(4 种叫声)
-   - `Contents/Resources/{zh-Hans,en}.lproj/Localizable.strings`(本地化)
+   - `Sources/KingfisherPetCore/Language.swift`(运行时自建字典本地化,可即时切换;仓库无 .lproj 文件)
    - `Contents/Info.plist`(`LSUIElement=true` 不占 Dock;`CFBundleLocalizations` 声明 zh-Hans/en)
    - `Contents/Resources/AppIcon.icns`(由 flat/idle_0 经 iconutil 生成)
 3. `codesign -s - --force --deep`(ad-hoc)
@@ -32,7 +32,7 @@
 ## 素材生成
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -i https://pypi.tuna.tsinghua.edu.cn/simple pillow
+python3 -m venv .venv && .venv/bin/pip install -i https://pypi.tuna.tsinghua.edu.cn/simple pillow numpy   # numpy:gen_sprites 程序化色检依赖;缺它 ink 主题中途崩且镜像不执行=双树不一致
 .venv/bin/python tools/gen_sprites.py
 ```
 

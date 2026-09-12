@@ -268,10 +268,23 @@ enum TestMain {
         expect("喂鱼冷却:首喂通过", Growth.shared.feedAllowed(now: t0) == true)
         expect("喂鱼冷却:t+9min 拒绝", Growth.shared.feedAllowed(now: t0.addingTimeInterval(9 * 60)) == false)
         expect("喂鱼冷却:t+10min01s 放行", Growth.shared.feedAllowed(now: t0.addingTimeInterval(601)) == true)
+        let t0b = Date(timeIntervalSince1970: 2_000_000)
+        expect("喂鱼时钟回拨不锁死(评审 A9)", Growth.shared.feedAllowed(now: t0b) == true
+               && Growth.shared.feedAllowed(now: t0b.addingTimeInterval(-3600)) == true)
         // 还原(别污染宿主机设置)
         Growth.shared.intimacy = gSaved
         if !gHatched { UserDefaults.standard.removeObject(forKey: "kingfisher.growth.hatched") }
         UserDefaults.standard.removeObject(forKey: "kingfisher.growth.lastFeedAt")
+
+        // MARK: - 和风 Host 清洗(评审 A4:用户输入防强解包)
+        print("[Host 清洗]")
+        expect("常规 host 通过", WeatherService.sanitizedHost("devapi.qweather.com") == "devapi.qweather.com")
+        expect("误粘协议剥掉", WeatherService.sanitizedHost("https://devapi.qweather.com") == "devapi.qweather.com")
+        expect("空白修剪", WeatherService.sanitizedHost("  abc.re.qweather.com \n") == "abc.re.qweather.com")
+        expect("空串拒绝", WeatherService.sanitizedHost("") == nil)
+        expect("带空格拒绝", WeatherService.sanitizedHost("bad host") == nil)
+        expect("异字符拒绝", WeatherService.sanitizedHost("a<b>c/") == nil)
+        expect("合法字符集放行", WeatherService.sanitizedHost("a-b.c9") == "a-b.c9")
 
         // MARK: - 结果
         print("== \(passed) passed, \(failures) failed ==")

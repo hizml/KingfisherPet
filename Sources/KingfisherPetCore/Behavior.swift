@@ -466,6 +466,7 @@ final class Behavior: PetViewDelegate {
     private func think() {
         // 窗口正在被拖动 = 用户实时交互,优先级最高:推迟预设动作
         guard !busy, !perchWinMoving else { scheduleThink(); return }
+        guard !dndActive else { return }   // 评审 A2:勿扰中 think 链必须死透(不该被排程;双保险)
         // 成长插播(孵化彩蛋/主动来访/访客飞过/寒颤):概率直插,不进权重带
         if growthTick() { return }
         let isLow = (window?.frame.minY ?? 0) < (area.minY + 60)   // Dock 附近
@@ -1013,7 +1014,13 @@ final class Behavior: PetViewDelegate {
         view?.suspendAnimation()   // 停全部常驻 timer(零空转,Windows 同款)
         branch?.suspend()
         poopCtl?.suspend()
+        stopPerchCheck()   // 评审 A2:栖窗跟随不停,遮挡判定会在隐身鸟上触发 startFly → 行为循环复活+特效盖全屏
         busy = false
+    }
+    /// 评审 A3:勿扰退出时鸟处于隐藏态 → 只清标志不强制显示(死锁修复:此前 !active 分支
+    /// 什么都不做,dndActive 永真,hatchIn 永远被守卫挡回 = 鸟永久消失只能重启)
+    func clearDndFlag() {
+        dndActive = false
     }
     func exitDnd() {
         dndActive = false

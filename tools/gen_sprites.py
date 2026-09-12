@@ -1133,7 +1133,8 @@ def mirror_to_windows():
     """把产物镜像到 windows/public/(Windows 端 vite 直接打包 public,资源是独立的一棵树)。
     之前靠手动拷贝,新增帧只进了 Resources、Win 侧缺帧(v1.5.0 hide/shake 实际踩到,
     手动同步靠不住就上脚本):拷 *.png(排除 dev 用的 contact.png)+ sprites.json +
-    colors.json + peep wav。只增改不删(历史遗留多出的文件不在此处清理)。"""
+    colors.json + peep wav;并做集合差清理——Win 树里源侧没有的帧直接删
+    (评审 B5:历史孤儿 fly_0/fly_fish_0×6 主题 12 个文件曾随每个安装包分发)。"""
     import shutil
     dst_base = os.path.join(os.path.dirname(__file__), "..", "windows", "public")
     copied = 0
@@ -1156,7 +1157,18 @@ def mirror_to_windows():
             if not os.path.exists(d) or os.path.getmtime(s) > os.path.getmtime(d):
                 shutil.copy2(s, d)
                 copied += 1
-    print(f"  mirrored {copied} files -> windows/public/")
+    removed = 0
+    for theme in THEME_NAMES:
+        src = os.path.join(OUT_BASE, theme)
+        dst = os.path.join(dst_base, "Sprites", theme)
+        if not os.path.isdir(dst):
+            continue
+        keep = {f for f in os.listdir(src) if f != "contact.png"}
+        for f in os.listdir(dst):
+            if f not in keep:
+                os.remove(os.path.join(dst, f))
+                removed += 1
+    print(f"  mirrored {copied} files -> windows/public/ (清理孤儿 {removed})")
 
 
 def main():
@@ -1166,7 +1178,6 @@ def main():
         post = POSTPROCESSORS[theme]
         render_all_frames(theme, pal, post)
     print("全部主题渲染完成。")
-    mirror_to_windows()
 
 
 def gen_colors():
@@ -1303,3 +1314,4 @@ if __name__ == "__main__":
     main()
     gen_colors()
     gen_peep()
+    mirror_to_windows()   # 评审 B4:最后一步——colors.json/peep wav 落盘后再镜像,否则 Win 树拿上一代

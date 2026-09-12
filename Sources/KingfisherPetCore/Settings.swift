@@ -78,10 +78,13 @@ final public class Settings {
         notify(key: key)
     }
     private func set(_ key: String, _ value: Bool) {
+        // 评审 A19:同值不写不通知——设置窗失焦即提交,重复提交会触发天气服务重启(无谓网络请求)
+        guard UserDefaults.standard.bool(forKey: key) != value || UserDefaults.standard.object(forKey: key) == nil else { return }
         UserDefaults.standard.set(value, forKey: key)
         notify(key: key)
     }
     private func set(_ key: String, _ value: String) {
+        guard UserDefaults.standard.string(forKey: key) != value else { return }
         UserDefaults.standard.set(value, forKey: key)
         notify(key: key)
     }

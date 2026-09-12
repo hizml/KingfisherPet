@@ -38,6 +38,13 @@ test("菜单标题(中英 + 满级孵化后缀)", () => {
   assert.ok(!growthMenuTitle(99, true, true).includes("已孵化"));   // 未满级不吃孵化后缀
 });
 
+test("喂鱼时钟回拨不锁死(评审 A9 对称)", () => {
+  const t0 = 2_000_000;
+  assert.equal(feedAllowed(t0, null), true);
+  assert.equal(feedAllowed(t0 + 9 * 60_000, t0), false);        // 正向:冷却中
+  assert.equal(feedAllowed(t0 - 3600_000, t0), true);           // 回拨(负 interval):不锁,放行
+});
+
 test("喂鱼冷却(时刻注入)", () => {
   const t0 = 1_000_000;
   assert.equal(feedAllowed(t0, null), true);          // 首喂

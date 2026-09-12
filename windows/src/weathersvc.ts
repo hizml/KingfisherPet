@@ -97,7 +97,7 @@ async function refresh() {
 async function refreshOpenMeteo() {
   const { lat, lon } = await locate();
   const u = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}` +
-            `&current=weather_code,temperature_2m,wind_speed_10m&timezone=auto`;
+            `&current=weather_code,temperature_2m,wind_speed_10m&windspeed_unit=ms&timezone=auto`;   // 评审 A5:默认 kmh,阈值 10.8 是 m/s
   const cur = (await jget(u))?.current as Record<string, unknown> | undefined;
   const code = cur?.weather_code;
   if (typeof code !== "number") { fail("open-meteo 响应缺 weather_code"); return; }
@@ -113,8 +113,10 @@ async function refreshOpenMeteo() {
 
 // ── 和风(专属口子:Key + Host,含预警)──
 function qwHost(): string {
-  const h = (settings.weatherHost || "").trim();
-  return h ? h : "devapi.qweather.com";   // 以控制台分配的专属 Host 为准
+  let h = (settings.weatherHost || "").trim();
+  for (const p of ["https://", "http://"]) if (h.startsWith(p)) h = h.slice(p.length).trim();
+  if (h && /^[A-Za-z0-9.-]+$/.test(h)) return h;   // 评审 A4 对称:剥误粘协议+白名单字符
+  return "devapi.qweather.com";   // 以控制台分配的专属 Host 为准;畸形回默认(静默降级)
 }
 
 async function refreshQWeather() {
@@ -211,7 +213,10 @@ function syncTray() {
     const now = weather.now;
     const top = weather.alerts.slice().sort((a, b) => alertRank(b.level) - alertRank(a.level))[0];
     if (top) {
-      const suffix = alertRank(top.level) > 0 ? top.level + "色预警" : top.level;
+      // 评审 W9:level 自带「色」("黄色"),直接拼出「黄色色预警」——按 rank 重建
+      const RANK_NAME = ["", "白色", "蓝色", "黄色", "橙色", "红色"];
+      const rk = alertRank(top.level);
+      const suffix = rk > 0 ? RANK_NAME[rk] + "预警" : top.level;
       title = zhUI() ? `⚠️ ${top.type}${suffix} · 鸟躲起来了` : `⚠️ ${top.type} ${suffix} · hiding`;
     } else {
       const zh = zhUI();

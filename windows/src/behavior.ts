@@ -257,6 +257,7 @@ export function weatherRetreat() {
       if (perch[1] - FEET_TOP_P() < a.minY) { playHide(); return; }   // 窗台太高:原地躲
       const o = await getOrigin();
       setFacing(perch[0] > o.x);
+      leavePerchWin();   // 评审 W2:飞行中旧栖窗 20fps 检查还在跑,遮挡误判会腰斩躲雨彩蛋
       branch.hideBranch();
       animateFlight({ x: perch[0], y: perch[1] - FEET_TOP_P() }, 1.1, () => {
         perchedHwnd = perch[2];
@@ -313,6 +314,7 @@ async function affectionVisit() {
     const ty = a.minY + (a.maxY - a.minY) * (0.35 + Math.random() * 0.25);
     const o = await getOrigin();
     setFacing(tx > o.x);
+    leavePerchWin();   // 评审 W2:来访飞行离栖(同 W2a 理由)
     branch.hideBranch();
     const feetY = ty + FEET_TOP_P();
     if (feetY < a.maxY - 40 * sc) branch.showBranchAt(tx + SIZE_P() / 2, feetY);
@@ -647,6 +649,7 @@ async function startPerchWindow() {
     if (py - FEET_TOP_P() < (await area()).minY) { startFly(300); return; }   // 窗台太高,头会出屏 → 不停
     const o = await getOrigin();
     setFacing(px > o.x);
+    leavePerchWin();   // 评审 W2:落窗飞行期间旧栖窗检查不再干扰(落定后 startPerchCheck 重建)
     emit("log", `perch: 目标 px=${Math.round(px)} py=${Math.round(py)}(窗沿) 鸟origin应为 py-${Math.round(FEET_TOP_P())}`);
     animateFlight({ x: px, y: py - FEET_TOP_P() }, 1.1, () => {   // 脚踩窗口上沿
       // 记住栖的窗口(HWND+矩形),增量跟随
@@ -666,7 +669,7 @@ async function startDart() {
     const a = await area();
     const o = await getOrigin();
     const toLeft = Math.random() < 0.5;
-    const tx = toLeft ? a.minX + 20 : a.maxX - SIZE_P() - 20;
+    const tx = toLeft ? a.minX + 20 * _scale : a.maxX - SIZE_P() - 20 * _scale;   // 评审 W7:逻辑常量乘缩放
     setFacing(!toLeft);
     // 落点悬空 → 树枝先到(macOS perchBranchIfNeeded;之前掠飞后旧枝留在原地成"幽灵枝")
     const feetY = o.y + FEET_TOP_P();
@@ -698,7 +701,7 @@ async function startFish() {
           enter("fly_fish");
           effects.splash(80, 140);                        // 水花(鸟嘴 local)
           hold(0.5, () => {
-            const perchX = a.minX + 30 + Math.random() * (a.maxX - a.minX - SIZE_P() - 60);
+            const perchX = a.minX + 30 * _scale + Math.random() * Math.max(0, a.maxX - a.minX - SIZE_P() - 60 * _scale);   // 评审 W7:乘缩放+窄工作区防负跨度
             const high = Math.random() < 0.5;
             const perchY = high ? a.minY : (a.maxY - FEET_TOP_P());   // 随机高度歇脚
             setFacing(perchX > targetX);   // 叼鱼返航朝向落点(macOS 同款;之前漏了 → 倒着飞)
@@ -891,6 +894,7 @@ export async function callOver() {
   if (dndActive) return;   // 勿扰中不召唤(窗口已隐藏,召唤=在全屏上飞)
   if (!onScreen) return;   // 隐藏时不响应(用户方案:唯一恢复入口=显示/隐藏)
   growth.add(2);   // 召唤互动 +2(成长轻量版)
+  beginAction();   // 评审 W1:取消进行中的动作链(否则双 RAF 循环同帧双写 setOrigin 抖动)
   leavePerchWin();
   enter("fly");
   try {
