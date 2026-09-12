@@ -95,9 +95,35 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-echo "==> 5/6 签名(优先固定自签证书:辅助功能授权不随重打包失效;无则 ad-hoc)"
-if ! codesign -s "KingfisherPet Dev" --force --deep "$APP" >/dev/null 2>&1; then
+echo "==> 5/6 签名(v1.6.0:优先 Developer ID 正式签名→退回自签→ad-hoc)"
+DEV_ID="Developer ID Application: MengLong Zhao (5CTLSL2C9X)"
+if security find-identity -v -p codesigning 2>/dev/null | grep -q "$DEV_ID"; then
+    # 正式分发签名:hardened runtime(公证硬性要求)+ 安全时间戳(离线可验)
+    if codesign -s "$DEV_ID" --force --deep --options runtime --timestamp "$APP"; then
+        echo "    Developer ID 签名 ✓"
+    else
+        echo "    (Developer ID 签名失败,退回自签)"
+        codesign -s "KingfisherPet Dev" --force --deep "$APP" >/dev/null 2>&1 || \
+            codesign -s - --force --deep "$APP" >/dev/null 2>&1 || echo "    (codesign 跳过)"
+    fi
+elif codesign -s "KingfisherPet Dev" --force --deep "$APP" >/dev/null 2>&1; then
+    echo "    自签 KingfisherPet Dev(本地开发用;正式分发走 CI 公证)"
+else
     codesign -s - --force --deep "$APP" >/dev/null 2>&1 || echo "    (codesign 跳过)"
+fi
+
+# 可选公证(本地开发默认不做;设置 KF_NOTARIZE=1 且三凭证在环境时走 CI 同款流程)
+if [ -n "${KF_NOTARIZE:-}" ] && [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
+    echo "==> 5.5/6 公证(notarytool)"
+    ZIP="$(dirname "$APP")/$(basename "$APP" .app)-notarize.zip"
+    ditto -c -k --keepParent "$APP" "$ZIP"
+    if xcrun notarytool submit "$ZIP" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" \
+         --team-id "$APPLE_TEAM_ID" --wait; then
+        xcrun stapler staple "$APP" && echo "    公证+staple ✓"
+        rm -f "$ZIP"
+    else
+        echo "    (公证失败,产物仍可用但未公证)"
+    fi
 fi
 
 echo "==> 6/6 启动"

@@ -21,6 +21,7 @@
   <script type="module">
     import { getCurrentWindow } from "@tauri-apps/api/window";
     import { invoke } from "@tauri-apps/api/core";
+    import { emit, listen } from "@tauri-apps/api/event";   // v1.6.0:安装按钮通知主窗/接收进度
     // 内容由 query 驱动:t=found|latest|error|guide,latest=/cur= 版本号
     const q = new URLSearchParams(location.search);
     const lang = localStorage.getItem("kf_lang") || "system";
@@ -42,6 +43,10 @@
       guideM: zh ? "Windows 默认会把新图标收进任务栏右下角的 ^ 溢出区。\n想让它常驻可见:设置 → 个性化 → 任务栏 → 其他系统托盘图标 → 打开「翡」。"
                   : "Windows hides new tray icons in the ^ overflow flyout by default.\nTo keep it visible: Settings → Personalization → Taskbar →\nOther system tray icons → turn on Fei.",
       go: zh ? "前往下载" : "Download", later: zh ? "稍后" : "Later", ok: zh ? "好" : "OK",
+      installB: zh ? "立即更新" : "Update Now", installing: zh ? "正在更新…" : "Updating…",
+      foundT2: zh ? "发现新版本" : "New Version",
+      installM: (lat, cu) => zh ? `新版本 ${lat} 已就绪(当前 v${cu})。\n下载完成后会自动安装并重启,不用去网页。`
+                                : `Version ${lat} is ready (current v${cu}).\nDownload, install and restart — no browser needed.`,
       openSet: zh ? "打开任务栏设置" : "Open Taskbar Settings",
       openRel: zh ? "打开 Releases 页" : "Open Releases", closeB: zh ? "关闭" : "Close",
     };
@@ -50,7 +55,26 @@
     const btn = (txt, primary, fn) => { const b = document.createElement("button");
       if (primary) b.className = "primary"; b.textContent = txt; b.onclick = fn; elB.appendChild(b); };
     const REL = "https://github.com/hizml/KingfisherPet/releases/latest";
-    if (t === "found") { elT.textContent = L.foundT; elM.textContent = L.foundM(latest, cur);
+    if (t === "install") {
+      // v1.6.0 应用内更新:下载→验签→安装→自动重启;主窗 do-update 执行,这里显示进度
+      elT.textContent = L.foundT2; elM.textContent = L.installM(latest, cur);
+      const prog = document.createElement("div");
+      prog.style.cssText = "height:6px;border-radius:3px;background:#e3e8ea;overflow:hidden;margin-top:12px;display:none;";
+      const bar = document.createElement("div");
+      bar.style.cssText = "height:100%;width:0%;background:#0e7c86;transition:width .2s;";
+      prog.appendChild(bar); elM.after(prog);
+      btn(L.installB, true, () => {
+        emit("do-update", null).catch(() => {});
+        elB.textContent = "";
+        const st = document.createElement("div");
+        st.textContent = L.installing; st.style.cssText = "color:#777;font-size:12px;";
+        elB.appendChild(st);
+        prog.style.display = "block";
+      });
+      btn(L.later, false, close);
+      listen<number>("update-progress", (e) => { bar.style.width = (e.payload ?? 0) + "%"; }).catch(() => {});
+    }
+    else if (t === "found") { elT.textContent = L.foundT; elM.textContent = L.foundM(latest, cur);
       btn(L.go, true, () => { open(REL).then(() => close(), () => {}); }); btn(L.later, false, close); }
     else if (t === "latest") { elT.textContent = L.latestT; elM.textContent = L.latestM(cur); btn(L.ok, true, close); }
     else if (t === "error") { elT.textContent = L.errT; elM.textContent = L.errM;

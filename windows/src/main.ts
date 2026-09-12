@@ -19,6 +19,8 @@ import { startWeather, stopWeather, weatherSettingsChanged, weather, onWeatherUp
 import { growth } from "./growthsvc";   // 成长系统(v1.5.x):启动推托盘状态行
 import { warnOnce } from "./log";
 import { isNewer } from "./shared.mjs";   // 纯函数抽出,tests/version.test.mjs 直测同一份源码
+import { check as checkUpdate } from "@tauri-apps/plugin-updater";   // v1.6.0 应用内更新
+import { relaunch } from "@tauri-apps/plugin-process";
 import * as behavior from "./behavior";
 
 const lib = new SpriteLibrary();
@@ -152,6 +154,13 @@ async function main() {
         invoke("set_update_badge", { on: false }).catch(() => {});                          // 手动看过详情,清标注
         const tt = zhUI() ? "翡 · 检查更新" : "Fei · Update";
         if (!has) { await openUpdateDialog(`t=latest&cur=${cur}`, tt); return; }
+        // v1.6.0:updater 产物可用 → 应用内下载安装重启;不可用(网络/无 latest.json)回退浏览器流
+        let up: Awaited<ReturnType<typeof checkUpdate>> = null;
+        try { up = await checkUpdate(); } catch { /* updater 探测失败走老路径 */ }
+        if (up?.available) {
+          await openUpdateDialog(`t=install&latest=${encodeURIComponent(latest)}&cur=${cur}`, tt, 230);
+          return;
+        }
         await openUpdateDialog(`t=found&latest=${encodeURIComponent(latest)}&cur=${cur}`, tt);
       } catch { if (!silent) await openUpdateDialog("t=error", zhUI() ? "翡 · 检查更新" : "Fei · Update"); }
     }
@@ -165,6 +174,26 @@ async function main() {
       openUpdateDialog("t=guide", zhUI() ? "翡 · KingfisherPet" : "Fei · KingfisherPet").catch(() => {});
     });
     listen("check-update", () => doCheckUpdate(false));
+    // v1.6.0:弹窗「立即更新」→ 下载验签安装 → 自动重启;失败回退浏览器下载
+    listen("do-update", async () => {
+      try {
+        const up = await checkUpdate();
+        if (!up?.available) { emit("log", "update: 点了更新但 updater 无可用包"); return; }
+        let received = 0, total = 0;
+        await up.downloadAndInstall((ev) => {
+          if (ev.event === "Started" && ev.data.contentLength) total = ev.data.contentLength;
+          else if (ev.event === "Progress" && total > 0) {
+            received += ev.data.chunkLength;
+            emit("update-progress", { pct: Math.min(99, Math.round(received / total * 100)) }).catch(() => {});
+          }
+        });
+        emit("log", "update: 下载安装完成,重启生效");
+        await relaunch();
+      } catch (e) {
+        emit("log", "update: 应用内更新失败(" + String(e) + "),回退浏览器下载");
+        invoke("open_url", { url: "https://github.com/hizml/KingfisherPet/releases/latest" }).catch(() => {});
+      }
+    });
     setTimeout(() => doCheckUpdate(true), 30_000);
     setInterval(() => doCheckUpdate(true), 24 * 3600_000);
     listen("sleep", () => behavior.sleepForUserAbsence());   // Rust 监听到睡眠 → 鸟睡

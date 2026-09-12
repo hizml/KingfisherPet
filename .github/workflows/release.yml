@@ -20,6 +20,12 @@ jobs:
     env:
       KF_SIGN_P12_B64: ${{ secrets.KF_SIGN_P12_B64 }}
       KF_SIGN_P12_PASS: ${{ secrets.KF_SIGN_P12_PASS }}
+      # v1.6.0:Developer ID 正式签名 + 公证(凭证在 Secrets,缺失时回退自签不公证)
+      APPLE_DEV_ID_P12_B64: ${{ secrets.APPLE_DEV_ID_P12_B64 }}
+      APPLE_DEV_ID_P12_PASS: ${{ secrets.APPLE_DEV_ID_P12_PASS }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - uses: actions/checkout@v7
 
@@ -77,9 +83,34 @@ jobs:
           fi
           sed -i '' "s/<string>1\.3\.0<\/string>/<string>${VERSION}<\/string>/" "$APP/Contents/Info.plist"
           grep -q "<string>${VERSION}</string>" "$APP/Contents/Info.plist" || { echo "::error::版本号写入失败($VERSION)"; exit 1; }
-          # 固定签名:优先用 secrets 里的自签证书(签名稳定 → 用户辅助功能授权不随
-          # 版本升级失效),无 secrets(如 fork)回退 ad-hoc
-          if [ -n "$KF_SIGN_P12_B64" ]; then
+          # v1.6.0:Developer ID 正式签名 + notarytool 公证(免右键打开的完整链)。
+          # 凭证缺失(fork)回退自签证书 → 无自签回退 ad-hoc,均不公证(fork 能出包)
+          DEV_ID="Developer ID Application: MengLong Zhao (5CTLSL2C9X)"
+          if [ -n "$APPLE_DEV_ID_P12_B64" ]; then
+            security create-keychain -p ci /tmp/kf-ci.keychain-db
+            security unlock-keychain -p ci /tmp/kf-ci.keychain-db
+            echo "$APPLE_DEV_ID_P12_B64" | base64 -d > /tmp/devid.p12
+            security import /tmp/devid.p12 -k /tmp/kf-ci.keychain-db -P "$APPLE_DEV_ID_P12_PASS" -T /usr/bin/codesign
+            # G2 中介证书(公开物,入库 tools/certs/;runner 镜像没有它信任链会断)
+            security import tools/certs/DeveloperIDG2CA.pem -k /tmp/kf-ci.keychain-db
+            security list-keychains -s /tmp/kf-ci.keychain-db
+            security set-key-partition-list -S apple-tool:,apple: -k ci /tmp/kf-ci.keychain-db
+            codesign -s "$DEV_ID" --force --deep --options runtime --timestamp "$APP" \
+              || { echo "::error::Developer ID 签名失败"; exit 1; }
+            codesign --verify --strict "$APP" || echo "::warning::签名校验失败"
+            security list-keychains -s ~/Library/Keychains/login.keychain-db || true
+            rm -f /tmp/devid.p12 /tmp/kf-ci.keychain-db*
+            # 公证:zip 提交 Apple 扫描(--wait 阻塞到出结果)→ staple 进 .app → 重打正式 zip
+            cd build && zip -qry KingfisherPet-mac-native.zip KingfisherPet.app && cd ..
+            if xcrun notarytool submit build/KingfisherPet-mac-native.zip \
+                 --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait; then
+              xcrun stapler staple "$APP" || echo "::warning::staple 失败(在线公证仍有效)"
+              rm build/KingfisherPet-mac-native.zip
+              cd build && zip -qry KingfisherPet-mac-native.zip KingfisherPet.app && cd ..
+            else
+              echo "::warning::公证失败——包已 Developer ID 签名但未公证,用户首次打开需右键"
+            fi
+          elif [ -n "$KF_SIGN_P12_B64" ]; then
             echo "$KF_SIGN_P12_B64" | base64 -d > /tmp/kf.p12
             security create-keychain -p ci /tmp/kf-ci.keychain-db
             security unlock-keychain -p ci /tmp/kf-ci.keychain-db
@@ -94,10 +125,11 @@ jobs:
             fi
             security list-keychains -s ~/Library/Keychains/login.keychain-db || true
             rm -f /tmp/kf.p12 /tmp/kf-ci.keychain-db*
+            cd build && zip -qry KingfisherPet-mac-native.zip KingfisherPet.app
           else
             codesign -s - --force --deep "$APP"
+            cd build && zip -qry KingfisherPet-mac-native.zip KingfisherPet.app
           fi
-          cd build && zip -qry KingfisherPet-mac-native.zip KingfisherPet.app
 
       - name: 传到 Release
         uses: softprops/action-gh-release@v2
@@ -154,6 +186,9 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # v1.6.0 updater 产物签名(createUpdaterArtifacts 需要私钥;tauri-action 自动产 latest.json)
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: windows
           tagName: ${{ github.ref_name }}

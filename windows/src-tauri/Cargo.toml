@@ -11,6 +11,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+tauri-plugin-updater = "2"   # v1.6.0 应用内自动更新(签名产物 latest.json)
+tauri-plugin-process = "2"   # 更新完 relaunch
 tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
 tauri-plugin-autostart = "2"
 serde = { version = "1", features = ["derive"] }

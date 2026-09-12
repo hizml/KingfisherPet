@@ -68,7 +68,9 @@ final public class UpdateService {
         }.resume()
     }
 
-    /// 更新结果弹窗(文案全走 Language 字典,评审 B2)
+    /// 更新结果弹窗(文案全走 Language 字典,评审 B2)。
+    /// v1.6.0:发现新版且当前是 .app 运行 → 首按钮「下载并更新」走应用内更新
+    /// (下载→验签→替换→重启);否则保留「前往下载」浏览器流。
     private func alert(latest: String?, current: String) {
         let a = NSAlert()
         if latest == nil {
@@ -87,11 +89,132 @@ final public class UpdateService {
         } else {
             a.messageText = Language.t("update.found") + " \(latest!)"
             a.informativeText = String(format: Language.t("update.downloadBody"), current)
-            a.addButton(withTitle: Language.t("update.download"))
-            a.addButton(withTitle: Language.t("update.later"))
-            if a.runModal() == .alertFirstButtonReturn {
-                NSWorkspace.shared.open(URL(string: "https://github.com/hizml/KingfisherPet/releases/latest")!)
+            let canInstall = Bundle.main.bundleURL.pathExtension == "app"
+            let rel = URL(string: "https://github.com/hizml/KingfisherPet/releases/latest")!
+            if canInstall {
+                a.addButton(withTitle: Language.t("update.install"))
+                a.addButton(withTitle: Language.t("update.openReleases"))
+                a.addButton(withTitle: Language.t("update.later"))
+                switch a.runModal() {
+                case .alertFirstButtonReturn:
+                    Self.installUpdate(tag: latest!, progress: nil) { ok, why in
+                        if !ok { kfLog("update: 应用内更新失败(\(why)),回退浏览器") }
+                    }
+                case .alertSecondButtonReturn:
+                    NSWorkspace.shared.open(rel)
+                default: break
+                }
+            } else {
+                a.addButton(withTitle: Language.t("update.download"))
+                a.addButton(withTitle: Language.t("update.later"))
+                if a.runModal() == .alertFirstButtonReturn {
+                    NSWorkspace.shared.open(rel)
+                }
             }
         }
+    }
+
+    // MARK: - 应用内更新(v1.6.0:下载签名 zip → 验签 → 热替换 .app → 重启)
+
+    /// 静态下载入口:progress 主线程回调 0–100;done(ok, 失败原因)。
+    /// 成功路径最后一步是 relaunch——done(ok) 只在失败时被感知(进程已重启)。
+    static func installUpdate(tag: String,
+                              progress: ((Int) -> Void)?,
+                              done: @escaping (Bool, String) -> Void) {
+        let zipURL = URL(string: "https://github.com/hizml/KingfisherPet/releases/download/\(tag)/KingfisherPet-mac-native.zip")!
+        let curApp = Bundle.main.bundleURL
+        DispatchQueue.global(qos: .userInitiated).async {
+            // ① 下载(带进度)
+            let (data, resp) = Download.one(zipURL) { received, total in
+                guard total > 0 else { return }
+                DispatchQueue.main.async { progress?(Int(Double(received) / Double(total) * 100)) }
+            }
+            guard let data, let http = resp as? HTTPURLResponse, http.statusCode == 200, data.count > 1_000_000 else {
+                DispatchQueue.main.async { done(false, "下载失败 HTTP \((resp as? HTTPURLResponse)?.statusCode ?? -1)") }
+                return
+            }
+            // ② 解压到临时目录
+            let tmp = FileManager.default.temporaryDirectory
+                .appendingPathComponent("kf-update-\(Int(CACurrentMediaTime()))", isDirectory: true)
+            try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+            let zipPath = tmp.appendingPathComponent("update.zip")
+            do { try data.write(to: zipPath) } catch {
+                DispatchQueue.main.async { done(false, "写临时文件失败") }; return
+            }
+            let unzipped = tmp.appendingPathComponent("KingfisherPet.app")
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+            p.arguments = ["-x", "-k", zipPath.path, tmp.path]
+            p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice
+            guard (try? p.run()) != nil, p.waitUntilExitWithTimeout() == 0,
+                  FileManager.default.fileExists(atPath: unzipped.appendingPathComponent("Contents/MacOS/KingfisherPet").path) else {
+                DispatchQueue.main.async { done(false, "解压失败") }; return
+            }
+            // ③ 验签:TeamIdentifier 必须是本团队(5CTLSL2C9X);自签开发包(无 Team)也放行——
+            // 校验的是"包来自我们的 GitHub 且结构完整",Team 匹配防拿错包
+            let q = Process()
+            q.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+            q.arguments = ["-dv", unzipped.path]
+            let pipe = Pipe(); q.standardOutput = pipe; q.standardError = pipe
+            _ = try? q.run(); q.waitUntilExit()
+            let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            if out.contains("TeamIdentifier=") && !out.contains("TeamIdentifier=5CTLSL2C9X") {
+                DispatchQueue.main.async { done(false, "签名校验不符") }; return
+            }
+            // ④ 热替换:旧包挪 ~/.Trash(可回滚),新包就位;失败把旧包挪回去
+            let fm = FileManager.default
+            let trashName = "KingfisherPet-\(Int(CACurrentMediaTime())).app"
+            let trashURL = fm.homeDirectoryForCurrentUser.appendingPathComponent(".Trash/\(trashName)", isDirectory: true)
+            do {
+                try fm.moveItem(at: curApp, to: trashURL)
+                try fm.moveItem(at: unzipped, to: curApp)
+            } catch {
+                // 回滚:旧包尽量放回去
+                if !fm.fileExists(atPath: curApp.path) {
+                    try? fm.moveItem(at: trashURL, to: curApp)
+                }
+                DispatchQueue.main.async { done(false, "替换失败(\(error.localizedDescription))") }
+                return
+            }
+            kfLog("update: 替换完成 \(curApp.path),即将重启")
+            // ⑤ 重启(新包从原路径起)
+            DispatchQueue.main.async {
+                let rel = Process()
+                rel.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+                rel.arguments = ["-n", curApp.path]
+                try? rel.run()
+                NSApp.terminate(nil)
+            }
+        }
+    }
+}
+
+/// 一次性下载器(带进度回调;dataTask 简版,20MB 级包足够)
+private enum Download {
+    static func one(_ url: URL, progress: @escaping (Int64, Int64) -> Void) -> (Data?, URLResponse?) {
+        let sem = DispatchSemaphore(value: 0)
+        var data: Data?, resp: URLResponse?
+        let task = URLSession.shared.dataTask(with: url) { d, r, _ in
+            data = d; resp = r
+            sem.signal()
+        }
+        // 进度:KVO expectedProgress(系统已按 Content-Length 折算)
+        let obs = task.progress.observe(\.fractionCompleted) { p, _ in
+            progress(Int64(p.fractionCompleted * 100), 100)
+        }
+        task.resume()
+        sem.wait()
+        obs.invalidate()
+        return (data, resp)
+    }
+}
+
+extension Process {
+    /// waitUntilExit 带超时(解压/查签卡死时 60s 放弃)
+    func waitUntilExitWithTimeout(_ sec: Double = 60) -> Int32 {
+        let deadline = Date().addingTimeInterval(sec)
+        while isRunning && Date() < deadline { usleep(100_000) }
+        if isRunning { terminate(); return -1 }
+        return terminationStatus
     }
 }
