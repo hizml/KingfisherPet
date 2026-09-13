@@ -113,6 +113,7 @@ final class VisitorService {
         var arrived = false
         var t: CFTimeInterval = 0
         let dt = 1.0 / 30.0
+        var lastX: CGFloat? = nil       // 朝向跟随:绕飞/折返时按水平速度翻转,不"倒着飞"
         startTimer(dt) { [weak self] _ in
             guard let self else { return false }
             t += dt
@@ -130,7 +131,16 @@ final class VisitorService {
             } else {
                 let tt = inPauseIsBehind(t: t, pauseStart: pauseStart, pauseDur: pauseDur)
                 let prog = min(1.0, tt / flyDur)
-                moveWindow(center: interpolate(points: points, t: prog))
+                let c = self.interpolate(points: points, t: prog)
+                self.moveWindow(center: c)
+                if let lx = lastX, abs(c.x - lx) > 1.5 {
+                    // 访客帧默认朝左;向右飞 → 水平镜像(和主鸟 facingRight 同语义)
+                    let goingRight = c.x > lx
+                    layer.setAffineTransform(goingRight
+                        ? CGAffineTransform(scaleX: -1, y: 1)
+                        : .identity)
+                }
+                lastX = c.x
                 let idx = Int(t / 0.12) % flySeq.count
                 layer.contents = SpriteLibrary.shared.frame(flySeq[idx])?.image
             }

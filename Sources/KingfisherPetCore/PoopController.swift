@@ -144,8 +144,8 @@ private final class Poop {
     private var occludeFrame = 0   // 遮挡检测降频计数(frontWindowAt 全窗口枚举,贵)
 
     /// 窗口尺寸:要大于 blob(30x20)× splat 放大倍数(1.35),否则落地压扁时内容被窗口裁掉。
-    private static let winW: CGFloat = 44
-    private static let winH: CGFloat = 32
+    private static let winW: CGFloat = 54   // 38×1.35(splat)≈51
+    private static let winH: CGFloat = 26
 
     init(start: CGPoint) {
         x = start.x
@@ -175,11 +175,11 @@ private final class Poop {
     }
 
     private func buildBlob() {
-        let w: CGFloat = 30, h: CGFloat = 20
+        let w: CGFloat = 38, h: CGFloat = 13   // 压扁加宽(老板实测太高)
         blob.bounds = CGRect(x: 0, y: 0, width: w, height: h)
         // blob 在窗口底部居中:y 偏低 3px 让屎底边压进表面一点(屎摊地上,底边嵌入)
         // 窗口底 = local y=0,blob 底 ≈ 3px 处(留一点放大空间不贴窗口底)
-        blob.position = CGPoint(x: Poop.winW / 2, y: h / 2 - 3)
+        blob.position = CGPoint(x: Poop.winW / 2, y: h / 2 - 2)
         blob.contents = PoopController.effectImage("poop")
         blob.contentsGravity = .resize
     }

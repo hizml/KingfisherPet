@@ -272,6 +272,7 @@ export function weatherRetreat() {
   })();
 }
 function playHide() {
+  effects.rain(80, 80);   // 环境动画:躲雨天上要有雨(macOS 同款)
   enter("hide");
   hold(5 + Math.random() * 4, () => finish());
 }

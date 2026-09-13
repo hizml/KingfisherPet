@@ -175,6 +175,38 @@ enum Effects {
     }
 
     /// 音符:在 point(屏幕坐标,鸟头上方)处 ♪ 上浮淡出
+    /// 雨幕(躲雨环境动画,老板实测"躲雨时天上不下雨"):鸟上方一柱雨丝下落 6s
+    static func rain(above point: CGPoint, on screen: NSScreen?) {
+        let size = CGSize(width: 420, height: 420)
+        let e = Effect(centeredAt: CGPoint(x: point.x, y: point.y + size.height / 2 - 60),
+                       size: size, on: screen, level: .floating) { v in
+            guard let layer = v.layer else { return }
+            let tint = ThemeColors.shared.cgColor("crack_light",
+                                                  fallback: NSColor(calibratedWhite: 0.65, alpha: 0.55))
+            for _ in 0..<26 {
+                let r = CALayer()
+                r.bounds = CGRect(x: 0, y: 0, width: 2, height: 16)
+                r.cornerRadius = 1
+                r.backgroundColor = tint
+                r.position = CGPoint(x: CGFloat.random(in: 6..<size.width - 6),
+                                     y: CGFloat.random(in: 40..<size.height))
+                let fall = CABasicAnimation(keyPath: "position.y")
+                fall.fromValue = r.position.y
+                fall.toValue = -20
+                fall.duration = sp(Double.random(in: 0.5...0.8))
+                fall.repeatCount = 12
+                r.add(fall, forKey: "fall")
+                let op = CABasicAnimation(keyPath: "opacity")
+                op.fromValue = 0.0; op.toValue = 0.7
+                op.duration = 0.4
+                r.add(op, forKey: "in")
+                layer.addSublayer(r)
+            }
+        }
+        e.close(after: 6.0)
+        Effect.active.append(e)
+    }
+
     static func notes(at point: CGPoint, on screen: NSScreen?) {
         let size = CGSize(width: 120, height: 120)
         let e = Effect(centeredAt: point, size: size, on: screen, level: .statusBar) { v in

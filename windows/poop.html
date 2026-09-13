@@ -7,6 +7,7 @@ img,div.fx{position:fixed;pointer-events:none}
 .kf-sun-pulse{animation:kf-sun-pulse 1.4s ease-in-out infinite alternate}
 @keyframes kf-sun-rot{from{transform:rotate(0)}to{transform:rotate(360deg)}}
 @keyframes kf-sun-pulse{from{transform:scale(0.95)}to{transform:scale(1.1)}}
+@keyframes kf-rain{0%{transform:translateY(0)}100%{transform:translateY(440px)}}
 @keyframes kf-zzz{0%{opacity:0;transform:translate(0,0)}12%{opacity:1}70%{opacity:1}100%{opacity:0;transform:translate(var(--dx,0px),-80px)}}
 @keyframes kf-note{0%{opacity:0;transform:translateY(0)}12%{opacity:1}70%{opacity:1}100%{opacity:0;transform:translateY(-40px)}}
 </style>
@@ -180,6 +181,17 @@ listen("fx", (e) => {
     zzzEl.style.setProperty("--dx", (Math.random() * 36 - 18) + "px");
     zzzEl.style.animation = "none"; void zzzEl.offsetWidth;   // 重启动画
     zzzEl.style.animation = `kf-zzz ${1.8 / fxSpd}s ease-out forwards`;
+  } else if (kind === "rain") {
+    // 雨幕(躲雨环境动画;macOS Effects.rain 同款):22 根雨丝在鸟上方 420x420 柱内下落 6s
+    const col = document.createElement("div");
+    col.style.cssText = `position:fixed;left:${x - 210}px;top:${Math.max(y - 460, -40)}px;width:420px;height:420px;pointer-events:none;z-index:3;`;
+    for (let i = 0; i < 22; i++) {
+      const d = document.createElement("div");
+      d.style.cssText = `position:absolute;width:2px;height:16px;border-radius:1px;background:rgba(150,190,220,.55);left:${Math.random() * 414}px;top:${Math.random() * 400}px;animation:kf-rain ${0.5 + Math.random() * 0.3}s linear ${Math.random() * 0.4}s infinite;`;
+      col.appendChild(d);
+    }
+    document.body.appendChild(col);
+    setTimeout(() => col.remove(), 6000);
   } else if (kind === "zzz_clear") {
     // 醒来即收气泡(macOS Effects.dismissZzz 同款):不留"睁眼+ZZZ"幽灵——
     // 此前睡醒回 idle 后最后一颗还要飘 ~2s,被看成"睁眼睡觉"

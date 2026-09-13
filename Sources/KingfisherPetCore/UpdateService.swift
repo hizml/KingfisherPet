@@ -113,7 +113,12 @@ final public class UpdateService {
                               buttons: [Language.t("update.install"), Language.t("update.openReleases"), Language.t("update.later")]) { [weak self] idx in
                     switch idx {
                     case 0:
-                        Self.installUpdate(tag: latest!, expectedSHA256: digest, progress: nil) { ok, why in
+                        // 下载进度可视化(老板实测:点「下载并更新」后弹窗消失,像没反应)
+                        let pw = ProgressWin()
+                        Self.installUpdate(tag: latest!, expectedSHA256: digest, progress: { pct in
+                            pw.update(pct)
+                        }) { ok, why in
+                            pw.close()
                             // 评审 A13:失败不再只写日志——用户面前给结果,并提供前往下载兜底
                             guard !ok else { return }
                             kfLog("update: 应用内更新失败(\(why))")
@@ -276,5 +281,49 @@ extension Process {
         while isRunning && Date() < deadline { usleep(100_000) }
         if isRunning { terminate(); return -1 }
         return terminationStatus
+    }
+}
+
+/// 应用内更新的进度小窗(下载中 xx% + 进度条):点「下载并更新」后立刻出现,
+/// 成功=进程重启自然消亡,失败=关闭后由失败弹窗接手。
+final class ProgressWin {
+    private let window: NSWindow
+    private let bar = NSProgressIndicator()
+    private let label = NSTextField(labelWithString: "")
+    private var closed = false
+
+    init() {
+        let w = CGFloat(300), h = CGFloat(104)
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: w, height: h),
+                          styleMask: [.titled], backing: .buffered, defer: false)
+        window.title = Language.t("update.downloading")
+        window.titlebarAppearsTransparent = true
+        window.isReleasedWhenClosed = false
+        window.level = .floating
+        bar.style = .bar
+        bar.minValue = 0; bar.maxValue = 100
+        bar.frame = NSRect(x: 24, y: 40, width: w - 48, height: 20)
+        label.font = .systemFont(ofSize: 12)
+        label.textColor = .secondaryLabelColor
+        label.alignment = .center
+        label.frame = NSRect(x: 24, y: 14, width: w - 48, height: 18)
+        window.contentView?.addSubview(bar)
+        window.contentView?.addSubview(label)
+        window.center()
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        update(0)
+    }
+
+    func update(_ pct: Int) {
+        guard !closed else { return }
+        bar.doubleValue = Double(min(100, max(0, pct)))
+        label.stringValue = "\(min(100, max(0, pct)))%"
+    }
+
+    func close() {
+        guard !closed else { return }
+        closed = true
+        window.orderOut(nil)
     }
 }

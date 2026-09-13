@@ -318,6 +318,8 @@ final class Behavior: PetViewDelegate {
     }
 
     private func playHide() {
+        // 环境动画:躲雨时天上要有雨(老板实测"光躲不打雨")
+        if let w = window { Effects.rain(above: CGPoint(x: w.frame.midX, y: w.frame.midY), on: screen) }
         enter("hide")
         hold(Double.random(in: 5...9)) { [weak self] in self?.finish() }
     }
@@ -439,8 +441,10 @@ final class Behavior: PetViewDelegate {
         enter("poop")          // 蹲姿(复用 poop 帧的用力体态,不下屎)
         hold(1.2) { [weak self] in
             guard let self = self else { return }
-            let feet = CGPoint(x: window.frame.midX + 40, y: window.frame.minY + 20)
-            VisitorService.shared.eggWobble(at: feet, on: scr)
+            // 蛋从屁股后边出来(和拉屎同侧同高;此前固定 +40/+20 偏高偏中,像从脚下蹦出)
+            let fr = view?.facingRight ?? false
+            let butt = CGPoint(x: window.frame.midX + (fr ? -50 : 50), y: window.frame.minY + 50)
+            VisitorService.shared.eggWobble(at: butt, on: scr)
             self.enter("watch")                      // 盯着自己的蛋
             self.hold(2.6) { [weak self] in
                 guard let self = self else { return }
