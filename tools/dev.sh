@@ -12,5 +12,5 @@ if pgrep -x KingfisherPet >/dev/null; then
   pkill -x KingfisherPet || true
   sleep 1
 fi
-KF_DEV_MENU=1 build/KingfisherPet.app/Contents/MacOS/KingfisherPet >/dev/null 2>&1 &
+nohup env KF_DEV_MENU=1 build/KingfisherPet.app/Contents/MacOS/KingfisherPet >/dev/null 2>&1 & disown
 echo "翡 已带 🧪 测试菜单启动(托盘最底部的「测试」子菜单)"
