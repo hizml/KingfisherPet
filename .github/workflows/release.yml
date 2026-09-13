@@ -34,11 +34,11 @@ jobs:
         run: |
           TAG="${GITHUB_REF_NAME#v}"
           read -r T P C <<< "$(python3 - <<'PY'
-import json, re
-print(json.load(open('windows/src-tauri/tauri.conf.json'))['version'],
-      json.load(open('windows/package.json'))['version'],
-      re.search(r'^version = "(.+)"', open('windows/src-tauri/Cargo.toml').read(), re.M).group(1))
-PY
+          import json, re
+          print(json.load(open('windows/src-tauri/tauri.conf.json'))['version'],
+                json.load(open('windows/package.json'))['version'],
+                re.search(r'^version = "(.+)"', open('windows/src-tauri/Cargo.toml').read(), re.M).group(1))
+          PY
           )"
           echo "tag=$TAG tauri=$T package=$P cargo=$C"
           [[ "$TAG" == "$T" && "$TAG" == "$P" && "$TAG" == "$C" ]] || { echo "::error::版本不一致:先提版本同步提交再打 tag(三处同 bump)"; exit 1; }
@@ -186,11 +186,11 @@ PY
         run: |
           TAG="${GITHUB_REF_NAME#v}"
           read -r T P C <<< "$(python3 - <<'PY'
-import json, re
-print(json.load(open('windows/src-tauri/tauri.conf.json'))['version'],
-      json.load(open('windows/package.json'))['version'],
-      re.search(r'^version = "(.+)"', open('windows/src-tauri/Cargo.toml').read(), re.M).group(1))
-PY
+          import json, re
+          print(json.load(open('windows/src-tauri/tauri.conf.json'))['version'],
+                json.load(open('windows/package.json'))['version'],
+                re.search(r'^version = "(.+)"', open('windows/src-tauri/Cargo.toml').read(), re.M).group(1))
+          PY
           )"
           echo "tag=$TAG tauri=$T package=$P cargo=$C"
           [[ "$TAG" == "$T" && "$TAG" == "$P" && "$TAG" == "$C" ]] || { echo "::error::版本不一致:先提版本同步提交再打 tag(三处同 bump)"; exit 1; }

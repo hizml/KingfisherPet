@@ -2,11 +2,36 @@ name: lint
 on:
   push:
     branches: [main]
-    paths: ["windows/**", "Sources/**", "Tests/**", "Package.swift", ".github/workflows/lint.yml"]
+    paths: ["windows/**", "Sources/**", "Tests/**", "Package.swift", ".github/workflows/*.yml"]
   pull_request:
-    paths: ["windows/**", "Sources/**", "Tests/**", "Package.swift", ".github/workflows/lint.yml"]
+    paths: ["windows/**", "Sources/**", "Tests/**", "Package.swift", ".github/workflows/*.yml"]
 
 jobs:
+  # workflow 文件自检:release.yml 曾因 heredoc 主体顶格写坏 YAML,lint 全绿照样溜进 main,
+  # 直到推 tag 才会炸(被 GitHub 的 0s 幽灵 failure 暴露)——此 job 把发现提前到 push 时。
+  # ruby+psych 是标准库,runner 零安装。
+  workflows-yaml:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: workflow YAML 可解析
+        run: |
+          ruby -ryaml -e '
+          bad = []
+          Dir.glob(".github/workflows/*.yml").sort.each do |f|
+            begin
+              YAML.load_file(f)
+            rescue => e
+              bad << "#{f}: #{e.message.lines.first}"
+            end
+          end
+          unless bad.empty?
+            bad.each { |b| puts "::error::#{b}" }
+            exit 1
+          end
+          puts "workflows YAML OK"
+          '
+
   windows-check:
     runs-on: windows-latest
     steps:
