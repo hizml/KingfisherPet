@@ -12,6 +12,8 @@ final public class UpdateService {
     private(set) var foundVersion: String?
 
     private var timer: Timer?
+    /// 进度小窗强引用(局部变量会随作用域释放=窗口秒没,老板实测实锤)
+    static var progressWin: ProgressWin?
 
     func start() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in self?.autoCheck() }
@@ -113,12 +115,15 @@ final public class UpdateService {
                               buttons: [Language.t("update.install"), Language.t("update.openReleases"), Language.t("update.later")]) { [weak self] idx in
                     switch idx {
                     case 0:
-                        // 下载进度可视化(老板实测:点「下载并更新」后弹窗消失,像没反应)
-                        let pw = ProgressWin()
+                        // 下载进度可视化(老板实测:点后弹窗消失像没反应;且 ProgressWin 必须
+                        // 被强持有——局部变量随闭包返回释放,窗口创建即没)
+                        Self.progressWin = ProgressWin()
+                        let pw = Self.progressWin!
                         Self.installUpdate(tag: latest!, expectedSHA256: digest, progress: { pct in
                             pw.update(pct)
                         }) { ok, why in
                             pw.close()
+                            Self.progressWin = nil
                             // 评审 A13:失败不再只写日志——用户面前给结果,并提供前往下载兜底
                             guard !ok else { return }
                             kfLog("update: 应用内更新失败(\(why))")

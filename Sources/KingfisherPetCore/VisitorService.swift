@@ -67,7 +67,7 @@ final class VisitorService {
     func eggWobble(at point: CGPoint, on screen: NSScreen?) {
         prepareWindow(screen: screen)
         guard let layer else { return }
-        placeWindow(center: point, size: 140, screen: screen, scale: 1.0)
+        placeWindow(center: point, size: 70, screen: screen, scale: 1.0)   // 蛋改小(老板实测太大)
         layer.contents = SpriteLibrary.shared.frame("egg_0")?.image
         var t: CFTimeInterval = 0
         startTimer(0.24) { [weak self] tick in
@@ -114,6 +114,7 @@ final class VisitorService {
         var t: CFTimeInterval = 0
         let dt = 1.0 / 30.0
         var lastX: CGFloat? = nil       // 朝向跟随:绕飞/折返时按水平速度翻转,不"倒着飞"
+        var facingRightFly = false      // 当前镜像态(只在变化时改,防每 tick 重设闪没)
         startTimer(dt) { [weak self] _ in
             guard let self else { return false }
             t += dt
@@ -134,11 +135,17 @@ final class VisitorService {
                 let c = self.interpolate(points: points, t: prog)
                 self.moveWindow(center: c)
                 if let lx = lastX, abs(c.x - lx) > 1.5 {
-                    // 访客帧默认朝左;向右飞 → 水平镜像(和主鸟 facingRight 同语义)
+                    // 访客帧默认朝左;向右飞 → 镜像。只在朝向变化时设置(每 tick 重设会闪),
+                    // 锚点先钉几何中心防跳变
                     let goingRight = c.x > lx
-                    layer.setAffineTransform(goingRight
-                        ? CGAffineTransform(scaleX: -1, y: 1)
-                        : .identity)
+                    if goingRight != facingRightFly {
+                        facingRightFly = goingRight
+                        layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+                        layer.position = CGPoint(x: layer.bounds.midX, y: layer.bounds.midY)
+                        layer.setAffineTransform(goingRight
+                            ? CGAffineTransform(scaleX: -1, y: 1)
+                            : .identity)
+                    }
                 }
                 lastX = c.x
                 let idx = Int(t / 0.12) % flySeq.count

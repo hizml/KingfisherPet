@@ -380,8 +380,15 @@ def draw_kingfisher(W, H, pal, *, wing="folded", leg_phase=0.0, eye_closed=False
     if worm_in_beak:
         wx = (hx - 70*s)
         wy = by + 6*s
-        d.ellipse([wx - 4*s, wy, wx + 4*s, wy + 11*s], fill=C("WORM"))
-        d.ellipse([wx - 2*s, wy + 9*s, wx + 6*s, wy + 18*s], fill=C("WORM_D"))   # 尾节歪向一侧
+        # 毛毛虫:头(大,带两根触角)+4 节身体拱形渐小,贴着喙垂下(老板实测"要像毛毛虫")
+        d.ellipse([wx - 6*s, wy - 8*s, wx + 6*s, wy + 6*s], fill=C("WORM"))          # 头
+        d.line([(wx - 4*s, wy - 8*s), (wx - 8*s, wy - 14*s)], fill=C("WORM_D"), width=max(1, int(2*s)))   # 触角×2
+        d.line([(wx + 4*s, wy - 8*s), (wx + 8*s, wy - 14*s)], fill=C("WORM_D"), width=max(1, int(2*s)))
+        for i in range(4):   # 身体 4 节,拱形(中段最高),越尾越小
+            r = (5.5 - i * 0.8) * s
+            cx = wx - 4*s - i * 8*s
+            cy = wy + 4*s - (3.5 * s if 0 < i < 3 else 0)
+            d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=C("WORM") if i % 2 == 0 else C("WORM_D"))
 
     # ---- 红晕 ----
     if blush:
