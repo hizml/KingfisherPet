@@ -18,6 +18,7 @@ const PEER_TIMEOUT_SECS: u64 = 10;
 
 struct LanState {
     my_name: String,
+    my_mid: String,
     theme: String,
     /// 邻居名 → (写端, 最后收包时刻)。连接所有权:每条连接一个读线程。
     peers: HashMap<String, (Arc<Mutex<TcpStream>>, std::time::Instant)>,
@@ -35,6 +36,9 @@ fn send_line(stream: &Arc<Mutex<TcpStream>>, t: &str, my_name: &str, theme: &str
     let mut obj = serde_json::json!({ "t": t, "v": PROTO_V, "name": my_name });
     if t == "HELLO" {
         obj["theme"] = serde_json::json!(theme);
+        if let Ok(g) = STATE.lock() {
+            if let Some(st) = g.as_ref() { obj["mid"] = serde_json::json!(st.my_mid); }
+        }
     }
     let s = obj.to_string();
     if s.len() + 1 > MAX_LINE { return; }
@@ -56,6 +60,14 @@ fn handle_line(app: &AppHandle, line: &str, stream: &Arc<Mutex<TcpStream>>, peer
     let Some(st) = g.as_mut() else { return };
 
     if t == "HELLO" {
+        let mid = obj["mid"].as_str().unwrap_or("");
+        if !mid.is_empty() && mid == st.my_mid {
+            crate::kflog::kflog(&format!("lan: 同机实例({}),按协议断开", name));
+            send_line(stream, "BYE", &st.my_name, "");
+            drop(g);
+            let _ = stream.lock().map(|mut c| c.shutdown(std::net::Shutdown::Both));
+            return;
+        }
         if name.is_empty() || name == st.my_name { return; }
         let now = std::time::Instant::now();
         let is_new = !st.peers.contains_key(&name);
@@ -127,7 +139,7 @@ pub fn lan_start(app: AppHandle, name: String, theme: String) -> Result<(), Stri
     {
         let mut g = STATE.lock().map_err(|e| e.to_string())?;
         if g.as_ref().map(|s| s.running).unwrap_or(false) { return Ok(()); }
-        *g = Some(LanState { my_name: name.clone(), theme, peers: HashMap::new(), daemon: None, running: true });
+        *g = Some(LanState { my_name: name.clone(), my_mid: machine_id(), theme, peers: HashMap::new(), daemon: None, running: true });
     }
     crate::kflog::kflog(&format!("lan: 服务启动 {}", name));
 
@@ -248,5 +260,14 @@ pub fn lan_peers() -> Vec<String> {
 
 fn lan_hostname() -> String {
     std::env::var("COMPUTERNAME").unwrap_or_else(|_| "kf-win".into())
+}
+
+/// 机器指纹:机器名 FNV 哈希 16 位十六进制(稳定/不可逆,不广播原名)。
+/// 同机多实例握手即断(老板红线:本机的鸟不跟本机的鸟通信)
+fn machine_id() -> String {
+    let src = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "kf-win".into());
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in src.bytes() { h = (h ^ b as u64).wrapping_mul(0x100000001b3); }
+    format!("{:016x}", h)
 }
 

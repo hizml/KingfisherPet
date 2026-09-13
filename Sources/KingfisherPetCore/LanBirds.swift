@@ -34,14 +34,30 @@ public final class LanBirds {
         }
 
         /// 解析一行:超长/坏 JSON/版本不认识/类型不在白名单 → nil(调用方静默丢弃)
-        public static func decode(_ line: String) -> (type: String, v: Int, name: String)? {
+        public static func decode(_ line: String) -> (type: String, v: Int, name: String, mid: String)? {
             guard line.count <= maxLine,
                   let d = line.data(using: .utf8),
                   let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
                   let type = obj["t"] as? String,
                   types.contains(type),
                   let v = obj["v"] as? Int, v == protoVersion else { return nil }
-            return (type, v, obj["name"] as? String ?? "")
+            return (type, v, obj["name"] as? String ?? "", obj["mid"] as? String ?? "")
+        }
+
+        /// 机器指纹:IOPlatformUUID 哈希取 16 位十六进制(稳定/不可逆,不广播原始 UUID)。
+        /// 同机多实例握手即断(老板红线:本机的鸟不跟本机的鸟通信,开多少只都不行)
+        public static func machineID() -> String {
+            let uuid: String = {
+                let port = IORegistryEntryFromPath(kIOMasterPortDefault, "IOService:/")
+                defer { IOObjectRelease(port) }
+                guard let cf = IORegistryEntryCreateCFProperty(
+                    port, "IOPlatformUUID" as CFString, kCFAllocatorDefault, 0)?.takeUnretainedValue(),
+                    let s = cf as? String else { return "mac-unknown" }
+                return s
+            }()
+            var h: UInt64 = 0xcbf29ce484222325
+            for b in uuid.utf8 { h = (h ^ UInt64(b)) &* 0x100000001b3 }
+            return String(format: "%016llx", h)
         }
     }
 
@@ -96,6 +112,7 @@ public final class LanBirds {
     private var listener: NWListener?
     private var heartbeatTimer: Timer?
     private(set) var myName: String = ""
+    private let myMid: String = Lan.machineID()
 
     var isEnabled: Bool { listener != nil }
 
@@ -165,6 +182,7 @@ public final class LanBirds {
             guard let self = self else { return }
             switch st {
             case .ready: self.send(c, obj: ["t": "HELLO", "v": Lan.protoVersion, "name": self.myName,
+                                            "mid": self.myMid,
                                             "theme": SpriteLibrary.shared.currentTheme])
             case .failed, .cancelled: self.drop(peerName)
             default: break
@@ -214,15 +232,23 @@ public final class LanBirds {
         }
     }
 
-    private func handle(_ m: (type: String, v: Int, name: String), conn c: NWConnection) {
+    private func handle(_ m: (type: String, v: Int, name: String, mid: String), conn c: NWConnection) {
         let key = ObjectIdentifier(c)
         if m.type == "HELLO" {
+            // 同机实例互斥:机器指纹相同 → 回 BYE 断开,不入邻居册
+            if !m.mid.isEmpty, m.mid == myMid {
+                kfLog("lan: 同机实例(\(m.name)),按协议断开")
+                send(c, obj: ["t": "BYE", "v": Lan.protoVersion, "name": myName])
+                c.cancel()
+                return
+            }
             let n = m.name
             if peers[n] == nil {
                 peers[n] = Peer(conn: c, lastRecv: CACurrentMediaTime())
                 connNames[key] = n
                 // 入向连接回敬 HELLO(让对方也知道我是谁)
                 send(c, obj: ["t": "HELLO", "v": Lan.protoVersion, "name": myName,
+                              "mid": myMid,
                               "theme": SpriteLibrary.shared.currentTheme])
                 onEvent?(.peersChanged)
                 kfLog("lan: 邻居上线 \(n)")
