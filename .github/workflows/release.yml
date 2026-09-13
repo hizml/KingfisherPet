@@ -201,6 +201,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # stable(pin SHA,评审 B1)
         with:
+          toolchain: stable   # pin SHA 不带 ref 名,toolchain 输入必填(缺它 23s 即败)
           targets: ${{ matrix.rustTargets }}
 
       - name: 缓存 cargo
