@@ -140,7 +140,10 @@ function startPerchCheck() {
   if (perchedHwnd == null) return;
   const hwnd = perchedHwnd;
   occlBad = 0; occlTick = 0; detachStreak = 0; fastTicks = 0;
+  let perchInFlight = false;   // 评审 W6:IPC 慢于 50ms 时相邻两跳重叠执行 → 跟随漂移/perchFlee 双触发
   perchTimer = setInterval(async () => {
+    if (perchInFlight) return;
+    perchInFlight = true;
     try {
       const r = await invoke<[number, number, number, number] | null>("window_rect_cmd", { hwndVal: hwnd });
       if (!r) { perchFlee("窗口消失"); return; }   // 窗口没了 → 飞远
@@ -173,7 +176,7 @@ function startPerchCheck() {
       } else if (perchMoving && performance.now() - lastPerchMove > 600) {
         perchMoving = false;   // 停 0.6s → 恢复思考
       }
-    } catch (e) { /* */ }
+    } catch (e) { /* */ } finally { perchInFlight = false; }
   }, 50);
 }
 

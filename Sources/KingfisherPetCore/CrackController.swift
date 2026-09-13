@@ -57,7 +57,22 @@ final class CrackController {
 
     /// 屏幕布局变化(外接屏插拔等)时重定位覆盖层
     func relocate() {
-        sizeToScreen()
+        followBirdScreenIfNeeded()
+    }
+
+    /// 评审 A10:覆盖层只盖建层时鸟所在屏,鸟换屏后啄的裂纹画在层外不可见。
+    /// 换屏时重设覆盖层并把已有裂纹迁移到新屏坐标系(全局坐标换算,裂纹不丢)。
+    private func followBirdScreenIfNeeded() {
+        guard let scr = bird?.screen ?? NSScreen.main else { return }
+        guard scr.frame != overlay.frame else { return }   // 同屏不动
+        let dx = origin.x - scr.frame.origin.x   // 旧相对坐标 → 新相对坐标的平移
+        let dy = origin.y - scr.frame.origin.y
+        origin = scr.frame.origin
+        overlay.setFrame(scr.frame, display: true)
+        if dx != 0 || dy != 0 {
+            for c in cracks { c.migrate(dx: dx, dy: dy) }
+            kfLog("crack: 鸟换屏,裂纹迁移 (\(dx),\(dy)) x\(cracks.count)")
+        }
     }
 
     /// 熔断:移除所有裂纹 layer 树(释放 GPU 合成开销),保留裂纹数据。
@@ -71,6 +86,7 @@ final class CrackController {
     func peck(at point: CGPoint) {
         guard let layer = overlay.contentView?.layer else { return }
         if overlay.frame.width == 0 { sizeToScreen() }
+        followBirdScreenIfNeeded()   // 评审 A10:换屏后新裂纹落在覆盖层内
         let c = CGPoint(x: point.x - origin.x, y: point.y - origin.y)
 
         // 取「最近」而非「最新」:按距离排序后取第一条命中的(评审 C8;last(where) 在旧裂纹在近处时会错过)
@@ -104,12 +120,13 @@ final class CrackController {
 /// 单条裂纹(玻璃碎):放射裂 + 同心环裂 + 分叉 + 碎屑;可生长。
 final class Crack {
     let container = CALayer()
-    let center: CGPoint
+    private(set) var center: CGPoint          // var:换屏迁移(评审 A10)
     private var radius: CGFloat
     private let maxRadius: CGFloat
-    private let path = CGMutablePath()
+    private var path = CGMutablePath()        // var:换屏迁移
     private let dark = CAShapeLayer()
     private let light = CAShapeLayer()
+    private let dot = CALayer()               // 引用:迁移时同步挪中心点
 
     init(center: CGPoint, radius: CGFloat, max: CGFloat) {
         self.center = center
@@ -128,7 +145,7 @@ final class Crack {
         light.lineWidth = 0.8
 
         // 中心冲击点
-        let dot = CALayer()
+        let dot = self.dot
         dot.bounds = CGRect(x: 0, y: 0, width: 7, height: 7)
         dot.position = center
         dot.cornerRadius = 3.5
@@ -162,6 +179,17 @@ final class Crack {
         default:   // flat / watercolor 原样
             break
         }
+    }
+
+    /// 换屏迁移(评审 A10):整条 path+中心点平移到新覆盖层坐标系
+    func migrate(dx: CGFloat, dy: CGFloat) {
+        guard dx != 0 || dy != 0 else { return }
+        let np = CGMutablePath()
+        np.addPath(path, transform: CGAffineTransform(translationX: dx, y: dy))
+        path = np
+        center = CGPoint(x: center.x + dx, y: center.y + dy)
+        dot.position = center
+        rebuild()
     }
 
     /// 扩大:加长、加放射裂 + 同心环 + 碎屑,直到上限(不加弹跳动画,避免"刷新"感)

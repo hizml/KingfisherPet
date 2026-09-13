@@ -13,7 +13,28 @@ enum WindowTracker {
 
     /// 普通窗口候选(按 CGWindowList 返回顺序 = Z 序前到后)+ 主屏高(CG→NS 换算锚)。
     /// CG 全局坐标锚定主屏(screens[0]);NSScreen.main 是焦点屏,副屏活动时换算会偏。
+    /// 枚举快照缓存(评审 A11):屎遮挡/栖窗判定多个调用方各自枚举 ≈24 次/秒(满编 8 屎),
+    /// 全部共享 0.4s 内的同一份列表——Z 序/位置在此粒度内不会误判,枚举量砍一个量级。
+    private static var listSnapshot: (at: CFTimeInterval, list: [(id: CGWindowID, bounds: CGRect)], mainH: CGFloat)?
+    private static var listLock = NSLock()
+
     private static func normalWindows() -> (list: [(id: CGWindowID, bounds: CGRect)], mainH: CGFloat)? {
+        // 主线程模型(WindowServer 查询本就在主线程跑);锁兜底后台线程误用
+        listLock.lock()
+        let now = CACurrentMediaTime()
+        if let snap = listSnapshot, now - snap.at < 0.4 {
+            listLock.unlock()
+            return (snap.list, snap.mainH)
+        }
+        listLock.unlock()
+        guard let r = enumerateNormalWindows() else { return nil }
+        listLock.lock()
+        listSnapshot = (now, r.list, r.mainH)
+        listLock.unlock()
+        return r
+    }
+
+    private static func enumerateNormalWindows() -> (list: [(id: CGWindowID, bounds: CGRect)], mainH: CGFloat)? {
         let opts: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
         guard let infos = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]],
               let screen = NSScreen.screens.first else { return nil }   // CG全局坐标锚定主屏(screens[0]);NSScreen.main 是焦点屏,副屏活动时换算会偏

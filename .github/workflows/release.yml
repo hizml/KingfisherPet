@@ -29,6 +29,20 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7(pin SHA,评审 B1)
 
+      # 评审 B9:发版机器防线——tag 必须与仓库三处版本一致(分叉会触发"装完新版仍报有新版"更新循环)
+      - name: 版本一致性门(tag == 仓库三处)
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          read -r T P C <<< "$(python3 - <<'PY'
+import json, re
+print(json.load(open('windows/src-tauri/tauri.conf.json'))['version'],
+      json.load(open('windows/package.json'))['version'],
+      re.search(r'^version = "(.+)"', open('windows/src-tauri/Cargo.toml').read(), re.M).group(1))
+PY
+          )"
+          echo "tag=$TAG tauri=$T package=$P cargo=$C"
+          [[ "$TAG" == "$T" && "$TAG" == "$P" && "$TAG" == "$C" ]] || { echo "::error::版本不一致:先提版本同步提交再打 tag(三处同 bump)"; exit 1; }
+
       - name: SwiftPM 编译(release)
         run: swift build -c release --product KingfisherPet
 
@@ -165,6 +179,21 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7(pin SHA,评审 B1)
+
+      # 评审 B9:发版机器防线——tag 必须与仓库三处版本一致(分叉会触发"装完新版仍报有新版"更新循环)
+      - name: 版本一致性门(tag == 仓库三处)
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          read -r T P C <<< "$(python3 - <<'PY'
+import json, re
+print(json.load(open('windows/src-tauri/tauri.conf.json'))['version'],
+      json.load(open('windows/package.json'))['version'],
+      re.search(r'^version = "(.+)"', open('windows/src-tauri/Cargo.toml').read(), re.M).group(1))
+PY
+          )"
+          echo "tag=$TAG tauri=$T package=$P cargo=$C"
+          [[ "$TAG" == "$T" && "$TAG" == "$P" && "$TAG" == "$C" ]] || { echo "::error::版本不一致:先提版本同步提交再打 tag(三处同 bump)"; exit 1; }
 
       - uses: actions/setup-node@v7
         with:

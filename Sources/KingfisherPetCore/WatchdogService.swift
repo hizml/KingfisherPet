@@ -104,8 +104,8 @@ final class WatchdogService {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             kfLog("relaunching (leak guard)")
             let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-            proc.arguments = ["-n", url.path]
+            proc.executableURL = URL(fileURLWithPath: "/bin/sh")
+            proc.arguments = ["-c", "sleep 1; open -n '\(url.path)'"]   // 评审 A16:先退后起,避免双实例并存
             try? proc.run()
             NSApp.terminate(nil)
         }

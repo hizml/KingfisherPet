@@ -247,6 +247,13 @@ static WEATHER_TITLE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(N
 /// 成长状态行(v1.5.x):前端 growth 服务 invoke 推标题(None=未推,隐藏)。
 static GROWTH_TITLE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
+/// 勿扰电平查询(评审 W8:dnd 事件仅边沿触发,session-change reload 后前端模块态
+/// 复位而窗口实际隐藏 → 看门狗「卡隐身自愈」会把鸟强显在全屏应用上)
+#[tauri::command]
+fn get_dnd_state() -> bool {
+    DND.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 #[tauri::command]
 fn set_growth_status(app: tauri::AppHandle, title: Option<String>) {
     *GROWTH_TITLE.lock().unwrap() = title;
@@ -452,6 +459,16 @@ fn open_url(url: String) {
     use ::windows::core::PCWSTR;
     use ::windows::Win32::UI::Shell::ShellExecuteW;
     use ::windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    // 评审 R1:这是唯一 webview→Shell 桥,字符串直通 ShellExecuteW;
+    // 白名单收紧:仅 https + github.com 域 + ms-settings: 深链(现有调用面就这么大)
+    let ok = if url.starts_with("https://") {
+        let host = url.trim_start_matches("https://").split('/').next().unwrap_or("");
+        host == "github.com" || host.ends_with(".github.com")
+    } else { url.starts_with("ms-settings:") };
+    if !ok {
+        crate::kflog::kflog(&format!("open_url: 拒绝白名单外 URL({})", &url[..url.len().min(60)]));
+        return;
+    }
     let wide = |s: &str| -> Vec<u16> { s.encode_utf16().chain(std::iter::once(0)).collect() };
     let vw = wide("open"); let uw = wide(&url);
     unsafe { let _ = ShellExecuteW(None, PCWSTR(vw.as_ptr()), PCWSTR(uw.as_ptr()), None, None, SW_SHOWNORMAL); }
@@ -472,7 +489,7 @@ pub fn run() {
         
 
 .invoke_handler(tauri::generate_handler![
-        open_url, set_update_badge, set_weather_status, set_growth_status, front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, diag_append, assert_z_cmd, anim_guard])
+        open_url, get_dnd_state, set_update_badge, set_weather_status, set_growth_status, front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, diag_append, assert_z_cmd, anim_guard])
         .setup(|app| {
             crate::system::setup_power(app.handle().clone());   // 睡眠/锁屏/唤醒/会话 → emit sleep/wake/session-change
             // 设置窗主动拉状态(打开时):回语言/自启

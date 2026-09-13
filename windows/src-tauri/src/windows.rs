@@ -54,7 +54,7 @@ unsafe fn visible_rect(hwnd: windows::Win32::Foundation::HWND) -> Option<windows
 
 #[cfg(windows)]
 pub fn front_perch(bird_w: f64) -> Option<(f64, f64, isize)> {
-    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId, EnumWindows, GetWindowRect, GetClassNameW};
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId, EnumWindows, GetWindowRect, GetClassNameW, IsWindowVisible};
     use windows::Win32::Foundation::{HWND, LPARAM, RECT};
     use windows::Win32::System::Threading::GetCurrentProcessId;
     use std::cell::{Cell, RefCell};
@@ -72,6 +72,7 @@ pub fn front_perch(bird_w: f64) -> Option<(f64, f64, isize)> {
         GetWindowThreadProcessId(hwnd, Some(&mut pid));
         if pid == my_pid { return None; }
         if shell_junk_or_cloaked(hwnd) { return None; }   // 统一"普通应用窗口"判定
+        if !IsWindowVisible(hwnd).as_bool() { return None; }   // 评审 R2:隐藏普通窗口(非最小化)不再当选
         // 最小化窗口粗滤(位置 -32000;IsWindowVisible 对最小化窗口仍为真,
         // 不滤的话 Z 序兜底会选中它的陈旧矩形 → "虚空停靠")。surfaces_below 早有此滤,这里漏了。
         let mut raw = RECT::default();
@@ -377,6 +378,7 @@ pub fn window_at_point(x: f64, y: f64) -> Option<isize> {
             GetWindowThreadProcessId(hwnd, Some(&mut pid));
             if pid == MY.with(|m| m.get()) { return windows::core::BOOL(1); }
             if crate::windows::shell_junk_or_cloaked(hwnd) { return windows::core::BOOL(1); }
+            if !windows::Win32::UI::WindowsAndMessaging::IsWindowVisible(hwnd).as_bool() { return windows::core::BOOL(1); }   // 评审 R2:隐藏窗口不算遮挡
             // DWM 可见矩形(与 front_perch/surfaces_below 同口径):GetWindowRect 对最大化
             // 窗口多出 7-8px 隐形调整边框,会把"贴边悬停"误判成遮挡
             let Some(r) = visible_rect(hwnd) else { return windows::core::BOOL(1); };

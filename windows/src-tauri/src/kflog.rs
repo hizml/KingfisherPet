@@ -35,6 +35,9 @@ fn utc_offset_secs() -> i64 { 0 }
 
 /// 追加一行(带本地时间戳);超 5MB 截断保留尾部(节流:每 64 行查一次大小)
 pub fn kflog(line: &str) {
+    use std::sync::Mutex;
+    static LOCK: Mutex<()> = Mutex::new(());   // 评审 R3:IPC/power/watchdog/菜单多线程并发追加,行交错+轮转竞态
+    let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     use std::sync::atomic::{AtomicU64, Ordering};
     static WRITES: AtomicU64 = AtomicU64::new(0);
     static OFFSET: std::sync::OnceLock<i64> = std::sync::OnceLock::new();

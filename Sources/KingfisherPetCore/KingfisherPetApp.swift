@@ -8,7 +8,10 @@ import CoreAudio
 /// 用缓存的 FileHandle(不每次开关文件,避免高频 IO 吃 CPU)。超过 5MB 截断(防无限增长)。
 private var _kfLogHandle: FileHandle?
 private var _kfLogSize: Int = 0
+private let _kfLogLock = NSLock()   // 评审 A18:URLSession 后台线程/global queue/主线程并发写,裸全局状态是数据竞争
 func kfLog(_ msg: String) {
+    _kfLogLock.lock()
+    defer { _kfLogLock.unlock() }
     let line = String(format: "%.2f %@\n", CACurrentMediaTime(), msg)
     let url = URL(fileURLWithPath: "/tmp/kf_debug.log")
     guard let d = line.data(using: .utf8) else { return }
@@ -417,6 +420,9 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
         let cuItem = item(Language.t("menu.checkUpdate"), action: #selector(checkUpdate))
         menu.addItem(cuItem)
         updater.menuItem = cuItem   // 拆分后由 UpdateService 持有
+        if updater.foundVersion != nil {   // 评审 A20:切语言重建菜单,静默发现新版的标注不丢
+            cuItem.title = Language.t("update.found")
+        }
         menu.addItem(item(Language.t("menu.about"), action: #selector(showAbout)))
         menu.addItem(item(Language.t("menu.quit"), action: #selector(quit)))
         statusItem.menu = menu

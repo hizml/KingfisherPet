@@ -8,6 +8,8 @@ final public class UpdateService {
 
     /// 「检查更新…」菜单项(静默发现新版时标注;由 AppDelegate 建菜单后注入)
     weak var menuItem: NSMenuItem?
+    /// 最近静默发现的新版号(评审 A20:切语言重建菜单后据此恢复标注,不用等下个 24h 周期)
+    private(set) var foundVersion: String?
 
     private var timer: Timer?
 
@@ -33,6 +35,7 @@ final public class UpdateService {
         fetchLatest { [weak self] latest, _ in
             let cur = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "dev"
             let has = latest.map { Self.isNewer($0, than: cur) } ?? false
+            self?.foundVersion = has ? latest : nil
             self?.menuItem?.title = has
                 ? Language.t("update.found")
                 : Language.t("menu.checkUpdate")
@@ -154,9 +157,14 @@ final public class UpdateService {
                 DispatchQueue.main.async { done(false, "下载失败 HTTP \((resp as? HTTPURLResponse)?.statusCode ?? -1)") }
                 return
             }
+            // 评审 A14:上限防线(防被劫持的无限流;正常包 ~20MB,300MB 绝不该超)
+            if data.count > 300 * 1024 * 1024 {
+                DispatchQueue.main.async { done(false, "下载体积异常(\(data.count / 1048576)MB),中止") }; return
+            }
             // ② 解压到临时目录
             let tmp = FileManager.default.temporaryDirectory
                 .appendingPathComponent("kf-update-\(Int(CACurrentMediaTime()))", isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: tmp) }   // 评审 A14:成功/失败都清临时目录
             try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
             let zipPath = tmp.appendingPathComponent("update.zip")
             do { try data.write(to: zipPath) } catch {
@@ -203,19 +211,21 @@ final public class UpdateService {
                 try fm.moveItem(at: curApp, to: trashURL)
                 try fm.moveItem(at: unzipped, to: curApp)
             } catch {
-                // 回滚:旧包尽量放回去
+                // 回滚:旧包尽量放回去(评审 A15:回滚也失败时把两步错误都报出来,别吞)
+                var msg = "替换失败(\(error.localizedDescription))"
                 if !fm.fileExists(atPath: curApp.path) {
-                    try? fm.moveItem(at: trashURL, to: curApp)
+                    do { try fm.moveItem(at: trashURL, to: curApp) }
+                    catch { msg += ";回滚也失败——旧包在废纸篓 \(trashURL.lastPathComponent),手动放回即可" }
                 }
-                DispatchQueue.main.async { done(false, "替换失败(\(error.localizedDescription))") }
+                DispatchQueue.main.async { done(false, msg) }
                 return
             }
             kfLog("update: 替换完成 \(curApp.path),即将重启")
-            // ⑤ 重启(新包从原路径起)
+            // ⑤ 重启(评审 A16:旧进程先退,1s 后由 shell 拉起新实例——先启后杀会双鸟/双菜单图标短时并存)
             DispatchQueue.main.async {
                 let rel = Process()
-                rel.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-                rel.arguments = ["-n", curApp.path]
+                rel.executableURL = URL(fileURLWithPath: "/bin/sh")
+                rel.arguments = ["-c", "sleep 1; open -n '\(curApp.path)'"]
                 try? rel.run()
                 NSApp.terminate(nil)
             }

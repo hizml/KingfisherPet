@@ -48,8 +48,8 @@ run_one() {
       [ "$susp" -ge 1 ] && echo "  ✅ 睡眠 suspend" || { echo "  ❌ 睡眠未 suspend"; rc=1; }
       ;;
     themecycle)
-      # 每主题帧数都 ≥30(缺资源回归)
-      local bad=$(grep "TEST theme=" "$LOG" | awk -F'frames=' '$2+0<30' | wc -l | tr -d ' ')
+      # 每主题帧数都 ≥30(缺资源回归);只看本次运行段(评审 B7:全量日志会把历史低帧行混进来误报)
+      local bad=$(tail -n +"$((before+1))" "$LOG" | grep "TEST theme=" | awk -F'frames=' '$2+0<30' | wc -l | tr -d ' ')
       [ "$bad" -eq 0 ] && echo "  ✅ 6 主题帧数齐全" || { echo "  ❌ $bad 个主题帧数不足"; rc=1; }
       ;;
   esac

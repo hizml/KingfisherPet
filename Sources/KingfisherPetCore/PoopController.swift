@@ -27,7 +27,16 @@ final class PoopController {
     }
 
     /// 系统睡眠前停屎物理 timer(防唤醒补发堆积);唤醒后 resume。
-    func suspend() { timer?.invalidate(); timer = nil; kfLog("Poop suspend") }
+    /// 评审 A12:fading 中的半透明屎一并清场——timer 停了它不会继续淡出,
+    /// 不清会以半透明形态常驻屏幕直到唤醒。
+    func suspend() {
+        timer?.invalidate(); timer = nil
+        let fading = poops.filter { $0.isFading }
+        fading.forEach { $0.window.close() }
+        poops.removeAll { $0.isFading }
+        if !fading.isEmpty { kfLog("Poop suspend(清场 fading x\(fading.count))") }
+        else { kfLog("Poop suspend") }
+    }
     /// 唤醒宽限:此刻前 sitting 屎不做承载检查(窗口层级未稳,否则满屏屎同时重新下落)
     private var graceUntil: CFTimeInterval = 0
 
@@ -127,6 +136,7 @@ private final class Poop {
     var landingY: CGFloat
     var landedID: CGWindowID?
     var state: State = .falling
+    var isFading: Bool { state == .fading }
     var sitRemain: TimeInterval = 0
     var badStreak = 0   // 承载检查坏判定连击(迟滞)
     var opacity: CGFloat = 1

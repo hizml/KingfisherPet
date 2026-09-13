@@ -127,7 +127,9 @@ async function main() {
     // 检查更新:GitHub latest 对比当前版本(api.github.com 允许 CORS,零后端)
     // 手动(菜单):总是给反馈;自动(启动 30s + 每 24h):静默,有新版且没提示过才弹一次
     // 自绘弹窗(update.html,设置窗同风格):WebView2 原生 alert/confirm 丑且糊在鸟窗口上,弃用
+    let dlgBusy: Promise<void> = Promise.resolve();   // 评审 W5:关旧建新串行化(连点不再赌 150ms 定值)
     async function openUpdateDialog(qs: string, title: string, h = 210) {
+      const run = dlgBusy.then(async () => {
       const ex = await WebviewWindow.getByLabel("update");   // 单例:旧的先关(参数在 URL 上,复用拿不到新参)
       if (ex) {
         await ex.close().catch(() => {});
@@ -136,6 +138,9 @@ async function main() {
       const uw = new WebviewWindow("update", { url: `update.html?${qs}`, title, width: 380, height: h,
                                                resizable: false });
       uw.once("tauri://error", e => warnOnce("update-win", String(e.payload ?? "创建失败")));   // 创建失败留痕(v2 构造不抛,错误走事件;此前完全无声)
+      });
+      dlgBusy = run.catch(() => {});
+      await run;
     }
     const zhUI = () => (localStorage.getItem("kf_lang") || "system") === "zh"
       || ((localStorage.getItem("kf_lang") || "system") === "system"
@@ -143,7 +148,8 @@ async function main() {
     async function doCheckUpdate(silent: boolean) {
       try {
         const [r, cur] = await Promise.all([
-          fetch("https://api.github.com/repos/hizml/KingfisherPet/releases/latest"),
+          fetch("https://api.github.com/repos/hizml/KingfisherPet/releases/latest",
+                { signal: AbortSignal.timeout(15000) }),   // 评审 W4:无超时会挂死弹窗流程
           getVersion(),
         ]);
         if (!r.ok) throw new Error("HTTP " + r.status);
@@ -158,11 +164,16 @@ async function main() {
         let up: Awaited<ReturnType<typeof checkUpdate>> = null;
         try { up = await checkUpdate(); } catch { /* updater 探测失败走老路径 */ }
         if (up?.available) {
-          await openUpdateDialog(`t=install&latest=${encodeURIComponent(latest)}&cur=${cur}`, tt, 230);
+          // 评审 W10:展示版本取 updater 包版本(latest.json 与 GitHub tag 短暂不一致时,说的=装的)
+          const shown = up.version || latest;
+          await openUpdateDialog(`t=install&latest=${encodeURIComponent(shown)}&cur=${cur}`, tt, 230);
           return;
         }
         await openUpdateDialog(`t=found&latest=${encodeURIComponent(latest)}&cur=${cur}`, tt);
-      } catch { if (!silent) await openUpdateDialog("t=error", zhUI() ? "翡 · 检查更新" : "Fei · Update"); }
+      } catch (e) {
+        emit("log", "update: 检查失败(" + String(e) + (silent ? ",静默)" : ")"));   // 评审 W4:静默路径也留日志
+        if (!silent) await openUpdateDialog("t=error", zhUI() ? "翡 · 检查更新" : "Fei · Update");
+      }
     }
     // 关于(Mac NSAlert 同款:文案+鸟图标+GitHub 按钮;之前直接跳网页,弃)
     listen("show-about", async () => {
@@ -192,12 +203,16 @@ async function main() {
             emit("update-progress", { pct: Math.min(99, Math.round(received / total * 100)) }).catch(() => {});
           }
         });
-        emit("log", "update: 下载安装完成,重启生效");
-        await relaunch();
+        emit("update-progress", { pct: 100 }).catch(() => {});
+        emit("log", "update: 下载完成,安装器接管(Windows 下进程将退出并由安装器重启)");
+        await relaunch().catch(() => {});   // 评审 R6:Windows 常不可达(安装器先 exit);留作其他平台语义兜底
       } catch (e) {
         emit("log", "update: 应用内更新失败(" + String(e) + "),回退浏览器下载");
         emit("update-fail", { why: String(e) }).catch(() => {});
         invoke("open_url", { url: "https://github.com/hizml/KingfisherPet/releases/latest" }).catch(() => {});
+      } finally {
+        // 评审 W3 补底:走到这里还没被 relaunch/安装器接管(4s 仍活着)= 异常路径,恢复弹窗按钮防死屏
+        setTimeout(() => emit("update-fail", { why: "unexpected-return" }).catch(() => {}), 4000);
       }
     });
     setTimeout(() => doCheckUpdate(true), 30_000);
@@ -213,6 +228,9 @@ async function main() {
     onWeatherUpdate(() => emit("wx-state", { status: weather.status }));
     // 成长系统(v1.5.x):启动即推托盘状态行(❤ 档位·亲密度);变化时 growth.syncTray 自推
     growth.syncTray();
+    // 评审 W8:dnd 是边沿事件,session-change reload 后前端态复位而窗口实际隐藏——
+    // 启动查一次电平同步(看门狗「卡隐身自愈」就不会把鸟强显在全屏应用上)
+    invoke<boolean>("get_dnd_state").then(on => { if (on) behavior.dndSet(true); }).catch(() => {});
     await behavior.start();
     requestAnimationFrame(tick);
     // 跨不同 DPI 显示器:窗口物理尺寸不会自动跟着变(160 物理 ≠ 新屏的 160 逻辑),
