@@ -35,9 +35,9 @@ jobs:
           TAG="${GITHUB_REF_NAME#v}"
           read -r T P C <<< "$(python3 - <<'PY'
           import json, re
-          print(json.load(open('windows/src-tauri/tauri.conf.json'))['version'],
-                json.load(open('windows/package.json'))['version'],
-                re.search(r'^version = "(.+)"', open('windows/src-tauri/Cargo.toml').read(), re.M).group(1))
+          print(json.load(open('windows/src-tauri/tauri.conf.json', encoding='utf-8'))['version'],
+                json.load(open('windows/package.json', encoding='utf-8'))['version'],
+                re.search(r'^version = "(.+)"', open('windows/src-tauri/Cargo.toml', encoding='utf-8').read(), re.M).group(1))
           PY
           )"
           echo "tag=$TAG tauri=$T package=$P cargo=$C"
@@ -187,9 +187,9 @@ jobs:
           TAG="${GITHUB_REF_NAME#v}"
           read -r T P C <<< "$(python3 - <<'PY'
           import json, re
-          print(json.load(open('windows/src-tauri/tauri.conf.json'))['version'],
-                json.load(open('windows/package.json'))['version'],
-                re.search(r'^version = "(.+)"', open('windows/src-tauri/Cargo.toml').read(), re.M).group(1))
+          print(json.load(open('windows/src-tauri/tauri.conf.json', encoding='utf-8'))['version'],
+                json.load(open('windows/package.json', encoding='utf-8'))['version'],
+                re.search(r'^version = "(.+)"', open('windows/src-tauri/Cargo.toml', encoding='utf-8').read(), re.M).group(1))
           PY
           )"
           echo "tag=$TAG tauri=$T package=$P cargo=$C"
