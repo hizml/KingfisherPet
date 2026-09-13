@@ -140,7 +140,9 @@ final class Behavior: PetViewDelegate {
         beginAction()
         SpriteLibrary.shared.playPeep()
         enter("happy")
-        Growth.shared.add(1)   // 亲密度 +1(成长轻量版)
+        if Growth.shared.petAllowed() {
+            Growth.shared.add(1)   // 亲密度 +1(60s 抚摸冷却;经济重调防狂点秒满)
+        }
         hold(0.8) { [weak self] in
             guard let self = self, self.current == "happy" else { return }
             self.finish()
@@ -413,11 +415,11 @@ final class Behavior: PetViewDelegate {
         hold(0.9) { [weak self] in self?.finish() }
     }
 
-    /// 喂鱼(菜单):eat(自带叼鱼帧)→ happy;冷却 10 分钟内只播吃不给分
+    /// 喂鱼(菜单):eat(自带叼鱼帧)→ happy;冷却 30 分钟内只播吃不给分(经济重调)
     func feedFish() {
         guard onScreen, !dndActive else { return }
         let scored = Growth.shared.feedAllowed()
-        if scored { Growth.shared.add(8) }
+        if scored { Growth.shared.add(Growth.feedGain) }
         beginAction()
         enter("eat")
         SpriteLibrary.shared.playPeep()
@@ -1071,7 +1073,7 @@ final class Behavior: PetViewDelegate {
     // MARK: - 外部控制
     func callOver() {
         guard let window = window, let scr = screen else { return }
-        Growth.shared.add(2)   // 召唤互动 +2(成长轻量版)
+        Growth.shared.add(1)   // 召唤互动 +1(经济重调;召唤高频,原 +2 太快)
         beginAction()
         enter("fly")
         let a = scr.visibleFrame
@@ -1230,5 +1232,31 @@ final class Behavior: PetViewDelegate {
         busy = false
         if onScreen { scheduleThink() } // 隐藏着不复活行为
         if onWindow, perchedID != nil { startPerchCheck() }   // 恢复栖窗跟随
+    }
+
+    // MARK: - 开发测试触发(KF_DEV_MENU 菜单专用;生产构建无入口,方法空转)
+    /// 按名触发演出/状态,绕过随机概率与部分前置(孵化不需要满级)。
+    /// 鸟隐藏(勿扰/fallAway)时部分演出自然不显示——先把鸟显示出来再触发。
+    func devTrigger(_ name: String) {
+        kfLog("dev: 触发 \(name)")
+        switch name {
+        case "visitor":     visitorEvent()
+        case "visit":       affectionVisit()
+        case "hatch":       growthHatchEvent()
+        case "forage":      startForage()
+        case "hide":        weatherRetreat()
+        case "shiver":      weatherShiver()
+        case "puff":        startPuff()
+        case "sleep":       startSleep()
+        case "sun":         startSun()
+        case "poop":        startPoop()
+        case "fish":        startFish()
+        case "feed":        feedFish()
+        case "dnd-enter":   enterDnd()
+        case "dnd-exit":    if dndActive { exitDnd() }
+        case "lock-sim":    sleepForUserAbsence(systemSleep: false)
+        case "wake-sim":    wakeFromUserAbsence()
+        default:            kfLog("dev: 未知触发 \(name)")
+        }
     }
 }

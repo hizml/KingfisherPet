@@ -359,7 +359,7 @@ export function startPuff() {
 /// 喂鱼(菜单):eat(自带叼鱼帧)→ happy;冷却 10 分钟内只播吃不给分
 export function feedFish() {
   if (!onScreen || dndActive) return;
-  if (growth.feed()) growth.add(8);
+  if (growth.feed()) growth.add(growth.feedGain);   // 经济重调:+5/30min
   beginAction();
   enter("eat");
   playPeep();
@@ -902,7 +902,7 @@ export async function dragDidEnd() {
 export async function callOver() {
   if (dndActive) return;   // 勿扰中不召唤(窗口已隐藏,召唤=在全屏上飞)
   if (!onScreen) return;   // 隐藏时不响应(用户方案:唯一恢复入口=显示/隐藏)
-  growth.add(2);   // 召唤互动 +2(成长轻量版)
+  growth.add(1);   // 召唤互动 +1(经济重调;召唤高频,原 +2 太快)
   beginAction();   // 评审 W1:取消进行中的动作链(否则双 RAF 循环同帧双写 setOrigin 抖动)
   leavePerchWin();
   enter("fly");
@@ -990,7 +990,7 @@ export async function start() {
 export function happyAction() {
   beginAction();
   playPeep();
-  growth.add(1);   // 亲密度 +1(成长轻量版)
+  if (growth.pet()) growth.add(1);   // 亲密度 +1(60s 抚摸冷却;经济重调防狂点秒满)
   enter("happy");
   hold(0.8, () => finish());
 }

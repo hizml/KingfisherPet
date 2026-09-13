@@ -29,8 +29,12 @@ public enum DayRhythm {
         return h
     }()
 
+    /// 开发测试菜单的运行时小时覆盖(KF_DEV_MENU 里"模拟深夜/清晨"用,可随时改/恢复;
+    /// 优先级高于环境变量)。生产无入口,恒 nil。
+    public static var devHourOverride: Int?
+
     public static func currentHour() -> Int {
-        hourOverride ?? Calendar.current.component(.hour, from: Date())
+        devHourOverride ?? hourOverride ?? Calendar.current.component(.hour, from: Date())
     }
 
     public static func factors(hour: Int) -> Factors {

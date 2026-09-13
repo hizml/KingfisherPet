@@ -315,17 +315,21 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
             }
         case "growth_hatch":
             // 满级孵化:注入 100 → think 拍触发 → 蹲(poop)→盯(watch)→happy
-            // 测完清注入(别污染宿主机鸟的成长进度)
+            // 经济重调后结算=计数+1 且亲密度回落「熟悉」40。测完清注入(别污染宿主机鸟)
+            var hatchBefore = 0
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                hatchBefore = Growth.shared.hatchCount
                 Growth.shared.intimacy = 100
                 kfLog("TEST hatch injected=100 shouldHatch=\(Growth.shared.shouldHatch)")
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 12.0) { [weak self] in
                 guard let self = self else { return }
-                let ok = !Growth.shared.shouldHatch && Growth.shared.hatched
+                let ok = !Growth.shared.shouldHatch
+                    && Growth.shared.hatchCount == hatchBefore + 1
+                    && Growth.shared.intimacy == 40
                 UserDefaults.standard.removeObject(forKey: "kingfisher.growth.intimacy")
-                UserDefaults.standard.removeObject(forKey: "kingfisher.growth.hatched")
-                done(ok, "hatched=\(Growth.shared.hatched)(事件应已播)")
+                UserDefaults.standard.removeObject(forKey: "kingfisher.growth.hatchCount")
+                done(ok, "hatch×\(Growth.shared.hatchCount) intimacy=\(Growth.shared.intimacy)(事件应已播+回落40)")
             }
         default:
             done(false, "unknown-scenario")
@@ -431,8 +435,96 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
         }
         menu.addItem(item(Language.t("menu.about"), action: #selector(showAbout)))
         menu.addItem(item(Language.t("menu.quit"), action: #selector(quit)))
+        // 开发测试菜单:仅 KF_DEV_MENU=1 启动才注入(发布包 Finder/浏览器启动永远无此环境变量,
+        /// 生产绝不出现)。覆盖全部演出/昼夜模拟/亲密度操作/勿扰与锁屏链路——老板验收用。
+        if ProcessInfo.processInfo.environment["KF_DEV_MENU"] == "1" {
+            kfLog("dev: 测试菜单已启用(KF_DEV_MENU=1)")
+            menu.addItem(devMenu())
+        }
         statusItem.menu = menu
         refreshMenuState()
+    }
+
+    /// 🧪 开发测试子菜单(生产无入口)
+    private func devMenu() -> NSMenuItem {
+        let dev = NSMenuItem(title: "🧪 测试", action: nil, keyEquivalent: "")
+        let m = NSMenu()
+        func sec(_ title: String) { m.addItem(NSMenuItem.separator()); m.addItem(disabled(title)) }
+        func devItem(_ title: String, _ sel: Selector) {
+            m.addItem(item(title, action: sel))
+        }
+        func trig(_ title: String, _ name: String) {
+            let mi = item(title, action: #selector(devTriggers(_:)))
+            mi.representedObject = name
+            m.addItem(mi)
+        }
+        sec("演出")
+        trig("访客小鸟飞过", "visitor")
+        trig("主动来访(飞到光标旁)", "visit")
+        trig("满级孵化彩蛋", "hatch")
+        trig("觅食(叼虫)", "forage")
+        trig("躲雨", "hide")
+        trig("寒颤", "shiver")
+        trig("炸毛", "puff")
+        trig("打盹(按当前时段时长)", "sleep")
+        trig("太阳浴", "sun")
+        trig("俯冲捕鱼", "fish")
+        trig("喂鱼(菜单同款)", "feed")
+        trig("拉屎", "poop")
+        sec("昼夜模拟")
+        devItem("模拟深夜(0 点·长睡 40–80s)", #selector(devHourDeepNight))
+        devItem("模拟清晨(7 点·晨鸣)", #selector(devHourDawn))
+        devItem("恢复真实时间", #selector(devHourReal))
+        sec("亲密度")
+        devItem("+10(绕过每日上限)", #selector(devGrowthPlus))
+        devItem("设为 99(差一分孵化)", #selector(devGrowthNear))
+        devItem("重置 0", #selector(devGrowthReset))
+        sec("勿扰 / 睡眠链路")
+        trig("进入勿扰(隐身静音)", "dnd-enter")
+        trig("退出勿扰", "dnd-exit")
+        trig("模拟锁屏入睡", "lock-sim")
+        trig("模拟解锁唤醒(验帧冻结修复)", "wake-sim")
+        sec("弹窗样式")
+        devItem("样例:授权引导弹窗", #selector(devDlgAx))
+        devItem("样例:发现新版本(三按钮)", #selector(devDlgUpdate))
+        devItem("样例:已是最新版本", #selector(devDlgLatest))
+        sec("状态快照(写日志)")
+        devItem("打印状态快照", #selector(devSnapshot))
+        dev.submenu = m
+        return dev
+    }
+
+    private func disabled(_ t: String) -> NSMenuItem {
+        let mi = NSMenuItem(title: t, action: nil, keyEquivalent: "")
+        mi.isEnabled = false
+        return mi
+    }
+
+    @objc private func devTriggers(_ sender: NSMenuItem) {
+        petController?.behavior.devTrigger(sender.representedObject as? String ?? "")
+    }
+    @objc private func devHourDeepNight() { DayRhythm.devHourOverride = 3; kfLog("dev: 昼夜→深夜(3 点)") }
+    @objc private func devHourDawn() { DayRhythm.devHourOverride = 7; kfLog("dev: 昼夜→清晨(7 点)") }
+    @objc private func devHourReal() { DayRhythm.devHourOverride = nil; kfLog("dev: 昼夜→真实时间") }
+    @objc private func devGrowthPlus() { Growth.shared.add(10, bypassDailyCap: true); kfLog("dev: 亲密度 +10 → \(Growth.shared.intimacy)") }
+    @objc private func devGrowthNear() { Growth.shared.intimacy = 99; kfLog("dev: 亲密度=99(再 +1 触发孵化)") }
+    @objc private func devGrowthReset() { Growth.shared.intimacy = 0; kfLog("dev: 亲密度重置 0") }
+    @objc private func devDlgAx() {
+        let p = Bundle.main.bundleURL.path
+        KFDialog.show(title: "「翡」需要辅助功能权限",
+                      message: "勿扰模式(全屏看片/放音时鸟自动隐身静音)依赖辅助功能。\n\n请到 系统设置 → 隐私与安全性 → 辅助功能,删除旧的「翡」后重新添加并勾选(选择:\(p))",
+                      buttons: ["打开系统设置", "稍后"], width: 480) { _ in }
+    }
+    @objc private func devDlgUpdate() {
+        KFDialog.show(title: "发现新版本", message: "当前 v1.5.1。前往下载?",
+                      buttons: ["下载并更新", "打开 Releases 页", "稍后"]) { _ in }
+    }
+    @objc private func devDlgLatest() {
+        KFDialog.show(title: "已是最新版本", message: "v1.5.1", buttons: [Language.t("update.ok")]) { _ in }
+    }
+    @objc private func devSnapshot() {
+        let b = petController?.behavior
+        kfLog("dev: 状态=\(b?.currentStateForLog() ?? "?") 亲密度=\(Growth.shared.intimacy)(\(Growth.shared.stage)) 孵化×\(Growth.shared.hatchCount) 天气=\(WeatherService.shared.now.map { "\($0.main.rawValue)" } ?? "nil") 昼夜h=\(DayRhythm.currentHour())")
     }
 
     /// 切语言:改设置 → 重建菜单;设置窗口关掉,下次打开按新语言重建

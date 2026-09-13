@@ -267,23 +267,39 @@ enum TestMain {
             return ps[0] == 0 && ps == ps.sorted() && ps.last! <= 0.05
         }())
         let gSaved = Growth.shared.intimacy
-        let gHatched = Growth.shared.hatched
+        let gHatchCount = Growth.shared.hatchCount
         Growth.shared.intimacy = 95
-        expect("add 钳制到 100:95+8 → 100(实际生效 5)", Growth.shared.add(8) == 5 && Growth.shared.intimacy == 100)
-        expect("shouldHatch:满级未孵化", Growth.shared.hatched == false && Growth.shared.shouldHatch == true)
+        expect("add 钳制到 100:95+8 → 100(实际生效 5;绕过日限)", Growth.shared.add(8, bypassDailyCap: true) == 5 && Growth.shared.intimacy == 100)
+        expect("shouldHatch:满级即待演(不再一次性)", Growth.shared.shouldHatch == true)
         Growth.shared.markHatched()
-        expect("markHatched 后 shouldHatch=false", Growth.shared.shouldHatch == false)
+        expect("孵化结算:回落「熟悉」40 + 计数+1", Growth.shared.intimacy == 40
+               && Growth.shared.hatchCount == gHatchCount + 1 && Growth.shared.shouldHatch == false)
+        // 每日获取上限(经济重调:防几小时养满)
+        Growth.shared.intimacy = 10
+        let td = Date(timeIntervalSince1970: 1_800_000_000)
+        expect("每日上限:10+30 → 生效 30(恰满)", Growth.shared.add(30, now: td) == 30 && Growth.shared.intimacy == 40)
+        expect("每日上限:当日已满,再加分 0 生效", Growth.shared.add(5, now: td) == 0 && Growth.shared.intimacy == 40)
+        expect("跨天滚动:上限重置再 +5", Growth.shared.add(5, now: td.addingTimeInterval(26 * 3600)) == 5 && Growth.shared.intimacy == 45)
+        // 喂鱼冷却 30 分钟(经济重调,原 10 分钟)
         let t0 = Date(timeIntervalSince1970: 1_000_000)
         expect("喂鱼冷却:首喂通过", Growth.shared.feedAllowed(now: t0) == true)
-        expect("喂鱼冷却:t+9min 拒绝", Growth.shared.feedAllowed(now: t0.addingTimeInterval(9 * 60)) == false)
-        expect("喂鱼冷却:t+10min01s 放行", Growth.shared.feedAllowed(now: t0.addingTimeInterval(601)) == true)
-        let t0b = Date(timeIntervalSince1970: 2_000_000)
-        expect("喂鱼时钟回拨不锁死(评审 A9)", Growth.shared.feedAllowed(now: t0b) == true
+        expect("喂鱼冷却:t+29min 拒绝", Growth.shared.feedAllowed(now: t0.addingTimeInterval(29 * 60)) == false)
+        expect("喂鱼冷却:t+30min01s 放行", Growth.shared.feedAllowed(now: t0.addingTimeInterval(1801)) == true)
+        // 抚摸(点击)冷却 60 秒(防狂点秒满)
+        let t2 = Date(timeIntervalSince1970: 2_000_000)
+        expect("抚摸冷却:首点通过", Growth.shared.petAllowed(now: t2) == true)
+        expect("抚摸冷却:t+59s 拒绝", Growth.shared.petAllowed(now: t2.addingTimeInterval(59)) == false)
+        expect("抚摸冷却:t+61s 放行", Growth.shared.petAllowed(now: t2.addingTimeInterval(61)) == true)
+        let t0b = Date(timeIntervalSince1970: 3_000_000)
+        expect("冷却时钟回拨不锁死(评审 A9)", Growth.shared.feedAllowed(now: t0b) == true
                && Growth.shared.feedAllowed(now: t0b.addingTimeInterval(-3600)) == true)
         // 还原(别污染宿主机设置)
         Growth.shared.intimacy = gSaved
-        if !gHatched { UserDefaults.standard.removeObject(forKey: "kingfisher.growth.hatched") }
+        UserDefaults.standard.set(gHatchCount, forKey: "kingfisher.growth.hatchCount")
+        UserDefaults.standard.removeObject(forKey: "kingfisher.growth.dayGain")
+        UserDefaults.standard.removeObject(forKey: "kingfisher.growth.dayStamp")
         UserDefaults.standard.removeObject(forKey: "kingfisher.growth.lastFeedAt")
+        UserDefaults.standard.removeObject(forKey: "kingfisher.growth.lastPetAt")
 
         // MARK: - 和风 Host 清洗(评审 A4:用户输入防强解包)
         print("[Host 清洗]")

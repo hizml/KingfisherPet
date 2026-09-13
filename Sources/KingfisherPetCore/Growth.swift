@@ -1,9 +1,10 @@
 import Foundation
 
-/// 成长系统轻量版(v1.5.x batch2):亲密度 0–100(不衰减)+ 档位 + 喂鱼冷却 + 满级孵化。
+/// 成长系统轻量版(v1.5.x batch2;2026-09-13 经济重调):亲密度 0–100 + 档位 + 喂鱼/抚摸冷却
+/// + 每日获取上限 + 满级孵化(可重复:孵化后回落「熟悉」再养成)。
 /// 纯逻辑与行为解耦:加分入口分散在点击/喂鱼/召唤/捕鱼/天气彩蛋;亲密度不改
 /// thinkBands 权重带(昼夜/天气双层公式已冻结进双端单测),只通过「主动来访概率」
-/// 影响互动频率。Windows 侧 growth.ts 对称实现(同一公式同一用例口径)。
+/// 影响互动频率。Windows 侧 growth.mjs 对称实现(同一公式同一用例口径)。
 public final class Growth {
 
     public static let shared = Growth()
@@ -51,8 +52,12 @@ public final class Growth {
     // MARK: - 状态
 
     private static let kIntimacy = "kingfisher.growth.intimacy"
-    private static let kHatched = "kingfisher.growth.hatched"
+    private static let kHatchCount = "kingfisher.growth.hatchCount"
+    private static let kHatched = "kingfisher.growth.hatched"          // 旧版一次性标志(迁移源)
     private static let kLastFeedAt = "kingfisher.growth.lastFeedAt"
+    private static let kLastPetAt = "kingfisher.growth.lastPetAt"
+    private static let kDayStamp = "kingfisher.growth.dayStamp"        // "yyyy-MM-dd"
+    private static let kDayGain = "kingfisher.growth.dayGain"
 
     private var _intimacy: Int
     /// 亲密度 0–100(钳制;写入持久化并广播)
@@ -71,30 +76,64 @@ public final class Growth {
 
     public var stage: Stage { Stage.of(intimacy: intimacy) }
 
-    /// 满级孵化彩蛋未播(Behavior 在 think 里查,触发时机=下一个思考拍,不靠通知)
-    public var shouldHatch: Bool { intimacy >= 100 && !hatched }
+    /// 满级孵化待演(Behavior 在 think 里查;孵化后亲密度回落,自然转 false)
+    public var shouldHatch: Bool { intimacy >= 100 }
 
-    /// 孵化已演过(一次性;由演出方在开演时标记)
-    public private(set) var hatched: Bool
+    /// 孵化次数(可重复彩蛋;每次孵化亲密度回落「熟悉」40 再养成)
+    public private(set) var hatchCount: Int
 
+    /// 孵化演出结算:计数 +1、亲密度回落「熟悉」(40)。彩蛋因此可重复,但每次都要重新养。
     public func markHatched() {
-        hatched = true
-        UserDefaults.standard.set(true, forKey: Self.kHatched)
+        hatchCount += 1
+        UserDefaults.standard.set(hatchCount, forKey: Self.kHatchCount)
+        intimacy = 40
         NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
     }
 
-    // MARK: - 加分(统一入口;返回实际生效分,方便调用方/测试核对)
+    // MARK: - 加分(统一入口;每日获取上限,超出不生效。返回实际生效分)
+
+    /// 每日获取上限(所有来源合计;跨自然日清零)。【可调】
+    /// 老板实测反馈"几小时就满"——原口径点击无冷却+喂鱼 8/10min,狂点半天即 100。
+    /// 现口径:点击 +1/60s 冷却、喂鱼 +5/30min、召唤 +1、自发捕鱼 +1,封顶 30/天 ≈ 3–4 天满。
+    public static let dailyCap = 30
 
     @discardableResult
-    public func add(_ n: Int) -> Int {
+    public func add(_ n: Int, bypassDailyCap: Bool = false, now: Date = Date()) -> Int {
+        guard n > 0 else { return 0 }
+        if !bypassDailyCap {
+            rollDayIfNeeded(now: now)
+            if dayGain >= Self.dailyCap { return 0 }
+            let effective = min(n, Self.dailyCap - dayGain)
+            dayGain += effective
+            UserDefaults.standard.set(dayGain, forKey: Self.kDayGain)
+            let before = intimacy
+            intimacy = before + effective
+            return intimacy - before
+        }
         let before = intimacy
         intimacy = before + n
         return intimacy - before
     }
 
-    // MARK: - 喂鱼冷却(10 分钟;入参注入可测)
+    private var dayGain: Int
+    private func rollDayIfNeeded(now: Date) {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        let today = f.string(from: now)
+        if today != dayStamp {
+            dayStamp = today
+            dayGain = 0
+            UserDefaults.standard.set(today, forKey: Self.kDayStamp)
+            UserDefaults.standard.set(0, forKey: Self.kDayGain)
+        }
+    }
+    private var dayStamp: String
 
-    public static let feedCooldown: TimeInterval = 10 * 60
+    // MARK: - 冷却(入参注入可测)
+
+    /// 喂鱼冷却 30 分钟,+5 分。【可调】原 10 分钟 +8 太快
+    public static let feedCooldown: TimeInterval = 30 * 60
+    public static let feedGain = 5
 
     /// true=本次可喂(并占下冷却时刻);false=冷却中
     public func feedAllowed(now: Date = Date()) -> Bool {
@@ -107,21 +146,44 @@ public final class Growth {
         return true
     }
 
+    /// 抚摸(点击)冷却 60 秒(防狂点秒满)。【可调】
+    public static let petCooldown: TimeInterval = 60
+
+    /// true=本次点击计分(并占下冷却);false=冷却中
+    public func petAllowed(now: Date = Date()) -> Bool {
+        if let last = UserDefaults.standard.object(forKey: Self.kLastPetAt) as? Date,
+           now >= last,
+           now.timeIntervalSince(last) < Self.petCooldown {
+            return false
+        }
+        UserDefaults.standard.set(now, forKey: Self.kLastPetAt)
+        return true
+    }
+
     // MARK: - 菜单状态行(状态可见纪律)
 
     public var menuTitle: String {
-        let s = stage
-        if s == .bonded {
-            return "❤️ " + (hatched ? Language.t("growth.stage.bonded") + Language.t("growth.hatchedSuffix")
-                                  : Language.t("growth.stage.bonded") + " · 100/100")
+        var t = "❤️ " + Language.t(stage.langKey) + (stage == .bonded ? "" : " · \(intimacy)/100")
+        if hatchCount > 0 {
+            t += String(format: " " + Language.t("growth.hatchCountSuffix"), hatchCount)
         }
-        return "❤️ " + Language.t(s.langKey) + " · \(intimacy)/100"
+        return t
     }
 
     init() {
         let d = UserDefaults.standard
         _intimacy = d.object(forKey: Self.kIntimacy) != nil
             ? min(100, max(0, d.integer(forKey: Self.kIntimacy))) : 0
-        hatched = d.bool(forKey: Self.kHatched)
+        // 旧版一次性标志迁移:已孵化过 → 计数 1
+        if d.object(forKey: Self.kHatchCount) != nil {
+            hatchCount = max(0, d.integer(forKey: Self.kHatchCount))
+        } else {
+            hatchCount = d.bool(forKey: Self.kHatched) ? 1 : 0
+        }
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        dayStamp = d.string(forKey: Self.kDayStamp) ?? ""
+        dayGain = dayStamp == f.string(from: Date()) ? max(0, d.integer(forKey: Self.kDayGain)) : 0
+        if dayStamp != f.string(from: Date()) { dayStamp = f.string(from: Date()) }
     }
 }
