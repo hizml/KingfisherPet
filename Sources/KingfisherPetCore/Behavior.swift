@@ -1191,6 +1191,11 @@ final class Behavior: PetViewDelegate {
             enter("idle")
             return
         }
+        // 解锁必恢复逐帧 timer:锁屏路径(screenLocked/screenDidSleep)停了 PetView,
+        // 此前这里没人恢复——正常解锁后帧动画永久冻结(鸟还能动/还能叫,但贴图
+        // 停在最后一帧,老板实测"动画全没有,是默认贴图");只有碰巧走 exitDnd/
+        // hatchIn 才被顺带救活。
+        view?.resumeAnimation()
         enter("sleep")
         startZzz()                     // 系统唤醒后 zzz 已被 suspend 停,这里重开呈现睡觉视觉
         hold(Double.random(in: 2...4)) { [weak self] in
