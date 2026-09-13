@@ -45,3 +45,13 @@ export function thinkBands(activity, hour, wx) {
   const sleepShare = Math.max(0, 100 - walkEnd - widths.reduce((s, w2) => s + w2, 0) * k);
   return { idleBand, walkEnd, k, widths, sleepShare };
 }
+
+/// 打盹时长区间(秒):白天 5–9 小盹,深夜 40–80 长睡(macOS DayRhythm.napSeconds 对称实现,
+/// 任改一处必须同步另一端)。此前全天 5–9——深夜"秒醒后长时间 idle 睁眼发呆"被看成睁眼睡觉。
+export function napSeconds(hour) {
+  if (hour >= 0 && hour < 6) return [40, 80];      // 深夜:长睡
+  if (hour >= 6 && hour < 9) return [8, 14];       // 清晨:刚醒,小盹
+  if (hour >= 17 && hour < 22) return [7, 12];     // 黄昏
+  if (hour >= 22 && hour < 24) return [25, 50];    // 夜:渐长
+  return [5, 9];                                    // 白天基准(原行为)
+}

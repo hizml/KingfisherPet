@@ -105,6 +105,15 @@ enum TestMain {
         expect("h17 落黄昏", DayRhythm.factors(hour: 17).overall == 0.85)
         expect("h21 落黄昏", DayRhythm.factors(hour: 21).overall == 0.85)
         expect("h22 落夜", DayRhythm.factors(hour: 22).overall == 0.5)
+        // 打盹时长随昼夜(此前全天 5–9,深夜秒醒后 idle 睁眼发呆像"睁眼睡觉")
+        expect("白天打盹 5–9(原行为)", DayRhythm.napSeconds(hour: 12) == 5...9)
+        expect("深夜打盹 40–80(长睡)", DayRhythm.napSeconds(hour: 3) == 40...80)
+        expect("清晨打盹 8–14(刚醒小盹)", DayRhythm.napSeconds(hour: 7) == 8...14)
+        expect("黄昏打盹 7–12", DayRhythm.napSeconds(hour: 19) == 7...12)
+        expect("夜打盹 25–50(渐长)", DayRhythm.napSeconds(hour: 23) == 25...50)
+        expect("napSeconds 时段边界与 factors 对齐(h5 深/h6 清/h17 黄/h22 夜)",
+               DayRhythm.napSeconds(hour: 5) == 40...80 && DayRhythm.napSeconds(hour: 6) == 8...14
+               && DayRhythm.napSeconds(hour: 17) == 7...12 && DayRhythm.napSeconds(hour: 22) == 25...50)
         expect("h23 落夜", DayRhythm.factors(hour: 23).overall == 0.5)
         // sleep 份额排序:深夜 > 夜 > 黄昏 > 白天(越夜越困);清晨最精神(晨鸣吃掉 doze)
         let seg = { (h: Int) in DayRhythm.thinkBands(activity: 0.5, hour: h).sleepShare }

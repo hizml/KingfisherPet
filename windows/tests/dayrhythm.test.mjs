@@ -2,7 +2,7 @@
 // 测的是 shared.mjs 真实现(behavior.ts think() 调的同一份),不是复制品。
 import test from "node:test";
 import assert from "node:assert/strict";
-import { dayFactors, thinkBands } from "../src/shared.mjs";
+import { dayFactors, thinkBands, napSeconds } from "../src/shared.mjs";
 
 test("白天基准(原归一公式不变)", () => {
   const day = thinkBands(0.5, 12);
@@ -65,4 +65,19 @@ test("24h×3 活跃度布局守恒(和=100)", () => {
       assert.ok(Math.abs(total - 100) <= 0.01, `h=${h} a=${a} total=${total}`);
     }
   }
+});
+
+// 打盹时长随昼夜(此前全天 5–9,深夜秒醒后 idle 睁眼发呆像"睁眼睡觉");
+// 与 Mac kf-tests「打盹时长随昼夜」同一用例口径
+test("打盹时长:白天小盹,越夜越长", () => {
+  assert.deepEqual(napSeconds(12), [5, 9]);    // 白天:原行为
+  assert.deepEqual(napSeconds(3), [40, 80]);   // 深夜:长睡
+  assert.deepEqual(napSeconds(7), [8, 14]);    // 清晨:刚醒小盹
+  assert.deepEqual(napSeconds(19), [7, 12]);   // 黄昏
+  assert.deepEqual(napSeconds(23), [25, 50]);  // 夜:渐长
+  // 时段边界与 dayFactors 对齐
+  assert.deepEqual(napSeconds(5), [40, 80]);
+  assert.deepEqual(napSeconds(6), [8, 14]);
+  assert.deepEqual(napSeconds(17), [7, 12]);
+  assert.deepEqual(napSeconds(22), [25, 50]);
 });

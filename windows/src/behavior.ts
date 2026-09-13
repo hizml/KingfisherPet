@@ -14,7 +14,7 @@ import * as branch from "./branch";
 import { hideShadow } from "./shadow";
 import { invoke } from "@tauri-apps/api/core";
 import { settings } from "./settings";
-import { thinkBands } from "./shared.mjs";   // 昼夜节律权重带(纯函数,tests 直测同一份源码)
+import { thinkBands, napSeconds } from "./shared.mjs";   // 昼夜节律权重带+打盹时长(纯函数,tests 直测同一份源码)
 import { weather, onWeatherUpdate, type WeatherNow, type WeatherAlert } from "./weathersvc";
 import { growth } from "./growthsvc";   // 成长系统(v1.5.x;纯公式在 growth.mjs)
 import { setSleepMuted } from "./audio";
@@ -560,7 +560,10 @@ function startSleep() {   // 打盹持续飘 zzz(macOS 每 0.9s,从头上方出;
   emitZzz();
   if (zzzTimer) clearInterval(zzzTimer);
   zzzTimer = setInterval(emitZzz, 900);
-  hold(5 + Math.random() * 4, () => finish());
+  // 时长随昼夜(macOS 同款):白天 5–9s 小盹;深夜 40–80s 长睡——此前全天 5–9,
+  // 夜里秒醒后长时间 idle 睁眼发呆,被看成"睁眼睡觉"
+  const [lo, hi] = napSeconds(currentHour());
+  hold(lo + Math.random() * (hi - lo), () => finish());
 }
 function startEat() { beginAction(); perchBranchHere(); enter("eat"); playPeep(); hold(1.1, () => finish()); }
 async function startSun() {

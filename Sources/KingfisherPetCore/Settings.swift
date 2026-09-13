@@ -359,14 +359,16 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
             hostField.identifier = NSUserInterfaceItemIdentifier("wx.host")
             root.addSubview(hostField)
         }
-        // 状态行(状态可见纪律:失败/正常/关闭都在这标)
+        // 状态行(状态可见纪律:失败/正常/关闭都在这标)。
+        // 宽度钉满可用区:此前按内容 sizeToFit,天气状态异步变化时 stringValue
+        // 直接塞进旧窄 frame → 文字被裁(切数据源后状态变长必现);钉宽+截尾省略号
         y -= 26
         let status = NSTextField(labelWithString: weatherStatusText())
         status.font = NSFont.systemFont(ofSize: 11)
         status.textColor = .secondaryLabelColor
-        status.sizeToFit()
-        status.frame.origin = NSPoint(x: margin, y: y)
-        status.autoresizingMask = [.width]
+        status.lineBreakMode = .byTruncatingTail
+        status.frame = NSRect(x: margin, y: y,
+                              width: root.bounds.width - margin * 2, height: 16)
         root.addSubview(status)
         weatherStatusLabel = status
 

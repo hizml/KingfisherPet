@@ -67,4 +67,18 @@ public enum DayRhythm {
         let sleepShare = max(0, 100.0 - Double(walkEnd) - widths.reduce(0, +) * k)
         return (idleBand, walkEnd, k, widths, sleepShare)
     }
+
+    /// 打盹时长(秒,闭区间):白天小盹 5–9,深夜长睡 40–80。此前全天 5–9——
+    /// 深夜"打盹 7 秒就醒"导致鸟整夜在 idle 睁眼发呆,视觉上=睁眼睡觉(老板实测反馈)。
+    /// 时段分段与 factors 同一套。Windows windows/src/shared.mjs napSeconds 同公式
+    /// (任改一处必须同步另一端)。
+    public static func napSeconds(hour: Int) -> ClosedRange<Double> {
+        switch hour {
+        case 0..<6:   return 40...80      // 深夜:长睡
+        case 6..<9:   return 8...14       // 清晨:刚醒,小盹
+        case 17..<22: return 7...12       // 黄昏
+        case 22..<24: return 25...50      // 夜:渐长
+        default:      return 5...9        // 白天基准(原行为)
+        }
+    }
 }

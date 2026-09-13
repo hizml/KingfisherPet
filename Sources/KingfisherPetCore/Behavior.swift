@@ -926,7 +926,9 @@ final class Behavior: PetViewDelegate {
         beginAction()
         enter("sleep")
         startZzz()
-        hold(Double.random(in: 5...9)) { [weak self] in
+        // 时长随昼夜:白天 5–9s 小盹;深夜 40–80s 长睡(此前全天 5–9,夜里秒醒后
+        // 长时间 idle 睁眼发呆,被看成"睁眼睡觉")
+        hold(Double.random(in: DayRhythm.napSeconds(hour: DayRhythm.currentHour()))) { [weak self] in
             guard let self = self, self.current == "sleep" else { return }
             self.finish()
         }
