@@ -33,6 +33,11 @@ final public class Settings {
         get { Defaults.bool(forKey: K.peckScreen, default: true) }
         set { set(K.peckScreen, newValue) }
     }
+    /// 局域网小鸟(v1.7.0 串门批;默认关 = 明示纪律:开启才广播自己)
+    var lanBirds: Bool {
+        get { Defaults.bool(forKey: K.lanBirds, default: false) }
+        set { set(K.lanBirds, newValue) }
+    }
     /// 主题 id(对应 SpriteLibrary.themes)
     var theme: String {
         get { Defaults.string(forKey: K.theme, default: "flat") }
@@ -98,6 +103,7 @@ final public class Settings {
         static let speed    = "kingfisher.settings.speed"
         static let soundOn  = "kingfisher.settings.soundOn"
         static let peckScreen = "kingfisher.settings.peckScreen"
+        static let lanBirds = "kingfisher.settings.lanBirds"
         static let theme    = "kingfisher.settings.theme"
         static let weatherEnabled = "kingfisher.settings.weatherEnabled"
         static let weatherCity    = "kingfisher.settings.weatherCity"
@@ -138,6 +144,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
     private weak var themePopup: NSPopUpButton?
     // 天气区(v1.5.0)
     private weak var weatherButton: NSButton?
+    private weak var lanButton: NSButton?
     private weak var weatherStatusLabel: NSTextField?
 
     func show() {
@@ -372,6 +379,29 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
         root.addSubview(status)
         weatherStatusLabel = status
 
+        // ── 局域网小鸟区(v1.7.0 串门批;默认关,开启才广播自己——明示纪律)──
+        y = separator(root, top: y, margin: margin)
+        y -= 20
+        place(label("🐦 " + Language.t("settings.lan")), root, top: &y, margin: margin)
+        y -= 24
+        let lanBtn = NSButton(checkboxWithTitle: Language.t("settings.lan.enable"),
+                              target: self, action: #selector(lanToggled(_:)))
+        lanBtn.state = s.lanBirds ? .on : .off
+        lanBtn.frame = NSRect(x: margin, y: y, width: root.bounds.width - margin * 2, height: 22)
+        lanBtn.autoresizingMask = [.width]
+        root.addSubview(lanBtn)
+        lanButton = lanBtn
+        // 说明两行:昵称(随机代号,广播内容仅此+主题名)+ AP 隔离提示(老板拍板:设置里提示一句)
+        y -= 34
+        let lanNote = NSTextField(wrappingLabelWithString:
+            String(format: Language.t("settings.lan.note"), UserDefaults.standard.string(forKey: "kingfisher.lan.name") ?? "翠鸟-0000"))
+        lanNote.font = NSFont.systemFont(ofSize: 11)
+        lanNote.textColor = .secondaryLabelColor
+        lanNote.preferredMaxLayoutWidth = root.bounds.width - margin * 2
+        lanNote.lineBreakMode = .byCharWrapping
+        lanNote.frame = NSRect(x: margin, y: y - 14, width: root.bounds.width - margin * 2, height: 44)
+        root.addSubview(lanNote)
+
         // Y 轴滚动(几何全部钉常量,不从 contentView.bounds 取值——它实测返回过
         // 640×560 的 2× 假值,前两轮滚动全毁在它手里):
         // ①内容高度按真实布局收口;②frame 变高后平移全部子视图(坐标系不会自动重映射);
@@ -460,6 +490,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
     }
     @objc private func weatherToggled(_ b: NSButton) {
         Settings.shared.weatherEnabled = (b.state == .on)
+    }
+    @objc private func lanToggled(_ b: NSButton) {
+        Settings.shared.lanBirds = (b.state == .on)
     }
     @objc private func weatherProviderChanged(_ p: NSPopUpButton) {
         guard let id = p.selectedItem?.representedObject as? String else { return }

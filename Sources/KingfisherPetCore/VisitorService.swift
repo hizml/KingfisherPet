@@ -16,7 +16,9 @@ final class VisitorService {
 
     // MARK: - 演出 1:访客飞过(从屏边进 → 本鸟旁停 ~2.2s 对唱 → 飞出)
     /// birdSings:访客落定开唱时回调(本鸟应答一声;由 Behavior 注入)
-    func visitorPass(near birdFrame: CGRect, on screen: NSScreen?, birdSings: @escaping () -> Void) {
+    /// nameTag(v1.7.0 局域网串门):停留期间头顶显示邻居代号,读完是谁来了
+    func visitorPass(near birdFrame: CGRect, on screen: NSScreen?, birdSings: @escaping () -> Void,
+                     nameTag: String? = nil) {
         let area = screen?.visibleFrame ?? birdFrame
         let fromLeft = Bool.random()
         let enter = CGPoint(x: fromLeft ? area.minX - 160 : area.maxX + 160,
@@ -33,6 +35,32 @@ final class VisitorService {
             self?.showVisitor(seqName: "visitor_sing", t: CACurrentMediaTime())
             birdSings()
         }
+        // 停留期间头顶名牌(局域网串门):飞行起点后 0.4s 出现,随窗收走
+        if let tag = nameTag {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                self?.showNameTag(tag)
+            }
+        }
+    }
+
+    /// 名牌:小圆角气泡 + 代号文本,挂在访客窗顶部
+    private var nameTagLayer: CATextLayer?
+    private func showNameTag(_ text: String) {
+        guard let win, let layer else { return }
+        let t = CATextLayer()
+        t.string = text
+        t.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        t.fontSize = 11
+        t.foregroundColor = NSColor.labelColor.cgColor
+        t.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.85).cgColor
+        t.cornerRadius = 7
+        t.masksToBounds = true
+        t.alignmentMode = .center
+        t.contentsScale = win.backingScaleFactor
+        let w = CGFloat((text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 11, weight: .medium)]).width + 14)
+        t.frame = CGRect(x: 80 - w / 2, y: 140, width: w, height: 18)
+        layer.addSublayer(t)
+        nameTagLayer = t
     }
 
     // MARK: - 演出 2:孵化彩蛋的蛋(原地摇摆 ~2.4s 后收窗;破壳瞬间由调用方接小鸟)
@@ -191,5 +219,7 @@ final class VisitorService {
     private func hide() {
         win?.orderOut(nil)
         cancelTimer()
+        nameTagLayer?.removeFromSuperlayer()
+        nameTagLayer = nil
     }
 }

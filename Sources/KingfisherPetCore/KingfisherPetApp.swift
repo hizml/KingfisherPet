@@ -64,6 +64,12 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
     // 独立服务类型(评审待办:AppDelegate 拆分——DND/Update/Watchdog 各自成类,
     // 本类只负责装配与转发;emergencyReset 需要的子系统句柄经 owner 供给)
     private let dnd = DndMonitor()
+    private let lan = LanBirds.shared
+    private weak var lanStatusItem: NSMenuItem?
+    private weak var lanVisitItem: NSMenuItem?
+    private weak var lanFishItem: NSMenuItem?
+    /// 本会话已问过配对的邻居(拒绝过的不再烦)
+    private var lanPairAsked: Set<String> = []
     private let updater = UpdateService()
     private let watchdog = WatchdogService()
     private let weather = WeatherService.shared   // 天气联动(v1.5.0 B;设置开着才 start)
@@ -132,6 +138,10 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
             dnd.behaviorProvider = { [weak self] in self?.petController?.behavior }
             dnd.start()
         }
+
+        // 局域网小鸟(v1.7.0;默认关,设置开才启动):事件接行为机与托盘
+        lan.onEvent = { [weak self] ev in self?.handleLanEvent(ev) }
+        if Settings.shared.lanBirds { lan.setEnabled(true) }
 
         // 多屏:屏幕布局变化(插拔外接屏、分辨率变更)时,裂纹重定位 + 鸟钳制回当前屏
         NotificationCenter.default.addObserver(
@@ -387,6 +397,21 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(item(Language.t("menu.perch"), action: #selector(doPerch)))
         menu.addItem(item(Language.t("menu.peck"), action: #selector(doPeck)))
         menu.addItem(item(Language.t("menu.toggleVisibility"), action: #selector(toggleVisibility)))
+        // 局域网小鸟(v1.7.0;设置开才显示):状态行 + 串门 + 送鱼
+        let lanStatus = NSMenuItem(title: "🐦 " + Language.t("lan.none"), action: nil, keyEquivalent: "")
+        lanStatus.isEnabled = false
+        lanStatus.isHidden = !Settings.shared.lanBirds
+        menu.addItem(lanStatus)
+        lanStatusItem = lanStatus
+        let lanV = item("  ↳ " + Language.t("lan.visitMenu"), action: #selector(lanVisitAction))
+        lanV.isHidden = !Settings.shared.lanBirds
+        menu.addItem(lanV)
+        lanVisitItem = lanV
+        let lanF = item("  🐟 " + Language.t("lan.fishMenu"), action: #selector(lanFishAction))
+        lanF.isHidden = !Settings.shared.lanBirds
+        menu.addItem(lanF)
+        lanFishItem = lanF
+        refreshLanMenu()
         // AX 未授权提醒行(状态可见纪律):未授权时常驻,点击直达系统设置;授权生效即撤。
         // 菜单切语言重建时按 dnd.axBroken 现值恢复可见性。
         let axItem = item(Language.t("menu.axUnauthorized"), action: #selector(openAccessibilitySettings))
@@ -525,6 +550,72 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func devSnapshot() {
         let b = petController?.behavior
         kfLog("dev: 状态=\(b?.currentStateForLog() ?? "?") 亲密度=\(Growth.shared.intimacy)(\(Growth.shared.stage)) 孵化×\(Growth.shared.hatchCount) 天气=\(WeatherService.shared.now.map { "\($0.main.rawValue)" } ?? "nil") 昼夜h=\(DayRhythm.currentHour())")
+    }
+
+    // MARK: - 局域网小鸟事件(v1.7.0)
+
+    private func handleLanEvent(_ ev: LanBirds.Event) {
+        switch ev {
+        case .peersChanged:
+            refreshLanMenu()
+            promptPairingForUnknownPeers()
+        case .peepReceived(let name):
+            petController?.behavior.lanAnswerPeep()
+            _ = name
+        case .visitRequest(let name):
+            petController?.behavior.lanVisit(from: name)
+        case .fishReceived(let name):
+            petController?.behavior.lanFishGift(from: name)
+        }
+    }
+
+    /// 陌生邻居首次上线 → 自绘配对弹窗(允许/不再提示;隐私红线:本机确认)
+    private func promptPairingForUnknownPeers() {
+        guard lan.isEnabled else { return }
+        for name in lan.onlineNames {
+            guard !lan.allowed.contains(name), !lan.denied.contains(name),
+                  !lanPairAsked.contains(name) else { continue }
+            lanPairAsked.insert(name)
+            kfLog("lan: 配对弹窗 → \(name)")
+            KFDialog.show(title: String(format: Language.t("lan.pairTitle"), name),
+                          message: Language.t("lan.pairBody"),
+                          buttons: [Language.t("lan.allow"), Language.t("lan.deny")], width: 420) { idx in
+                if idx == 0 {
+                    self.lan.allowPeer(name)
+                } else {
+                    self.lan.denyPeer(name)
+                }
+                self.refreshLanMenu()
+            }
+            break   // 一次问一个,连上多只排队问(peersChanged 会再触发)
+        }
+    }
+
+    /// 托盘邻居行刷新(状态可见纪律)
+    private func refreshLanMenu() {
+        guard let status = lanStatusItem else { return }
+        let names = lan.onlineNames.filter { lan.allowed.contains($0) }
+        status.isHidden = !Settings.shared.lanBirds
+        if names.isEmpty {
+            status.title = "🐦 " + Language.t("lan.none")
+            lanVisitItem?.isEnabled = false
+            lanFishItem?.isEnabled = false
+        } else {
+            status.title = "🐦 " + String(format: Language.t("lan.online"), names.joined(separator: "、"))
+            lanVisitItem?.isEnabled = true
+            lanFishItem?.isEnabled = true
+        }
+    }
+
+    @objc private func lanVisitAction() {
+        if !lan.requestVisit() {
+            kfLog("lan: 串门未发出(无已配对在线邻居或冷却中)")
+        }
+    }
+    @objc private func lanFishAction() {
+        if lan.sendFish() {
+            petController?.behavior.startSing()   // 送出时本鸟开心唱一声
+        }
     }
 
     /// 切语言:改设置 → 重建菜单;设置窗口关掉,下次打开按新语言重建
@@ -722,6 +813,12 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
              "kingfisher.settings.weatherProvider", "kingfisher.settings.weatherKey",
              "kingfisher.settings.weatherHost":
             weather.settingsChanged()   // 开着 → 重启换源/换城市即刷;关 → stop 清系数
+        case "kingfisher.settings.lanBirds":
+            LanBirds.shared.setEnabled(Settings.shared.lanBirds)
+            lanStatusItem?.isHidden = !Settings.shared.lanBirds
+            lanVisitItem?.isHidden = !Settings.shared.lanBirds
+            lanFishItem?.isHidden = !Settings.shared.lanBirds
+            refreshLanMenu()
         default: break
         }
     }

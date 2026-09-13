@@ -718,6 +718,7 @@ final class Behavior: PetViewDelegate {
         let y = w.maxY - 34
         Effects.notes(at: CGPoint(x: x, y: y), on: screen)
         SpriteLibrary.shared.playPeep()
+        if LanBirds.shared.isEnabled { LanBirds.shared.sendPeep() }   // v1.7.0:鸣唱广播给邻居(对唱)
         hold(Double.random(in: 1.2...1.6)) { [weak self] in self?.finish() }
     }
 
@@ -1232,6 +1233,41 @@ final class Behavior: PetViewDelegate {
         busy = false
         if onScreen { scheduleThink() } // 隐藏着不复活行为
         if onWindow, perchedID != nil { startPerchCheck() }   // 恢复栖窗跟随
+    }
+
+    // MARK: - 局域网小鸟(v1.7.0 串门批;入口由 AppDelegate 的 LanBirds 事件驱动)
+
+    /// 对唱应答:邻居叫了一声 → 本鸟回一声+音符(轻量,不打断进行中的动作)
+    func lanAnswerPeep() {
+        guard onScreen, !dndActive, let w = window else { return }
+        SpriteLibrary.shared.playPeep()
+        let facingRight = view?.facingRight ?? false
+        Effects.notes(at: CGPoint(x: w.frame.midX + (facingRight ? 40 : -40),
+                                  y: w.frame.maxY - 40), on: screen)
+    }
+
+    /// 邻居来串门:访客演出带名牌(已配对+冷却过才会走到这)
+    func lanVisit(from name: String) {
+        guard onScreen, !dndActive, let w = window else { return }
+        kfLog("lan: 邻居串门 \(name)")
+        VisitorService.shared.visitorPass(near: w.frame, on: screen, birdSings: { [weak self] in
+            self?.lanAnswerPeep()
+        }, nameTag: name)
+    }
+
+    /// 收到邻居送的鱼:喂鱼演出 + 亲密度 +2(算每日上限内)
+    func lanFishGift(from name: String) {
+        guard onScreen, !dndActive else { return }
+        kfLog("lan: 收到 \(name) 送的鱼")
+        Growth.shared.add(2)
+        beginAction()
+        enter("eat")
+        SpriteLibrary.shared.playPeep()
+        hold(1.4) { [weak self] in
+            guard let self = self else { return }
+            self.enter("happy")
+            self.hold(0.7) { [weak self] in self?.finish() }
+        }
     }
 
     // MARK: - 开发测试触发(KF_DEV_MENU 菜单专用;生产构建无入口,方法空转)

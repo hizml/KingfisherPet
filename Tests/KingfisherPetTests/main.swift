@@ -301,6 +301,28 @@ enum TestMain {
         UserDefaults.standard.removeObject(forKey: "kingfisher.growth.lastFeedAt")
         UserDefaults.standard.removeObject(forKey: "kingfisher.growth.lastPetAt")
 
+        // MARK: - 局域网小鸟协议(v1.7.0;Windows 侧对称实现同口径)
+        print("[局域网协议]")
+        do {
+            let ok = LanBirds.Lan.encode(["t": "PEEP", "v": 1, "name": "翠鸟-3F2A"])
+            expect("encode 产出带换行 JSON", ok != nil && ok!.last == 0x0A
+                   && (try? JSONSerialization.jsonObject(with: ok!.dropLast())) != nil)
+            expect("decode 合法 PEEP", LanBirds.Lan.decode("{\"t\":\"PEEP\",\"v\":1,\"name\":\"翠鸟-00FF\"}")?.type == "PEEP")
+            expect("decode 缺 name 容忍(空串)", LanBirds.Lan.decode("{\"t\":\"PING\",\"v\":1}")?.name == "")
+            expect("decode 白名单外类型拒绝", LanBirds.Lan.decode("{\"t\":\"PWN\",\"v\":1}") == nil)
+            expect("decode 版本不符拒绝", LanBirds.Lan.decode("{\"t\":\"PEEP\",\"v\":2}") == nil)
+            expect("decode 坏 JSON 拒绝", LanBirds.Lan.decode("{oops") == nil)
+            let long = String(repeating: "a", count: 2000)
+            expect("decode 超长行拒绝(防灌包)", LanBirds.Lan.decode("{\"t\":\"PEEP\",\"v\":1,\"x\":\"\(long)\"}") == nil)
+            let tooBig = LanBirds.Lan.encode(["t": "PEEP", "v": 1, "x": long])
+            expect("encode 超限拒发", tooBig == nil)
+            let names = (0..<50).map { _ in LanBirds.Lan.randomCodename() }
+            expect("随机代号格式 翠鸟-XXXX(4 位大写十六进制)且随机",
+                   names.allSatisfy { $0.range(of: "^翠鸟-[0-9A-F]{4}$", options: .regularExpression) != nil }
+                   && Set(names).count > 1)
+            expect("全部消息类型在白名单", LanBirds.Lan.types.count == 8)
+        }
+
         // MARK: - 和风 Host 清洗(评审 A4:用户输入防强解包)
         print("[Host 清洗]")
         expect("常规 host 通过", WeatherService.sanitizedHost("devapi.qweather.com") == "devapi.qweather.com")
