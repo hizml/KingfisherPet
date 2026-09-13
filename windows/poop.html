@@ -180,6 +180,10 @@ listen("fx", (e) => {
     zzzEl.style.setProperty("--dx", (Math.random() * 36 - 18) + "px");
     zzzEl.style.animation = "none"; void zzzEl.offsetWidth;   // 重启动画
     zzzEl.style.animation = `kf-zzz ${1.8 / fxSpd}s ease-out forwards`;
+  } else if (kind === "zzz_clear") {
+    // 醒来即收气泡(macOS Effects.dismissZzz 同款):不留"睁眼+ZZZ"幽灵——
+    // 此前睡醒回 idle 后最后一颗还要飘 ~2s,被看成"睁眼睡觉"
+    if (zzzEl) { zzzEl.style.animation = "none"; zzzEl.style.opacity = "0"; }
   } else if (kind === "sun") {
     document.querySelector("div.fx-sun")?.remove();   // 单实例(防堆叠)
     const c = document.createElement("div");

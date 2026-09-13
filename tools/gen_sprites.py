@@ -327,7 +327,8 @@ def draw_kingfisher(W, H, pal, *, wing="folded", leg_phase=0.0, eye_closed=False
         for a, b in [((ex-r, ey-r),(ex+r, ey+r)), ((ex-r, ey+r),(ex+r, ey-r))]:
             d.line([a, b], fill=C("EYE"), width=max(2, int(3*s)))
     elif eye_closed:
-        d.arc([ex-10*s, ey-5*s, ex+10*s, ey+9*s], 200, 340, fill=C("EYE"), width=max(2, int(4*s)))
+        # 闭眼弧线:6px——4px 在 pixel(降采样 64)后细到读不出来,被看成睁眼
+        d.arc([ex-10*s, ey-5*s, ex+10*s, ey+9*s], 200, 340, fill=C("EYE"), width=max(2, int(6*s)))
     else:
         E(ex, ey, 8*s, 8*s, C("WHITE"))
         pr = 5*s if alert else 6*s

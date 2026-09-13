@@ -383,6 +383,12 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(item(Language.t("menu.perch"), action: #selector(doPerch)))
         menu.addItem(item(Language.t("menu.peck"), action: #selector(doPeck)))
         menu.addItem(item(Language.t("menu.toggleVisibility"), action: #selector(toggleVisibility)))
+        // AX 未授权提醒行(状态可见纪律):未授权时常驻,点击直达系统设置;授权生效即撤。
+        // 菜单切语言重建时按 dnd.axBroken 现值恢复可见性。
+        let axItem = item(Language.t("menu.axUnauthorized"), action: #selector(openAccessibilitySettings))
+        axItem.isHidden = !dnd.axBroken
+        menu.addItem(axItem)
+        dnd.axMenuItem = axItem
         // 成长状态行(状态可见纪律):❤ 档位·亲密度;孵化后变「缘定一生(已孵化)」
         let growthItem = NSMenuItem(title: Growth.shared.menuTitle, action: nil, keyEquivalent: "")
         growthItem.isEnabled = false
@@ -507,6 +513,11 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
             settingsWindowController = SettingsWindowController()
         }
         settingsWindowController?.show()
+    }
+
+    /// AX 未授权提醒行的动作:直达系统设置辅助功能页
+    @objc private func openAccessibilitySettings() {
+        DndMonitor.openAccessibilityPane()
     }
 
     /// 屏幕布局变化(插拔屏/分辨率):重定位裂纹覆盖层,把鸟钳回当前可见区。

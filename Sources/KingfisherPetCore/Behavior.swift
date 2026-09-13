@@ -949,7 +949,10 @@ final class Behavior: PetViewDelegate {
         let y = w.frame.maxY - 34
         Effects.zzz(at: CGPoint(x: x, y: y), on: screen)
     }
-    private func stopZzz() { zzzTimer?.invalidate(); zzzTimer = nil }
+    private func stopZzz() {
+        zzzTimer?.invalidate(); zzzTimer = nil
+        Effects.dismissZzz()   // 醒来即收气泡:不留"睁眼+ZZZ"幽灵窗口
+    }
 
     // MARK: - 拉屎(自主随机 / 吃完延时触发)
     private func schedulePoop(after t: TimeInterval) {

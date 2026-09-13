@@ -216,6 +216,12 @@ enum Effects {
     private static var zzzLastAt: CFTimeInterval = 0
     private static var zzzIdleTimer: Timer?
 
+    /// 立即收掉打盹气泡(醒来的语义):不再等动画飘完+3s 空闲。
+    /// 此前睡醒回 idle(睁眼)后最后一颗 z 还要飘 ~2s,被看成"睁眼睡觉"(老板实锤)。
+    static func dismissZzz() {
+        zzzWin?.orderOut(nil)
+    }
+
     static func zzz(at point: CGPoint, on screen: NSScreen?) {
         let size = zzzSize
         let w: NSWindow

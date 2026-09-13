@@ -17,8 +17,25 @@ final class DndMonitor {
     private var dndDiagTick = 0
     private var axFailStreak = 0
     private var axPromptShown = false
+    /// AX 未授权(状态可见纪律):托盘菜单常驻提醒行,授权生效即撤。菜单重建时由 App 重新注入。
+    private(set) var axBroken = false
+    weak var axMenuItem: NSMenuItem?
+    private func setAxBroken(_ v: Bool) {
+        guard axBroken != v else { return }
+        axBroken = v
+        axMenuItem?.isHidden = !v
+        kfLog("ax: 未授权状态 → \(v)")
+    }
     /// AX 查询串行队列(保序:结果按拍次顺序回主线程应用)
     private let axQueue = DispatchQueue(label: "kf.dnd.ax", qos: .utility)
+
+    /// 深链系统设置辅助功能页(菜单提醒行与引导弹窗共用)
+    static func openAccessibilityPane() {
+        let deep = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility")!
+        if !NSWorkspace.shared.open(deep) {
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+        }
+    }
 
     func start() {
         guard timer == nil else { return }
@@ -48,7 +65,12 @@ final class DndMonitor {
                 self.axFailStreak = r.axErr != nil ? self.axFailStreak + 1 : 0
                 if let err = r.axErr {
                     if self.axFailStreak % 5 == 1 { kfLog("ax: 取窗口失败 err=\(err) 连续\(self.axFailStreak)拍,前台=\(r.front ?? "nil")") }
-                    if self.axFailStreak >= 5 { self.promptAccessibilityOnce() }
+                    if self.axFailStreak >= 5 {
+                        self.setAxBroken(true)
+                        self.promptAccessibilityOnce()
+                    }
+                } else if self.axBroken {
+                    self.setAxBroken(false)   // 授权生效瞬间撤提醒(状态可见,双向)
                 }
                 // 观测脚手架门控:排障期才开(生产每 30s 一次 AX 逐窗查询+日志是纯负载)
                 if !r.fs && tick % 10 == 0 && ProcessInfo.processInfo.environment["KF_DND_DIAG"] == "1" {
@@ -163,11 +185,7 @@ final class DndMonitor {
                       message: "勿扰模式(全屏看片/放音时鸟自动隐身静音)依赖辅助功能。\n\n请到 系统设置 → 隐私与安全性 → 辅助功能,删除旧的「翡」后重新添加并勾选(选择:\(appPath))",
                       buttons: ["打开系统设置", "稍后"], width: 480) { idx in
             guard idx == 0 else { return }
-            // 新版系统设置的辅助功能深链;打不开则退到隐私面板
-            let deep = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility")!
-            if !NSWorkspace.shared.open(deep) {
-                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
-            }
+            Self.openAccessibilityPane()
         }
     }
 }

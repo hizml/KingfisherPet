@@ -25,6 +25,9 @@ export function splash(x: number, y: number) { fx("splash", x, y); }
 export function notes(x: number, y: number) { fx("notes", x, y); }
 /// zzz(打盹)
 export function zzz(x: number, y: number) { fx("zzz", x, y); }
+/// 醒来即收 zzz 气泡(macOS Effects.dismissZzz 同款):不留"睁眼+ZZZ"幽灵——
+/// 此前睡醒回 idle 后最后一颗还要飘 ~2s,被看成"睁眼睡觉"
+export function zzzClear() { try { void emit("fx", { kind: "zzz_clear" }); } catch { /* */ } }
 /// 太阳(日光浴),duration 秒
 export function sun(x: number, y: number, duration: number) { fx("sun", x, y, duration); }
 /// 抖水水珠(雨停/预警解除,shake 序列配套)

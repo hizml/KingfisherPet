@@ -789,7 +789,10 @@ function startZzzInterval() {
   const zx = facingRight ? 110 : 50;   // 从头上方出,随朝向(macOS 同款;y 距顶 34 对齐)
   zzzTimer = setInterval(() => effects.zzz(zx, 34), 900);
 }
-function stopZzzInterval() { if (zzzTimer) { clearInterval(zzzTimer); zzzTimer = null; } }
+function stopZzzInterval() {
+  if (zzzTimer) { clearInterval(zzzTimer); zzzTimer = null; }
+  effects.zzzClear();   // 醒来即收气泡:不留"睁眼+ZZZ"幽灵(macOS 同款)
+}
 
 export function sleepForUserAbsence() {
   if (userSleeping) return;
