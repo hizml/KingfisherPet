@@ -55,3 +55,39 @@ export function napSeconds(hour) {
   if (hour >= 22 && hour < 24) return [25, 50];    // 夜:渐长
   return [5, 9];                                    // 白天基准(原行为)
 }
+
+/// ── 局域网小鸟协议(v1.7.0;macOS LanBirds.Lan 对称实现,同一公式同一用例口径)──
+export const LAN_PROTO_V = 1;
+export const LAN_TYPES = ["HELLO", "PING", "PONG", "PEEP", "VISIT", "FISH", "BUSY", "BYE"];
+export const LAN_MAX_LINE = 1024;
+
+/// 随机代号:翠鸟-XXXX(4 位大写十六进制);不暴露主机名/IP(隐私红线)
+export function lanCodename() {
+  return "翠鸟-" + Math.floor(Math.random() * 0x10000).toString(16).toUpperCase().padStart(4, "0");
+}
+
+/// 编码:JSON + 换行;超 1KB 拒发(返回 null)
+export function lanEncode(obj) {
+  try {
+    const s = JSON.stringify(obj);
+    return s.length + 1 <= LAN_MAX_LINE ? s + "\n" : null;
+  } catch { return null; }
+}
+
+/// 解码:超长/坏 JSON/版本不符/类型不在白名单 → null
+export function lanDecode(line) {
+  if (!line || line.length > LAN_MAX_LINE) return null;
+  let obj;
+  try { obj = JSON.parse(line); } catch { return null; }
+  if (obj.v !== LAN_PROTO_V) return null;
+  if (!LAN_TYPES.includes(obj.t)) return null;
+  return { type: obj.t, name: typeof obj.name === "string" ? obj.name : "" };
+}
+
+/// 串门冷却判定(ms 注入可测):30 分钟
+export const LAN_VISIT_COOLDOWN_MS = 30 * 60 * 1000;
+export function lanVisitAllowed(nowMs, lastVisitMs) {
+  if (lastVisitMs == null) return true;
+  if (nowMs < lastVisitMs) return true;   // 时钟回拨不锁死(macOS A9 同款)
+  return nowMs - lastVisitMs >= LAN_VISIT_COOLDOWN_MS;
+}

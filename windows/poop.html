@@ -140,7 +140,7 @@ function imgEl(name, w, h) {
 let fxSpd = 1;   // 动画速度(1=正常);时长 = 基准 / fxSpd(快→短)
 let zzzEl = null;   // zzz 单实例(macOS 池化单窗同款:每次 tick 替换,不堆叠)
 listen("fx", (e) => {
-  const { kind, x: px, y: py, dur, spd, sym } = e.payload;
+  const { kind, x: px, y: py, dur, spd, sym, tag } = e.payload;
   const fxArgs = { sym };   // mood 图标参数
   fxSpd = spd ?? 1;
   const x = px / DPR, y = py / DPR;   // 物理 → CSS 逻辑
@@ -288,7 +288,15 @@ listen("fx", (e) => {
       const inPause = !isChild && t >= pauseStart && t < pauseStart + pauseDur;
       let px, py, seq;
       if (inPause) {
-        if (!sang && t >= pauseStart + 0.3) sang = true;   // 落定半拍后开唱(macOS 同款)
+        if (!sang && t >= pauseStart + 0.3) { sang = true;   // 落定半拍后开唱(macOS 同款)
+          if (tag) {   // 局域网串门名牌:停留点头顶代号气泡
+            const lab = document.createElement("div");
+            lab.textContent = String(tag);
+            lab.style.cssText = `position:fixed;left:${pts[1][0] - 34}px;top:${pts[1][1] - sz / 2 - 26}px;padding:1px 7px;border-radius:7px;background:rgba(120,120,128,.14);color:#333;font-size:11px;font-weight:500;pointer-events:none;z-index:4;`;
+            document.body.appendChild(lab);
+            setTimeout(() => lab.remove(), 2400);
+          }
+        }
         seq = sang ? singSeq : idleSeq;
         px = pts[1][0]; py = pts[1][1];   // 停留点
       } else {

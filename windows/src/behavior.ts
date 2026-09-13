@@ -553,6 +553,7 @@ async function perchBranchHere() {   // 用户触发的静态动作补枝规则(
   } catch { /* */ }
 }
 function startSing() {
+  void import("./lansvc").then(({ lan }) => { if (lan.enabled) void lan.send("peep"); });   // v1.7.0:鸣唱广播给邻居(对唱,macOS 同款)
   beginAction(); perchBranchHere(); enter("sing"); playPeep();
   effects.notes(facingRight ? 110 : 50, 34);   // 音符从头上方出(macOS 同款:距顶 34)
   hold(1.2 + Math.random() * 0.4, () => finish());
@@ -1142,4 +1143,35 @@ export async function hatchIn() {
     visBusy = false;   // 显示完成即解锁(破壳动画期间允许下一次切换;串行的是窗口级显示/隐藏)
   } catch (e) { warnOnce("hatchIn", e); visBusy = false; }
   hold(1.4, () => { enter("idle"); scheduleThink(); emit("log", "hatchIn: 破壳完成"); });
+}
+
+// ── 局域网小鸟(v1.7.0;main.ts 的 lan-behavior 事件路由到这里)──
+import { listen as _lanListen } from "@tauri-apps/api/event";
+void _lanListen<{ act: string; name: string }>("lan-behavior", (e) => {
+  const { act, name } = e.payload;
+  if (act === "peep") lanAnswerPeep();
+  else if (act === "visit") lanVisit(name);
+  else if (act === "fish") lanFishGift(name);
+});
+
+/// 对唱应答:回一声+音符(轻量,不打断进行中的动作;macOS 同款)
+export function lanAnswerPeep() {
+  playPeep();
+  const zx = facingRight ? 110 : 50;
+  effects.notes(zx, 34);
+}
+
+/// 邻居来串门:访客演出带名牌(poop 舞台 tag 参数)
+export function lanVisit(name: string) {
+  emit("log", `lan: 邻居串门 ${name}`);
+  const zx = facingRight ? 110 : 50;
+  effects.visitorTag(zx, 34, name);
+  setTimeout(() => lanAnswerPeep(), 3400);   // 访客落定开唱时本鸟应答(时序对齐演出)
+}
+
+/// 收到邻居送的鱼:喂鱼演出 + 亲密度 +2(每日上限内)
+export function lanFishGift(_name: string) {
+  emit("log", "lan: 收到邻居送的鱼");
+  growth.add(2);
+  feedFish();
 }

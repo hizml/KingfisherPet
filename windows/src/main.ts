@@ -64,6 +64,7 @@ async function main() {
     setupBranch(lib);
     setupTheme(lib);
     setupAudio();
+    void import("./lansvc").then((m) => m.setupLan());   // 局域网小鸟(v1.7.0)
     setSoundOn(settings.soundOn);
     setupDrag();
     listen<string>("menu", (e) => {
@@ -79,6 +80,8 @@ async function main() {
       else if (id === "show") { behavior.isVisible() ? behavior.fallAway() : behavior.hatchIn(); }   // 显示/隐藏 toggle
       else if (id === "recall") { behavior.dragResetCache(); emit("log", "recall: Rust 出屏找回完成,拖拽缓存已重置"); }   // Rust 看门狗找回后的状态同步
       else if (id === "repair") { clearCracks(); }   // 托盘"修复屏幕"
+      else if (id === "lanvisit") { void import("./lansvc").then(({ lan }) => { void lan.send("visit").then((ok) => { if (!ok) emit("log", "lan: 串门未发出(无在线已配对邻居或冷却中)"); }); }); }
+      else if (id === "lanfish") { void import("./lansvc").then(({ lan }) => { void lan.send("fish").then((ok) => { if (ok) emit("log", "lan: 已送鱼"); }); }); }
     });
     listen<string>("theme", (e) => {   // 主题切换(托盘/设置窗)→ 原地换装 + 回推勾选状态
       setTheme(e.payload).then(() => syncSettingsOutlets()).catch(() => {});
@@ -87,6 +90,7 @@ async function main() {
       const v = e.payload;
       if (v.startsWith("sound:")) { const on = v.split(":")[1] === "true"; setSound(on); setSoundOn(on); }
       else if (v.startsWith("peck:")) { setPeckScreen(v.split(":")[1] === "true"); }
+      else if (v.startsWith("lan:")) { void import("./lansvc").then(({ lan }) => { lan.enabled = v.split(":")[1] === "true"; }); }   // 设置窗开关 → 服务启停
       else if (v.startsWith("activity:")) {   // 畸形载荷(NaN)直接丢弃,不污染行为链
         const n = Number(v.split(":")[1]);
         if (Number.isFinite(n)) setActivity(Math.min(1, Math.max(0, n)));

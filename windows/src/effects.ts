@@ -47,6 +47,15 @@ export function sun(x: number, y: number, duration: number) { fx("sun", x, y, du
 export function droplets(x: number, y: number) { fx("droplets", x, y); }
 /// 访客飞过(v1.5.x 成长):x/y=本鸟中心(屏幕物理);舞台侧算进出路径与对唱停留
 export function visitorPass(x: number, y: number, onArrive: () => void) { fx2("visitor", x, y, onArrive); }
+/// 局域网串门:访客演出 + 头顶名牌(邻居代号)
+export async function visitorTag(x: number, y: number, tag: string) {
+  try {
+    await ensurePoopStage();
+    const p = await petWin.outerPosition();
+    const sc = await petWin.scaleFactor();
+    await emit("fx", { kind: "visitor", tag, x: p.x + x * sc, y: p.y + y * sc, dur: 0, spd: settings.speed });
+  } catch { /* */ }
+}
 /// 蛋摇摆(孵化彩蛋):x/y=蛋位(屏幕物理)
 export function eggWobble(x: number, y: number) { fx2("egg", x, y, null); }
 /// 小鸟跟班绕飞(孵化彩蛋):x/y=本鸟中心(屏幕物理)

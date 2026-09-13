@@ -52,6 +52,13 @@
     <div class="wxrow qw-only" hidden><span class="k">API Host</span><input id="wxHost" type="text" placeholder="devapi.qweather.com(*.qweather.com)" /></div>
     <div class="wxstat" id="wxStat">状态:未开启</div>
   </div>
+  <div class="wx">
+    <div class="wxh">🐦 局域网小鸟 LAN Birds</div>
+    <label class="chk"><input id="lanOn" type="checkbox" /><span>发现同一网络里的翡(对唱/串门/送鱼)</span></label>
+    <div class="wxstat" id="lanName"></div>
+    <div class="wxstat">需同一路由器且未开「AP 隔离/客户端隔离」,公司或公共 WiFi 可能发现不到邻居。广播仅代号与主题,不含 IP/主机名。</div>
+    <div class="wxstat" id="lanPeers">邻居:—</div>
+  </div>
   <div class="row">
     <div class="lbl"><span>主题 Theme</span></div>
     <div class="themes" id="themes"></div>
@@ -62,6 +69,7 @@
   </div>
   <script type="module">
     import { emit, listen } from "@tauri-apps/api/event";
+    import { invoke } from "@tauri-apps/api/core";
     // 初始值直接读共享 localStorage(与主窗同源互通,无竞态——之前页面写死默认值
     // 靠事件推送初始化,关掉重开时推送已被错过 = 滑杆"自动还原");
     // 语言/自启是 Rust 侧状态,打开时主动拉
@@ -127,6 +135,33 @@
     wxHost.value = localStorage.getItem("kf_weather_host") || "";
     paintQW();
     wxOn.onchange = () => emit("setting", "weather_on:" + wxOn.checked);
+    // 局域网小鸟(v1.7.0):开关走 lansvc;邻居列表支持允许/拒绝(配对=隐私红线)
+    const lanOn = document.getElementById("lanOn"),
+          lanName = document.getElementById("lanName"),
+          lanPeers = document.getElementById("lanPeers");
+    const renderPeers = async () => {
+      if (lanName) lanName.textContent = "我的代号:" + lan.name;
+      let peers = [];
+      try { peers = await invoke("lan_peers"); } catch { peers = []; }
+      if (!peers.length) { lanPeers.textContent = "邻居:暂无"; return; }
+      lanPeers.innerHTML = "";
+      for (const n of peers) {
+        const b = document.createElement("button");
+        b.style.cssText = "margin:2px 6px 2px 0;padding:1px 8px;border-radius:6px;border:1px solid #999;background:#fff;cursor:pointer;font-size:11px;";
+        const st = (lanSvc && lanSvc.allowed.includes(n)) ? "✅ " : ((lanSvc && lanSvc.denied.includes(n)) ? "🚫 " : "❓ ");
+        b.textContent = st + n + (st === "❓ " ? "(允许)" : "");
+        b.onclick = () => { if (lanSvc) lanSvc.allowPeer(n); renderPeers(); };
+        lanPeers.appendChild(b);
+      }
+    };
+    let lanSvc = null;   // lansvc 动态加载(es2021 无顶层 await)
+    import("./src/lansvc").then((m) => {
+      lanSvc = m.lan;
+      lanOn.checked = m.lan.enabled;   // 同源 localStorage,与主窗一致
+    });
+    lanOn.onchange = () => { if (lanSvc) lanSvc.enabled = lanOn.checked; emit("setting", "lan:" + lanOn.checked); renderPeers(); };
+    renderPeers();
+    import("@tauri-apps/api/event").then(({ listen: _lsn }) => _lsn("lan-peers-changed", () => renderPeers()));
     wxProv.onchange = () => { paintQW(); emit("setting", "weather_provider:" + wxProv.value); };
     // 文本框:失焦/回车才提交(逐键触发服务重启=请求轰炸)
     const commitOnDone = (el, key) => {
