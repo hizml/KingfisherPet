@@ -284,6 +284,14 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
         root.addSubview(note)
         // 城市
         y -= 28
+        // 标签列宽:按天气四行标签实际最宽动态取(「和风 API Key」≈71pt、en「QWeather API Key」≈100pt)。
+        // 之前钉死 56:输入框左缘正好压在 Key/Host 标签文字上(截图实测的"文字遮挡")
+        let wxTitleKeys = ["settings.weather.city", "settings.weather.provider",
+                           "settings.weather.key", "settings.weather.host"]
+        let maxTW = wxTitleKeys.map {
+            (Language.t($0) as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 12)]).width
+        }.max() ?? 56
+        let labelCol = min(124, max(56, ceil(maxTW) + 12))
         let cityTitle = label(Language.t("settings.weather.city"))
         cityTitle.font = NSFont.systemFont(ofSize: 12)
         cityTitle.sizeToFit()
@@ -294,7 +302,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
         cityField.stringValue = s.weatherCity
         cityField.delegate = self
         cityField.font = NSFont.systemFont(ofSize: 12)
-        cityField.frame = NSRect(x: margin + 56, y: y - 2, width: root.bounds.width - margin * 2 - 56, height: 24)
+        cityField.frame = NSRect(x: margin + labelCol, y: y - 2, width: root.bounds.width - margin * 2 - labelCol, height: 24)
         cityField.autoresizingMask = [.width]
         cityField.identifier = NSUserInterfaceItemIdentifier("wx.city")
         root.addSubview(cityField)
@@ -305,8 +313,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
         provTitle.sizeToFit()
         provTitle.frame.origin = NSPoint(x: margin, y: y)
         root.addSubview(provTitle)
-        let provPopup = NSPopUpButton(frame: NSRect(x: margin + 56, y: y - 4,
-                                                    width: root.bounds.width - margin * 2 - 56, height: 26),
+        let provPopup = NSPopUpButton(frame: NSRect(x: margin + labelCol, y: y - 4,
+                                                    width: root.bounds.width - margin * 2 - labelCol, height: 26),
                                       pullsDown: false)
         provPopup.addItem(withTitle: "Open-Meteo")
         provPopup.lastItem?.representedObject = "open-meteo"
@@ -331,7 +339,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
             keyField.stringValue = s.weatherKey
             keyField.delegate = self
             keyField.font = NSFont.systemFont(ofSize: 12)
-            keyField.frame = NSRect(x: margin + 56, y: y - 2, width: root.bounds.width - margin * 2 - 56, height: 24)
+            keyField.frame = NSRect(x: margin + labelCol, y: y - 2, width: root.bounds.width - margin * 2 - labelCol, height: 24)
             keyField.autoresizingMask = [.width]
             keyField.identifier = NSUserInterfaceItemIdentifier("wx.key")
             root.addSubview(keyField)
@@ -346,7 +354,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
             hostField.stringValue = s.weatherHost
             hostField.delegate = self
             hostField.font = NSFont.systemFont(ofSize: 12)
-            hostField.frame = NSRect(x: margin + 56, y: y - 2, width: root.bounds.width - margin * 2 - 56, height: 24)
+            hostField.frame = NSRect(x: margin + labelCol, y: y - 2, width: root.bounds.width - margin * 2 - labelCol, height: 24)
             hostField.autoresizingMask = [.width]
             hostField.identifier = NSUserInterfaceItemIdentifier("wx.host")
             root.addSubview(hostField)
@@ -369,7 +377,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
         // v1.5.0:窗口高度自适应内容(天气区进设置窗后内容 500+,固定 308 会把新功能
         // 藏在折叠线下);内容超过 760 才回落到滚动。
         let baseH: CGFloat = 308
-        let contentH = max((baseH - margin) - y + margin, baseH)
+        // +18 底部余量:原式内容超高时状态行底边恰好压在 documentView 的 y=0 上,
+        // 一点呼吸空间没有(截图实测:状态行「状态:天气…」贴底被裁)
+        let contentH = max((baseH - margin) - y + margin + 18, baseH)
         let viewH = min(contentH, 760)
         let grow = contentH - baseH
         if grow != 0 { for sv in root.subviews { sv.frame.origin.y += grow } }

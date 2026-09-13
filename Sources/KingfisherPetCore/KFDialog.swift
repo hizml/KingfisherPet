@@ -1,8 +1,9 @@
 import AppKit
 
-/// 自绘小弹窗(v1.6.0 评审 A6:项目红线「弹窗必须自绘」,替换原生 NSAlert runModal)。
-/// 形态对齐 Windows 端 update.html:标题+正文+右对齐按钮排,主按钮青底白字。
-/// 模态语义:按钮点击 → onClose(序号);用户点关闭钮 → onClose(-1)。窗口自管理生命周期。
+/// 自绘小弹窗(项目红线「弹窗必须自绘」,替换原生 NSAlert runModal)。
+/// 形态对齐 macOS NSAlert:左侧应用图标 + 右侧标题/正文,底部右对齐按钮排,
+/// 主按钮(序号 0)在最右(macOS 规范:默认动作靠右、取消/稍后靠左)。
+/// 模态语义:按钮点击 → onClose(序号);用户点关闭钮/Esc → onClose(-1)。
 final class KFDialog: NSObject, NSWindowDelegate {
 
     private var window: NSWindow?
@@ -18,52 +19,104 @@ final class KFDialog: NSObject, NSWindowDelegate {
         live.append(d)
     }
 
+    // 品牌青(主题色);dark 模式下提亮一档保持可读
+    private static func primaryColor() -> NSColor {
+        NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor(calibratedRed: 0.10, green: 0.62, blue: 0.66, alpha: 1)
+                : NSColor(calibratedRed: 0.055, green: 0.486, blue: 0.525, alpha: 1)
+        }
+    }
+
+    /// 统一按钮工厂:主按钮青底白字,次按钮浅底细边框;均无系统 bezel/焦点环。
+    private func makeButton(title raw: String, primary: Bool, tag: Int) -> NSButton {
+        let b = NSButton(title: raw, target: self, action: #selector(tapped(_:)))
+        b.tag = tag
+        b.isBordered = false                  // 去系统 bezel(老板:UI 丑的根源)
+        b.focusRingType = .none               // 自绘底色上系统焦点环会溢出成蓝框
+        b.wantsLayer = true
+        b.layer?.cornerRadius = 8
+        b.font = .systemFont(ofSize: 13, weight: primary ? .semibold : .regular)
+        if primary {
+            b.layer?.backgroundColor = Self.primaryColor().cgColor
+            b.contentTintColor = .white
+        } else {
+            let bg = NSColor(name: nil) { appearance in
+                appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                    ? NSColor(calibratedWhite: 0.16, alpha: 1)
+                    : NSColor(calibratedWhite: 0.95, alpha: 1)
+            }
+            b.layer?.backgroundColor = bg.cgColor
+            b.layer?.borderWidth = 1
+            b.layer?.borderColor = NSColor.separatorColor.cgColor
+            b.contentTintColor = .labelColor
+        }
+        return b
+    }
+
     private func build(title: String, message: String, buttons: [String],
                        width: CGFloat, onClose: @escaping (Int) -> Void) {
         self.onClose = onClose
 
+        let m: CGFloat = 24                       // 左右边距
+        let iconS: CGFloat = 48
+        let textX = m + iconS + 16                // 文本块起点(图标右侧)
+        let textW = width - textX - m
+
         let titleL = NSTextField(wrappingLabelWithString: title)
         titleL.font = .systemFont(ofSize: 14, weight: .semibold)
+        titleL.preferredMaxLayoutWidth = textW
+        titleL.lineBreakMode = .byCharWrapping    // 长串(路径/版本号)按字折行,不截断
+        titleL.sizeToFit()
+
         let msgL = NSTextField(wrappingLabelWithString: message)
         msgL.font = .systemFont(ofSize: 12)
         msgL.textColor = .secondaryLabelColor
-
-        let btnRow = NSView()
-        let btnW: CGFloat = 96, btnH: CGFloat = 30
-        for (i, raw) in buttons.enumerated() {
-            let b = NSButton(title: raw, target: self, action: #selector(tapped(_:)))
-            b.tag = 100 + i
-            b.bezelStyle = .rounded
-            b.font = .systemFont(ofSize: 12, weight: .medium)
-            b.frame = NSRect(x: CGFloat(i) * (btnW + 8), y: 0, width: btnW, height: btnH)
-            if i == 0 {   // 主按钮:青底白字
-                b.wantsLayer = true
-                b.layer?.backgroundColor = NSColor(calibratedRed: 0.055, green: 0.486, blue: 0.525, alpha: 1).cgColor
-                b.layer?.cornerRadius = 6
-                b.contentTintColor = .white
-                b.isBordered = false
-            }
-            btnRow.addSubview(b)
-        }
-        let rowW = CGFloat(buttons.count) * btnW + CGFloat(max(0, buttons.count - 1)) * 8
-        btnRow.frame = NSRect(x: 0, y: 0, width: rowW, height: btnH)
-
-        // 布局(手工竖排:标题 20 / 正文按宽折行 / 按钮 30 + 间距)
-        titleL.preferredMaxLayoutWidth = width - 48
-        msgL.preferredMaxLayoutWidth = width - 48
-        titleL.sizeToFit()
+        msgL.preferredMaxLayoutWidth = textW
+        msgL.lineBreakMode = .byCharWrapping      // DND 引导弹窗正文含完整 app 路径,按词折行必截断
         msgL.sizeToFit()
-        let titleH = max(22, titleL.fittingSize.height)
-        let msgH = max(18, msgL.fittingSize.height)
-        let contentH = 24 + titleH + 8 + msgH + 18 + btnH + 20
 
+        let titleH = max(20, titleL.fittingSize.height)
+        let msgH = max(18, msgL.fittingSize.height)
+        let textBlockH = titleH + 6 + msgH
+        let btnH: CGFloat = 32
+
+        // 按钮:宽按文字自适应;渲染时主按钮(index 0)放最右,其余向左排
+        var btnViews: [NSButton] = []
+        var widths: [CGFloat] = []
+        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)]
+        for (i, raw) in buttons.enumerated() {
+            let tw = (raw as NSString).size(withAttributes: attrs).width
+            let w = max(88, ceil(tw) + 32)
+            widths.append(w)
+            btnViews.append(makeButton(title: raw, primary: i == 0, tag: 100 + i))
+        }
+        let gap: CGFloat = 10
+        let rowW = widths.reduce(0, +) + gap * CGFloat(max(0, buttons.count - 1))
+
+        let contentH = m + max(iconS, textBlockH) + 22 + btnH + 22
         let root = NSView(frame: NSRect(x: 0, y: 0, width: width, height: contentH))
-        titleL.frame.origin = CGPoint(x: 24, y: contentH - 20 - titleH)
-        msgL.frame.origin = CGPoint(x: 24, y: contentH - 20 - titleH - 8 - msgH)
-        btnRow.frame.origin = CGPoint(x: width - 24 - rowW, y: 20)
+
+        // 图标垂直居中于文本块
+        let iconTop = m + max(0, (textBlockH - iconS) / 2)
+        let icon = NSImageView(frame: NSRect(x: m, y: contentH - iconTop - iconS, width: iconS, height: iconS))
+        icon.image = NSApplication.shared.applicationIconImage
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        root.addSubview(icon)
+
+        titleL.frame = CGRect(x: textX, y: contentH - m - titleH, width: textW, height: titleH)
+        msgL.frame = CGRect(x: textX, y: contentH - m - titleH - 6 - msgH, width: textW, height: msgH)
         root.addSubview(titleL)
         root.addSubview(msgL)
-        root.addSubview(btnRow)
+
+        // 按钮行:右对齐;渲染顺序反转,主按钮(0)落在最右
+        var x = width - m - rowW
+        for i in 0..<btnViews.count {
+            let slot = btnViews.count - 1 - i
+            btnViews[slot].frame = NSRect(x: x, y: 22, width: widths[slot], height: btnH)
+            root.addSubview(btnViews[slot])
+            x += widths[slot] + gap
+        }
 
         let w = NSWindow(contentRect: root.bounds,
                          styleMask: [.titled, .closable],

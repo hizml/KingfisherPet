@@ -144,16 +144,24 @@ final class DndMonitor {
         return "fsDiag: 前台=\(name) 窗口\(wins.count)个 [\(parts.joined(separator: " "))]"
     }
 
-    /// AX 持续失败(授权未生效)→ 弹窗引导用户开辅助功能(用户要求:需要权限必须明示)
+    /// AX 持续失败(授权未生效)→ 弹窗引导用户开辅助功能(用户要求:需要权限必须明示)。
+    /// 频率纪律:授权成功后 AX 查询不再失败,根本走不到这;本引导对"未授权"也只弹一次——
+    /// 标志按安装路径落 UserDefaults(原地重启不再烦,换路径重装才再引导一次)。
     private func promptAccessibilityOnce() {
         guard !axPromptShown else { return }
         axPromptShown = true
-        kfLog("ax: 弹窗引导开启辅助功能")
         let appPath = Bundle.main.bundleURL.path   // 发布版用户机器上路径各不相同,动态生成
+        let d = UserDefaults.standard
+        if d.string(forKey: "kingfisher.axPromptPath") == appPath {
+            kfLog("ax: 引导已看过(路径未变),不再弹")
+            return
+        }
+        d.set(appPath, forKey: "kingfisher.axPromptPath")
+        kfLog("ax: 弹窗引导开启辅助功能")
         // 评审 A6:自绘弹窗(替换 NSAlert runModal;勿在巡检回调里模态阻塞)
-        KFDialog.show(title: "翡 需要辅助功能权限",
+        KFDialog.show(title: "「翡」需要辅助功能权限",
                       message: "勿扰模式(全屏看片/放音时鸟自动隐身静音)依赖辅助功能。\n\n请到 系统设置 → 隐私与安全性 → 辅助功能,删除旧的「翡」后重新添加并勾选(选择:\(appPath))",
-                      buttons: ["打开系统设置", "稍后"]) { idx in
+                      buttons: ["打开系统设置", "稍后"], width: 480) { idx in
             guard idx == 0 else { return }
             // 新版系统设置的辅助功能深链;打不开则退到隐私面板
             let deep = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility")!
