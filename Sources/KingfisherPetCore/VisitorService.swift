@@ -81,12 +81,12 @@ final class VisitorService {
         }
     }
 
-    // MARK: - 演出 3:小鸟跟班(0.6×,绕本鸟两圈后飞走)
-    func childFlight(around birdFrame: CGRect, on screen: NSScreen?) {
+    // MARK: - 演出 3:小鸟跟班(0.6×,绕本鸟两圈后飞走;从蛋坐标破壳起飞)
+    func childFlight(fromEgg egg: CGPoint, around birdFrame: CGRect, on screen: NSScreen?) {
         let c = CGPoint(x: birdFrame.midX, y: birdFrame.midY)
         let r: CGFloat = 130
-        // 两圈采样成路径点(每 15° 一点),结尾拉远飞出
-        var pts: [CGPoint] = []
+        // 先从蛋位爬升入圈,再两圈(每 15° 一点),结尾拉远飞出
+        var pts: [CGPoint] = [egg, CGPoint(x: c.x, y: c.y + r * 0.9)]
         for i in 0..<48 {
             let a = CGFloat(i) / 48.0 * 4 * .pi
             pts.append(CGPoint(x: c.x + cos(a) * r, y: c.y + sin(a) * r * 0.7))
@@ -181,6 +181,11 @@ final class VisitorService {
 
     private func prepareWindow(screen: NSScreen?) {
         cancelTimer()
+        // 池化窗复用前清残影:上次演出的最后一帧会先闪一帧(老板实锤"蛋出来前闪过鸟")
+        layer?.contents = nil
+        layer?.setAffineTransform(.identity)
+        nameTagLayer?.removeFromSuperlayer()
+        nameTagLayer = nil
         if win == nil {
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 160, height: 160),
                              styleMask: .borderless, backing: .buffered, defer: false, screen: screen)

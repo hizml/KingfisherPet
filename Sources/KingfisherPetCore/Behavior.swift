@@ -402,17 +402,25 @@ final class Behavior: PetViewDelegate {
 
     /// 寒颤(冷副档生效时的插播;不动权重,纯演出)
     func weatherShiver() {
-        guard onScreen, !dndActive else { return }
+        guard onScreen, !dndActive, let w = window else { return }
         beginAction()
+        // 一眼可读(老板:睡觉有 zzz,寒颤怎么看出来?):头顶飘雪花
+        Effects.mood("❄️", above: CGPoint(x: w.frame.midX, y: w.frame.maxY - 30), on: screen)
+        // 雪天环境动画:当前天气是雪 → 天上飘雪幕(与躲雨的雨幕同款语义)
+        if let m = WeatherService.shared.now?.main, m == .snowLight || m == .snowHeavy {
+            Effects.snow(above: CGPoint(x: w.frame.midX, y: w.frame.midY), on: screen)
+        }
         enter("shiver")
         hold(1.6) { [weak self] in self?.finish() }
     }
 
     /// 炸毛:受惊(拖拽落地后小概率;啄裂屏幕后小概率)
     func startPuff() {
-        guard onScreen, !dndActive else { return }
+        guard onScreen, !dndActive, let w = window else { return }
         beginAction()
         SpriteLibrary.shared.playPeep()
+        // 一眼可读:头顶飘💢(漫画式怒气符;老板:怎么算炸毛?)
+        Effects.mood("💢", above: CGPoint(x: w.frame.midX, y: w.frame.maxY - 30), on: screen)
         enter("puff")
         hold(0.9) { [weak self] in self?.finish() }
     }
@@ -448,7 +456,10 @@ final class Behavior: PetViewDelegate {
             self.enter("watch")                      // 盯着自己的蛋
             self.hold(2.6) { [weak self] in
                 guard let self = self else { return }
-                VisitorService.shared.childFlight(around: window.frame, on: scr)
+                // 小鸟从蛋的坐标破壳飞出(老板实测:此前从鸟身起手,接不上蛋)
+                let fr2 = view?.facingRight ?? false
+                let eggPt = CGPoint(x: window.frame.midX + (fr2 ? -50 : 50), y: window.frame.minY + 50)
+                VisitorService.shared.childFlight(fromEgg: eggPt, around: window.frame, on: scr)
                 self.enter("happy")
                 SpriteLibrary.shared.playPeep()
                 self.hold(1.4) { [weak self] in self?.finish() }

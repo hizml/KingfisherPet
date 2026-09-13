@@ -370,4 +370,74 @@ enum Effects {
         sunEffectInstance = e
         e.close(after: sp(duration))
     }
+
+/// 状态图标(zzz 同款"一眼可读"纪律,老板实测:寒颤/炸毛看不出是什么状态):
+/// 鸟头上方浮起 2 个符号缓慢上飘淡出。symbol 传 emoji(❄ 寒颤/💢 炸毛)。
+static func mood(_ symbol: String, above point: CGPoint, on screen: NSScreen?) {
+    let size = CGSize(width: 110, height: 110)
+    for i in 0..<2 {
+        let p = CGPoint(x: point.x + CGFloat(i - 1) * 22, y: point.y)
+        let e = Effect(centeredAt: p, size: size, on: screen, level: .floating) { v in
+            guard let layer = v.layer else { return }
+            let t = CATextLayer()
+            t.string = symbol
+            t.fontSize = 26
+            t.alignmentMode = .center
+            t.contentsScale = v.window?.backingScaleFactor ?? 2
+            t.frame = v.bounds
+            let now = CACurrentMediaTime()
+            let rise = CABasicAnimation(keyPath: "position.y")
+            rise.fromValue = 34; rise.toValue = 74
+            rise.duration = sp(1.6)
+            rise.beginTime = now + sp(Double(i) * 0.5)
+            rise.fillMode = .forwards
+            rise.isRemovedOnCompletion = false
+            t.add(rise, forKey: "rise")
+            let op = CAKeyframeAnimation(keyPath: "opacity")
+            op.values = [0, 1, 1, 0]
+            op.keyTimes = [0, 0.15, 0.7, 1]
+            op.duration = sp(1.6)
+            op.beginTime = now + sp(Double(i) * 0.5)
+            t.add(op, forKey: "o")
+            layer.addSublayer(t)
+        }
+        e.close(after: 2.6 + Double(i) * 0.5)
+        Effect.active.append(e)
+    }
+}
+
+/// 雪幕(雪天环境动画,与 rain 同款;雪丝更慢更飘,带横向摆动)
+static func snow(above point: CGPoint, on screen: NSScreen?) {
+    let size = CGSize(width: 460, height: 460)
+    let e = Effect(centeredAt: CGPoint(x: point.x, y: point.y + size.height / 2 - 60),
+                   size: size, on: screen, level: .floating) { v in
+        guard let layer = v.layer else { return }
+        let tint = ThemeColors.shared.cgColor("crack_light",
+                                              fallback: NSColor(calibratedWhite: 0.92, alpha: 0.85))
+        for _ in 0..<24 {
+            let r = CALayer()
+            r.bounds = CGRect(x: 0, y: 0, width: 5, height: 5)
+            r.cornerRadius = 2.5
+            r.backgroundColor = tint
+            let x0 = CGFloat.random(in: 8..<size.width - 8)
+            r.position = CGPoint(x: x0, y: CGFloat.random(in: 40..<size.height))
+            let fall = CABasicAnimation(keyPath: "position.y")
+            fall.fromValue = r.position.y
+            fall.toValue = -16
+            fall.duration = sp(Double.random(in: 2.2...3.4))   // 雪比雨慢得多
+            fall.repeatCount = 3
+            r.add(fall, forKey: "fall")
+            let sway = CABasicAnimation(keyPath: "position.x")
+            sway.fromValue = x0 - 14
+            sway.toValue = x0 + 14
+            sway.autoreverses = true
+            sway.repeatCount = .greatestFiniteMagnitude
+            sway.duration = sp(Double.random(in: 1.4...2.2))
+            r.add(sway, forKey: "sway")
+            layer.addSublayer(r)
+        }
+    }
+    e.close(after: 7.0)
+    Effect.active.append(e)
+}
 }
