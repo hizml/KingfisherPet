@@ -346,6 +346,8 @@ function visitorEvent() {
 export function weatherShiver() {
   if (!onScreen || dndActive) return;
   beginAction();
+  effects.mood(80, 20, "❄️");   // 一眼可读(macOS 同款):头顶飘雪花
+  if (weather.now?.main === "snowLight" || weather.now?.main === "snowHeavy") effects.snow(80, 80);
   enter("shiver");
   hold(1.6, () => finish());
 }
@@ -354,6 +356,7 @@ export function startPuff() {
   if (!onScreen || dndActive) return;
   beginAction();
   playPeep();
+  effects.mood(80, 20, "💢");   // 一眼可读:头顶飘💢(macOS 同款)
   enter("puff");
   hold(0.9, () => finish());
 }

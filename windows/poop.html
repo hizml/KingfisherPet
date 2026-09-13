@@ -7,6 +7,9 @@ img,div.fx{position:fixed;pointer-events:none}
 .kf-sun-pulse{animation:kf-sun-pulse 1.4s ease-in-out infinite alternate}
 @keyframes kf-sun-rot{from{transform:rotate(0)}to{transform:rotate(360deg)}}
 @keyframes kf-sun-pulse{from{transform:scale(0.95)}to{transform:scale(1.1)}}
+@keyframes kf-snow{0%{transform:translateY(0)}100%{transform:translateY(480px)}}
+@keyframes kf-sway{0%{margin-left:-14px}100%{margin-left:14px}}
+@keyframes kf-mood{0%{opacity:0;transform:translateY(0)}15%{opacity:1}70%{opacity:1}100%{opacity:0;transform:translateY(-44px)}}
 @keyframes kf-rain{0%{transform:translateY(0)}100%{transform:translateY(440px)}}
 @keyframes kf-zzz{0%{opacity:0;transform:translate(0,0)}12%{opacity:1}70%{opacity:1}100%{opacity:0;transform:translate(var(--dx,0px),-80px)}}
 @keyframes kf-note{0%{opacity:0;transform:translateY(0)}12%{opacity:1}70%{opacity:1}100%{opacity:0;transform:translateY(-40px)}}
@@ -59,9 +62,9 @@ async function poopSprite(t) {
     const c3 = document.createElement("canvas");
     c3.width = 30 * 2; c3.height = Math.round(30 * 2 * chh / cw);   // 宽 30 逻辑(2x 清晰),高按内容比
     c3.getContext("2d").drawImage(cv, x0, y0, cw, chh, 0, 0, c3.width, c3.height);
-    poopSpriteCache[t] = { url: c3.toDataURL(), w: 30, h: c3.height / 2 };
+    poopSpriteCache[t] = { url: c3.toDataURL(), w: 38, h: c3.height / 3 };   // 压扁加宽(macOS 同款 38×13)
   } catch {
-    poopSpriteCache[t] = { url: img.src, w: 30, h: 20 };
+    poopSpriteCache[t] = { url: img.src, w: 38, h: 13 };
   }
   return poopSpriteCache[t];
 }
@@ -137,7 +140,8 @@ function imgEl(name, w, h) {
 let fxSpd = 1;   // 动画速度(1=正常);时长 = 基准 / fxSpd(快→短)
 let zzzEl = null;   // zzz 单实例(macOS 池化单窗同款:每次 tick 替换,不堆叠)
 listen("fx", (e) => {
-  const { kind, x: px, y: py, dur, spd } = e.payload;
+  const { kind, x: px, y: py, dur, spd, sym } = e.payload;
+  const fxArgs = { sym };   // mood 图标参数
   fxSpd = spd ?? 1;
   const x = px / DPR, y = py / DPR;   // 物理 → CSS 逻辑
   if (kind === "splash") {
@@ -181,6 +185,26 @@ listen("fx", (e) => {
     zzzEl.style.setProperty("--dx", (Math.random() * 36 - 18) + "px");
     zzzEl.style.animation = "none"; void zzzEl.offsetWidth;   // 重启动画
     zzzEl.style.animation = `kf-zzz ${1.8 / fxSpd}s ease-out forwards`;
+  } else if (kind === "snow") {
+    // 雪幕(雪天环境动画;macOS Effects.snow 同款):24 粒慢速+横向摆动 7s
+    const col = document.createElement("div");
+    col.style.cssText = `position:fixed;left:${x - 230}px;top:${Math.max(y - 480, -40)}px;width:460px;height:460px;pointer-events:none;z-index:3;`;
+    for (let i = 0; i < 24; i++) {
+      const d = document.createElement("div");
+      d.style.cssText = `position:absolute;width:5px;height:5px;border-radius:3px;background:rgba(235,240,246,.85);left:${Math.random() * 450}px;top:${Math.random() * 440}px;animation:kf-snow ${2.2 + Math.random() * 1.2}s linear ${Math.random() * 0.6}s 3,kf-sway ${1.4 + Math.random() * 0.8}s ease-in-out infinite alternate;`;
+      col.appendChild(d);
+    }
+    document.body.appendChild(col);
+    setTimeout(() => col.remove(), 7000);
+  } else if (kind === "mood") {
+    // 状态图标(zzz 同款一眼可读):❄️寒颤/💢炸毛,两个错峰上飘淡出
+    for (let i = 0; i < 2; i++) {
+      const d = document.createElement("div");
+      d.textContent = String(fxArgs.sym || "❄️");
+      d.style.cssText = `position:fixed;font-size:26px;left:${x - 13 + (i - 1) * 22}px;top:${y - 40}px;pointer-events:none;z-index:3;opacity:0;animation:kf-mood 1.6s ease-out ${i * 0.5}s forwards;`;
+      document.body.appendChild(d);
+      setTimeout(() => d.remove(), 2800);
+    }
   } else if (kind === "rain") {
     // 雨幕(躲雨环境动画;macOS Effects.rain 同款):22 根雨丝在鸟上方 420x420 柱内下落 6s
     const col = document.createElement("div");
@@ -257,6 +281,7 @@ listen("fx", (e) => {
     const singSeq = ["visitor_sing_0", "visitor_sing_1"];
     const t0 = performance.now();
     let sang = false;
+    let lastX = null;   // 朝向跟随(macOS 同款)
     const step = (now) => {
       const t = (now - t0) / 1000 / (1 / fxSpd);   // 受全局动画速度
       if (t >= total) { img.remove(); return; }
@@ -279,6 +304,9 @@ listen("fx", (e) => {
       img.src = `${import.meta.env.BASE_URL}Sprites/${theme}/${seq[Math.floor(t / 0.12) % seq.length]}.png`;
       img.style.left = (px - sz / 2) + "px";
       img.style.top = (py - sz / 2) + "px";
+      // 朝向跟随水平速度(macOS 同款):向右飞镜像,不倒着飞
+      if (lastX != null && Math.abs(px - lastX) > 1) img.style.transform = (px > lastX) ? "scaleX(-1)" : "";
+      lastX = px;
       requestAnimationFrame(step);
     };
     requestAnimationFrame(step);
