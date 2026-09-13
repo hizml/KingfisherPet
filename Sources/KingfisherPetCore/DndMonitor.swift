@@ -19,6 +19,8 @@ final class DndMonitor {
     private var axPromptShown = false
     /// AX 未授权(状态可见纪律):托盘菜单常驻提醒行,授权生效即撤。菜单重建时由 App 重新注入。
     private(set) var axBroken = false
+    /// 菜单交互宽限截止时刻(主人刚用过托盘菜单 → 60s 内不进勿扰;AppDelegate 刷新)
+    var dndGraceUntil: CFTimeInterval = 0
     weak var axMenuItem: NSMenuItem?
     private func setAxBroken(_ v: Bool) {
         guard axBroken != v else { return }
@@ -81,8 +83,15 @@ final class DndMonitor {
                 }
                 if r.fs { self.fsOnStreak += 1; self.fsOffStreak = 0 } else { self.fsOffStreak += 1; self.fsOnStreak = 0 }
                 if behavior.dndActive != true && self.fsOnStreak >= 2 && active {
-                    kfLog("dnd: 全屏应用,鸟隐身+静音")
-                    behavior.enterDnd()
+                    // 菜单交互宽限:用户刚开过托盘菜单/点过菜单项(60s)→ 正在跟鸟互动,
+                    // 不隐身(老板实测:点「检查更新」等网络的空档鸟被勿扰收走,弹窗一出又回来,
+                    // 感知="鸟层级没了"。宽限只拦"进",不拦"出"——已在勿扰中该恢复照恢复)
+                    if CACurrentMediaTime() < self.dndGraceUntil {
+                        kfLog("dnd: 全屏(\(r.front ?? "?"))但交互宽限中,暂不隐身")
+                    } else {
+                        kfLog("dnd: 全屏应用(\(r.front ?? "?")),鸟隐身+静音")
+                        behavior.enterDnd()
+                    }
                 } else if behavior.dndActive == true && self.fsOffStreak >= 2 {
                     kfLog("dnd: 全屏退出,恢复")
                     // 评审 A3:鸟隐藏时【真的】只清标志(此前是空话)——否则 dndActive 永真,hatchIn 永久被挡

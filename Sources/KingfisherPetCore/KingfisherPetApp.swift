@@ -47,7 +47,7 @@ func kfLog(_ msg: String) {
 
 /// 应用装配核心(core 库):@main 入口拆到壳 target(Sources/KingfisherPet/main.swift),
 /// 这样 kf-tests 可直接链接 core 做纯逻辑单测(executable 依赖 executable 会双 main 撞链接)。
-final public class AppDelegate: NSObject, NSApplicationDelegate {
+final public class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     public static let appDelegate = AppDelegate()
 
     private var statusItem: NSStatusItem!
@@ -466,6 +466,8 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
             kfLog("dev: 测试菜单已启用(KF_DEV_MENU=1)")
             menu.addItem(devMenu())
         }
+        // 菜单交互宽限(NSMenuDelegate):用户开菜单=正在跟鸟互动,60s 内勿扰不隐身
+        menu.delegate = self
         statusItem.menu = menu
         refreshMenuState()
     }
@@ -842,6 +844,12 @@ final public class AppDelegate: NSObject, NSApplicationDelegate {
 
     public func applicationWillTerminate(_ notification: Notification) {
         petController?.behavior.savePosition()
+    }
+
+    /// 托盘菜单刚打开 = 用户正在跟鸟互动:60 秒内勿扰不隐身
+    /// (老板实测:点「检查更新」等网络的空档被勿扰收走鸟,弹窗一出又回来,像层级坏了)
+    public func menuWillOpen(_ menu: NSMenu) {
+        dnd.dndGraceUntil = CACurrentMediaTime() + 60
     }
 
     @objc private func checkUpdate() {

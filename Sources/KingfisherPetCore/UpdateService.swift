@@ -20,8 +20,11 @@ final public class UpdateService {
         }
     }
 
-    /// 手动检查(菜单):总是给反馈(成功/最新/失败都弹窗)
+    /// 手动检查(菜单):总是给反馈(成功/最新/失败都弹窗)。
+    /// 即时反馈纪律:点下去菜单立刻变「检查中…」(GitHub 慢网络下数秒空窗,
+    /// 此前无任何反馈被感知为卡死),结果回来再恢复标题。
     func checkNow() {
+        menuItem?.title = Language.t("update.checking")
         fetchLatest { [weak self] latest, digest in
             let cur = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "dev"
             self?.menuItem?.title = Language.t("menu.checkUpdate")   // 看过详情,清标注
@@ -65,7 +68,11 @@ final public class UpdateService {
     /// (GitHub API 的 assets[].digest 形如 "sha256:…";无该字段的旧 API 返回 nil,验签退化为签名校验)。
     private func fetchLatest(_ done: @escaping (String?, String?) -> Void) {
         let url = URL(string: "https://api.github.com/repos/hizml/KingfisherPet/releases/latest")!
-        URLSession.shared.dataTask(with: url) { data, _, _ in
+        // 专用会话 8s 超时:URLSession.shared 默认 60s,慢网络下「检查中…」要挂一分钟
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.timeoutIntervalForRequest = 8
+        cfg.timeoutIntervalForResource = 15
+        URLSession(configuration: cfg).dataTask(with: url) { data, _, _ in
             var latest: String?
             var digest: String?
             if let data, let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
