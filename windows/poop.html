@@ -262,6 +262,8 @@ listen("fx", (e) => {
     // 路径:child=绕鸟两圈(48 点)+拉远;visitor=左/右进→停鸟旁→另一侧出
     let pts = [];
     if (isChild) {
+      // 先从蛋位(屁股后方,macOS 同款)爬升入圈再绕飞(macOS 同款;老板实测:从鸟身起手接不上蛋)
+      pts.push([x + 50 / DPR, y + 30 / DPR], [x, y - 117 / DPR]);
       for (let i = 0; i <= 48; i++) {
         const a = (i / 48) * Math.PI * 4;
         pts.push([x + Math.cos(a) * 130 / DPR, y + Math.sin(a) * 91 / DPR]);
