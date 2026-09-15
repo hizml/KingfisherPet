@@ -71,6 +71,7 @@ final public class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
     /// 本会话已问过配对的邻居(拒绝过的不再烦)
     private var lanPairAsked: Set<String> = []
     private let updater = UpdateService()
+    typealias Updater = UpdateService   // dev 菜单进度窗样例引用静态 progressWin
     private let watchdog = WatchdogService()
     private let weather = WeatherService.shared   // 天气联动(v1.5.0 B;设置开着才 start)
 
@@ -498,6 +499,8 @@ final public class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         trig("俯冲捕鱼", "fish")
         trig("喂鱼(菜单同款)", "feed")
         trig("拉屎", "poop")
+        trig("雪幕直出", "snow")
+        trig("雨幕直出", "rain")
         sec("昼夜模拟")
         devItem("模拟深夜(0 点·长睡 40–80s)", #selector(devHourDeepNight))
         devItem("模拟清晨(7 点·晨鸣)", #selector(devHourDawn))
@@ -511,10 +514,15 @@ final public class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         trig("退出勿扰", "dnd-exit")
         trig("模拟锁屏入睡", "lock-sim")
         trig("模拟解锁唤醒(验帧冻结修复)", "wake-sim")
+        sec("局域网动作(设置里开启后)")
+        trig("广播对唱(PEEP)", "lan-peep")
+        trig("请求去串门", "lan-visit")
+        trig("给邻居送鱼", "lan-fish")
         sec("弹窗样式")
         devItem("样例:授权引导弹窗", #selector(devDlgAx))
         devItem("样例:发现新版本(三按钮)", #selector(devDlgUpdate))
         devItem("样例:已是最新版本", #selector(devDlgLatest))
+        devItem("样例:下载进度窗(0→100%)", #selector(devDlgProgress))
         sec("状态快照(写日志)")
         devItem("打印状态快照", #selector(devSnapshot))
         dev.submenu = m
@@ -548,6 +556,19 @@ final public class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
     }
     @objc private func devDlgLatest() {
         KFDialog.show(title: "已是最新版本", message: "v1.5.1", buttons: [Language.t("update.ok")]) { _ in }
+    }
+    private var devProgressTimer: Timer?
+    @objc private func devDlgProgress() {
+        Updater.progressWin = ProgressWin()
+        var pct = 0
+        devProgressTimer?.invalidate()
+        let t = Timer(timeInterval: 0.1, repeats: true) { [weak self] ti in
+            pct += 4
+            if pct >= 104 { ti.invalidate(); Updater.progressWin?.close(); Updater.progressWin = nil; self?.devProgressTimer = nil }
+            else { Updater.progressWin?.update(pct) }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        devProgressTimer = t
     }
     @objc private func devSnapshot() {
         let b = petController?.behavior

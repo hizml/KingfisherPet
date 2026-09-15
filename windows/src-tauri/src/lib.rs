@@ -419,10 +419,33 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
     let about = MenuItem::with_id(app, "about", t("关于 翡", "About Fei"), true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", t("退出 翡", "Quit Fei"), true, None::<&str>)?;
 
-    let items: Vec<&dyn IsMenuItem<tauri::Wry>> = vec![
+
+    // 🧪 开发测试子菜单(仅 KF_DEV_MENU=1;生产绝不出现)
+    let mut dev_extra: Vec<MenuItem<tauri::Wry>> = Vec::new();
+    if std::env::var("KF_DEV_MENU").as_deref() == Ok("1") {
+        crate::kflog::kflog("dev: 测试菜单已启用(KF_DEV_MENU=1)");
+        let pairs: [(&str, &str); 24] = [
+            ("dev:visitor", "访客小鸟飞过"), ("dev:visit", "主动来访"), ("dev:hatch", "满级孵化彩蛋"),
+            ("dev:forage", "觅食(叼虫)"), ("dev:hide", "躲雨(带雨幕)"), ("dev:shiver", "寒颤(❄️)"),
+            ("dev:puff", "炸毛(💢)"), ("dev:sleep", "打盹"), ("dev:sun", "太阳浴"),
+            ("dev:fish", "俯冲捕鱼"), ("dev:feed", "喂鱼"), ("dev:poop", "拉屎"),
+            ("dev:snow", "雪幕直出"), ("dev:rain", "雨幕直出"),
+            ("dev:hour-deep", "模拟深夜(0点)"), ("dev:hour-dawn", "模拟清晨(7点)"), ("dev:hour-real", "恢复真实时间"),
+            ("dev:growth+10", "亲密度+10"), ("dev:growth99", "亲密度=99"), ("dev:growth0", "亲密度清0"),
+            ("dev:lan-peep", "局域网:广播对唱"), ("dev:lan-visit", "局域网:请求串门"), ("dev:lan-fish", "局域网:送鱼"),
+            ("dev:wake-sim", "模拟唤醒(验帧冻结)"),
+        ];
+        for (id, title) in pairs {
+            dev_extra.push(MenuItem::with_id(app, id, title, true, None::<&str>)?);
+        }
+    }
+    let items_raw: Vec<&dyn IsMenuItem<tauri::Wry>> = vec![
         &call, &fish, &sing, &feed, &perch, &peck, &show, &lanvisit, &lanfish, &repair, &diag,
         &m_theme, &sound, &autostart, &settings, &checkupd, &about, &quit,
     ];
+    let mut items: Vec<&dyn IsMenuItem<tauri::Wry>> = items_raw;
+    for d in &dev_extra { items.push(d); }
+
     // 天气状态行(天气联动开启时由前端推标题;禁用项只展示)—— 插在最前(动作区之上,Mac 同位)
     let wx_title = WEATHER_TITLE.lock().unwrap().clone();
     let menu = Menu::with_items(app, &items)?;

@@ -1175,3 +1175,37 @@ export function lanFishGift(_name: string) {
   growth.add(2);
   feedFish();
 }
+
+// ── 开发测试触发(KF_DEV_MENU 环境变量门控的托盘子菜单专用;生产无入口)──
+/// 按名触发演出/状态,绕随机概率(macOS devTrigger 同款口径)
+export function devTrigger(name: string) {
+  emit("log", `dev: 触发 ${name}`);
+  switch (name) {
+    case "visitor": visitorEvent(); break;
+    case "visit": void affectionVisit(); break;
+    case "hatch": growthHatchEvent(); break;
+    case "forage": void startForage(); break;
+    case "hide": weatherRetreat(); break;
+    case "shiver": weatherShiver(); break;
+    case "puff": startPuff(); break;
+    case "sleep": startSleep(); break;
+    case "sun": void startSun(); break;
+    case "fish": void startFish(); break;
+    case "feed": feedFish(); break;
+    case "poop": startPoop(); break;
+    case "snow": effects.snow(80, 80); break;
+    case "rain": effects.rain(80, 80); break;
+    case "lock-sim": sleepForUserAbsence(); break;
+    case "wake-sim": void wakeFromUserAbsence(); break;
+    case "hour-deep": localStorage.setItem("kf_hour_override", "3"); emit("log", "dev: 昼夜→深夜(3 点)"); break;
+    case "hour-dawn": localStorage.setItem("kf_hour_override", "7"); emit("log", "dev: 昼夜→清晨(7 点)"); break;
+    case "hour-real": localStorage.removeItem("kf_hour_override"); emit("log", "dev: 昼夜→真实时间"); break;
+    case "growth+10": growth.add(10, true); emit("log", `dev: 亲密度 ${growth.intimacy}`); break;
+    case "growth99": growth.intimacy = 99; emit("log", "dev: 亲密度=99"); break;
+    case "growth0": growth.intimacy = 0; emit("log", "dev: 亲密度重置 0"); break;
+    case "lan-peep": case "lan-visit": case "lan-fish":
+      void import("./lansvc").then(({ lan }) => { void lan.send(name.slice(4) as "peep" | "visit" | "fish"); });
+      break;
+    default: emit("log", `dev: 未知触发 ${name}`);
+  }
+}

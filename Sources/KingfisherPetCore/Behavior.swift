@@ -1305,6 +1305,11 @@ final class Behavior: PetViewDelegate {
         case "feed":        feedFish()
         case "dnd-enter":   enterDnd()
         case "dnd-exit":    if dndActive { exitDnd() }
+        case "snow":        view == nil ? () : Effects.snow(above: CGPoint(x: (window?.frame.midX ?? 200), y: (window?.frame.midY ?? 400)), on: screen)
+        case "rain":        Effects.rain(above: CGPoint(x: (window?.frame.midX ?? 200), y: (window?.frame.midY ?? 400)), on: screen)
+        case "lan-peep":    LanBirds.shared.sendPeep()
+        case "lan-visit":   _ = LanBirds.shared.requestVisit()
+        case "lan-fish":    _ = LanBirds.shared.sendFish()
         case "lock-sim":    sleepForUserAbsence(systemSleep: false)
         case "wake-sim":    wakeFromUserAbsence()
         default:            kfLog("dev: 未知触发 \(name)")
