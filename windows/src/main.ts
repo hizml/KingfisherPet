@@ -2,7 +2,7 @@
 
 import { getCurrentWindow, LogicalSize, currentMonitor, availableMonitors } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { listen, emit } from "@tauri-apps/api/event";
+import { emitTo, listen, emit } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { SpriteLibrary } from "./sprite";
@@ -151,6 +151,14 @@ async function main() {
       || ((localStorage.getItem("kf_lang") || "system") === "system"
           && (navigator.language || "en").toLowerCase().startsWith("zh"));
     async function doCheckUpdate(silent: boolean) {
+      // v1.7.2 单窗单框流(老板要求,Mac 同款):手动检查立即开窗「正在检查新版本…」,
+      // 结果 emitTo update 窗原地变形;emit 失败(窗没了)回退传统开窗
+      const ttCk = zhUI() ? "翡 · 检查更新" : "Fei · Update";
+      if (!silent) await openUpdateDialog("t=checking", ttCk, 230).catch(() => {});
+      const morph = async (qs: string) => {
+        try { await emitTo("update", "update-result", { qs }); }
+        catch { await openUpdateDialog(qs, ttCk); }
+      };
       try {
         const [r, cur] = await Promise.all([
           fetch("https://api.github.com/repos/hizml/KingfisherPet/releases/latest",
@@ -164,20 +172,20 @@ async function main() {
         if (silent) { invoke("set_update_badge", { on: has }).catch(() => {}); return; }   // 静默:只标菜单
         invoke("set_update_badge", { on: false }).catch(() => {});                          // 手动看过详情,清标注
         const tt = zhUI() ? "翡 · 检查更新" : "Fei · Update";
-        if (!has) { await openUpdateDialog(`t=latest&cur=${cur}`, tt); return; }
+        if (!has) { await morph(`t=latest&cur=${cur}`); return; }
         // v1.6.0:updater 产物可用 → 应用内下载安装重启;不可用(网络/无 latest.json)回退浏览器流
         let up: Awaited<ReturnType<typeof checkUpdate>> = null;
         try { up = await checkUpdate(); } catch { /* updater 探测失败走老路径 */ }
         if (up?.available) {
           // 评审 W10:展示版本取 updater 包版本(latest.json 与 GitHub tag 短暂不一致时,说的=装的)
           const shown = up.version || latest;
-          await openUpdateDialog(`t=install&latest=${encodeURIComponent(shown)}&cur=${cur}`, tt, 230);
+          await morph(`t=install&latest=${encodeURIComponent(shown)}&cur=${cur}`);
           return;
         }
-        await openUpdateDialog(`t=found&latest=${encodeURIComponent(latest)}&cur=${cur}`, tt);
+        await morph(`t=found&latest=${encodeURIComponent(latest)}&cur=${cur}`);
       } catch (e) {
         emit("log", "update: 检查失败(" + String(e) + (silent ? ",静默)" : ")"));   // 评审 W4:静默路径也留日志
-        if (!silent) await openUpdateDialog("t=error", zhUI() ? "翡 · 检查更新" : "Fei · Update");
+        if (!silent) await morph("t=error");
       }
     }
     // 关于(Mac NSAlert 同款:文案+鸟图标+GitHub 按钮;之前直接跳网页,弃)

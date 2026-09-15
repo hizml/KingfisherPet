@@ -24,6 +24,8 @@
     import { emit, listen } from "@tauri-apps/api/event";   // v1.6.0:安装按钮通知主窗/接收进度
     // 内容由 query 驱动:t=found|latest|error|guide,latest=/cur= 版本号
     const q = new URLSearchParams(location.search);
+    // 同窗变形(单窗单框流):主窗查完 emit update-result{qs} → 本窗原地换状态
+    listen("update-result", (e) => { try { location.replace("update.html?" + (e.payload?.qs ?? "t=error")); } catch { /* */ } });
     const lang = localStorage.getItem("kf_lang") || "system";
     const zh = lang === "zh" || (lang === "system" && (navigator.language || "en").toLowerCase().startsWith("zh"));
     const close = () => getCurrentWindow().close();
@@ -87,6 +89,10 @@
     else if (t === "latest") { elT.textContent = L.latestT; elM.textContent = L.latestM(cur); btn(L.ok, true, close); }
     else if (t === "error") { elT.textContent = L.errT; elM.textContent = L.errM;
       btn(L.openRel, true, () => { open(REL).then(() => close(), () => {}); }); btn(L.closeB, false, close); }
+    else if (t === "checking") {   // v1.7.2:点检查更新立即开窗显示"正在检查…",结果回来同窗变形(老板要求,Mac 同款)
+      elT.textContent = zh ? "检查更新" : "Update";
+      elM.textContent = zh ? "正在检查新版本…" : "Checking for updates…";
+    }
     else if (t === "guide") { elT.textContent = L.guideT; elM.textContent = L.guideM;
       btn(L.openSet, true, () => { open("ms-settings:taskbar").then(() => close(), () => {}); }); btn(L.later, false, close); }
     else { elT.textContent = L.aboutT;
