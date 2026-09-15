@@ -22,15 +22,16 @@ final public class UpdateService {
         }
     }
 
-    /// 手动检查(菜单):总是给反馈(成功/最新/失败都弹窗)。
-    /// 即时反馈纪律:点下去菜单立刻变「检查中…」(GitHub 慢网络下数秒空窗,
-    /// 此前无任何反馈被感知为卡死),结果回来再恢复标题。
+    /// 手动检查(菜单):点下立即弹「正在检查新版本…」框(老板:要弹框,别改菜单标题),
+    /// 结果回来【同一个窗口】原地变形为 已是最新/发现新版/失败——全程零窗口闪切。
     func checkNow() {
-        menuItem?.title = Language.t("update.checking")
+        let dlg = KFDialog.show(title: Language.t("menu.checkUpdate"),
+                                message: Language.t("update.checkingBody"),
+                                buttons: []) { _ in }
         fetchLatest { [weak self] latest, digest in
             let cur = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "dev"
             self?.menuItem?.title = Language.t("menu.checkUpdate")   // 看过详情,清标注
-            self?.alert(latest: latest, current: cur, digest: digest)
+            self?.alert(latest: latest, current: cur, digest: digest, into: dlg)
         }
     }
 
@@ -95,43 +96,53 @@ final public class UpdateService {
     /// 更新结果弹窗(文案全走 Language 字典,评审 B2)。
     /// v1.6.0:发现新版且当前是 .app 运行 → 首按钮「下载并更新」走应用内更新
     /// (下载→验签→替换→重启);否则保留「前往下载」浏览器流。
-    private func alert(latest: String?, current: String, digest: String? = nil) {
+    private func alert(latest: String?, current: String, digest: String? = nil, into dlg: KFDialog? = nil) {
         if latest == nil {
-            KFDialog.show(title: Language.t("update.failed"), message: Language.t("update.failedBody"),
-                          buttons: [Language.t("update.openReleases"), Language.t("update.later")]) { idx in
+            let show: (String, String, [String], @escaping (Int) -> Void) -> Void = { t, m, b, c in
+                if let d = dlg { d.refresh(title: t, message: m, buttons: b); return }
+                KFDialog.show(title: t, message: m, buttons: b, onClose: c)
+            }
+            show(Language.t("update.failed"), Language.t("update.failedBody"),
+                 [Language.t("update.openReleases"), Language.t("update.later")]) { idx in
                 if idx == 0 { NSWorkspace.shared.open(URL(string: "https://github.com/hizml/KingfisherPet/releases")!) }
             }
             return
         }
         if !Self.isNewer(latest!, than: current) {
-            KFDialog.show(title: Language.t("update.latest"), message: "v\(current)",
-                          buttons: [Language.t("update.ok")]) { _ in }
+            let t = Language.t("update.latest"), m = "v\(current)"
+            if let d = dlg { d.refresh(title: t, message: m, buttons: [Language.t("update.ok")]); return }
+            KFDialog.show(title: t, message: m, buttons: [Language.t("update.ok")]) { _ in }
         } else {
             let canInstall = Bundle.main.bundleURL.pathExtension == "app"
             let rel = URL(string: "https://github.com/hizml/KingfisherPet/releases/latest")!
             let body = String(format: Language.t("update.downloadBody"), current)
             if canInstall {
-                KFDialog.show(title: Language.t("update.found") + " \(latest!)", message: body,
-                              buttons: [Language.t("update.install"), Language.t("update.openReleases"), Language.t("update.later")]) { [weak self] idx in
+                let ft = Language.t("update.found") + " \(latest!)"
+                let buttons = [Language.t("update.install"), Language.t("update.openReleases"), Language.t("update.later")]
+                let handler: (Int) -> Void = { [weak self] idx in
                     switch idx {
                     case 0:
-                        // 下载进度可视化(老板实测:点后弹窗消失像没反应;且 ProgressWin 必须
-                        // 被强持有——局部变量随闭包返回释放,窗口创建即没)
-                        Self.progressWin = ProgressWin()
-                        let pw = Self.progressWin!
+                        // 同窗进度态(老板:老弹框别消失,新框来得慢):此窗原地变进度条
+                        dlg?.enterProgress(title: Language.t("update.downloading"))
                         Self.installUpdate(tag: latest!, expectedSHA256: digest, progress: { pct in
-                            pw.update(pct)
+                            dlg?.updateProgress(pct)
                         }) { ok, why in
-                            pw.close()
-                            Self.progressWin = nil
                             // 评审 A13:失败不再只写日志——用户面前给结果,并提供前往下载兜底
                             guard !ok else { return }
                             kfLog("update: 应用内更新失败(\(why))")
+                            dlg?.close()
                             self?.reportInstallFailure(why)
                         }
                     case 1: NSWorkspace.shared.open(rel)
-                    default: break
+                    default: dlg?.close()
                     }
+                }
+                if let d = dlg {
+                    d.refresh(title: ft, message: body, buttons: buttons, noAutoCloseButton: 0)
+                    d.onAction = handler   // Same window, new content and new callbacks (single-window flow)
+                } else {
+                    KFDialog.show(title: ft, message: body,
+                                  buttons: buttons, noAutoCloseButton: 0, onClose: handler)
                 }
             } else {
                 KFDialog.show(title: Language.t("update.found") + " \(latest!)", message: body,
