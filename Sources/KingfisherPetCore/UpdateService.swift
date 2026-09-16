@@ -71,11 +71,13 @@ final public class UpdateService {
     /// (GitHub API 的 assets[].digest 形如 "sha256:…";无该字段的旧 API 返回 nil,验签退化为签名校验)。
     private func fetchLatest(_ done: @escaping (String?, String?) -> Void) {
         let url = URL(string: "https://api.github.com/repos/hizml/KingfisherPet/releases/latest")!
-        // 专用会话 8s 超时:URLSession.shared 默认 60s,慢网络下「检查中…」要挂一分钟
+        // 专用会话超时:URLSession.shared 默认 60s,慢网络下「检查中…」要挂一分钟。
+        // 8→12(2026-09-16):代理网络下 api.github.com 偶发尾部慢请求(本机 Clash 实测 10 连测
+        // 9 次 0.6–1s+1 次 7.64s),8s 必误杀弹「检查更新失败」;12s 与 Win 端 15s 同级。
         let cfg = URLSessionConfiguration.ephemeral
-        cfg.timeoutIntervalForRequest = 8
-        cfg.timeoutIntervalForResource = 15
-        URLSession(configuration: cfg).dataTask(with: url) { data, _, _ in
+        cfg.timeoutIntervalForRequest = 12
+        cfg.timeoutIntervalForResource = 20
+        URLSession(configuration: cfg).dataTask(with: url) { data, resp, err in
             var latest: String?
             var digest: String?
             if let data, let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
@@ -88,6 +90,11 @@ final public class UpdateService {
                         break
                     }
                 }
+            }
+            // 对齐 Win 端 W4:手动/自动检查失败都留日志(此前失败无痕,排障只能靠复现统计)
+            if latest == nil {
+                let why = err.map { String(describing: $0) } ?? "HTTP \((resp as? HTTPURLResponse)?.statusCode ?? -1) 响应无 tag_name"
+                kfLog("update: 检查失败(\(why))")
             }
             DispatchQueue.main.async { done(latest, digest) }
         }.resume()
