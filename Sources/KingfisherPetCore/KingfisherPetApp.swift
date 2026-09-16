@@ -95,7 +95,16 @@ final public class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
             self, selector: #selector(growthChanged),
             name: Growth.didChangeNotification, object: nil)
 
-        // 开机自启
+        // 开机自启(v1.7.4 老板令:默认开)。首启无 kingfisher.autoLogin.init 痕迹 →
+        // 注册自启+开菜单勾+落标记;此后完全由用户 kAutoLogin 开关决定(关过不再偷开)
+        if UserDefaults.standard.object(forKey: "kingfisher.autoLogin.init") == nil {
+            UserDefaults.standard.set(true, forKey: "kingfisher.autoLogin.init")
+            if UserDefaults.standard.object(forKey: Self.kAutoLogin) == nil {
+                UserDefaults.standard.set(true, forKey: Self.kAutoLogin)
+                try? SMAppService.mainApp.register()
+                kfLog("自启:首启默认开启")
+            }
+        }
         if UserDefaults.standard.bool(forKey: Self.kAutoLogin) {
             try? SMAppService.mainApp.register()
         }
@@ -391,6 +400,7 @@ final public class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         button?.setAccessibilityLabel(Language.t("ax.tooltip"))
 
         let menu = NSMenu()
+        menu.autoenablesItems = false   // 系统自动启用会覆盖 isEnabled(老板实测:无邻居时串门/送鱼不置灰的根因)
         menu.addItem(item(Language.t("menu.callOver"), action: #selector(callOver)))
         menu.addItem(item(Language.t("menu.fish"), action: #selector(doFish)))
         menu.addItem(item(Language.t("menu.sing"), action: #selector(doSing)))

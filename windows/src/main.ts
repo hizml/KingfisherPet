@@ -133,7 +133,7 @@ async function main() {
     // 手动(菜单):总是给反馈;自动(启动 30s + 每 24h):静默,有新版且没提示过才弹一次
     // 自绘弹窗(update.html,设置窗同风格):WebView2 原生 alert/confirm 丑且糊在鸟窗口上,弃用
     let dlgBusy: Promise<void> = Promise.resolve();   // 评审 W5:关旧建新串行化(连点不再赌 150ms 定值)
-    async function openUpdateDialog(qs: string, title: string, h = 210) {
+    async function openUpdateDialog(qs: string, title: string, h = 185) {   // v1.7.4:高度回落(老板:弹框太高)
       const run = dlgBusy.then(async () => {
       const ex = await WebviewWindow.getByLabel("update");   // 单例:旧的先关(参数在 URL 上,复用拿不到新参)
       if (ex) {
@@ -154,7 +154,7 @@ async function main() {
       // v1.7.2 单窗单框流(老板要求,Mac 同款):手动检查立即开窗「正在检查新版本…」,
       // 结果 emitTo update 窗原地变形;emit 失败(窗没了)回退传统开窗
       const ttCk = zhUI() ? "翡 · 检查更新" : "Fei · Update";
-      if (!silent) await openUpdateDialog("t=checking", ttCk, 230).catch(() => {});
+      if (!silent) await openUpdateDialog("t=checking", ttCk, 170).catch(() => {});
       const morph = async (qs: string) => {
         try { await emitTo("update", "update-result", { qs }); }
         catch { await openUpdateDialog(qs, ttCk); }

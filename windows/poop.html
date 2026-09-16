@@ -256,6 +256,10 @@ listen("fx", (e) => {
     const sz = (isChild ? 96 : 128) / DPR;   // 0.6× / 0.8× 逻辑尺寸
     const img = imgEl("visitor_fly_2", sz, sz);
     img.style.position = "absolute"; img.style.willChange = "left,top";
+    // 防御(老板实测:左上角卡死一只粉鸟):先钉初始位置再入 DOM——
+    // 此前首帧 rAF 前以默认(0,0)渲染;step 一旦抛异常元素永不移除=僵尸贴图
+    img.style.left = (x - sz / 2) + "px";
+    img.style.top = (y - sz / 2) + "px";
     document.body.appendChild(img);
     const stopAt = 0.42, pauseDur = 2.2, total = isChild ? 5.5 : 8.0;
     const W = innerWidth, H = innerHeight;
@@ -285,6 +289,9 @@ listen("fx", (e) => {
     let sang = false;
     let lastX = null;   // 朝向跟随(macOS 同款)
     const step = (now) => {
+      try { stepInner(now); } catch (e) { img.remove(); try { emit("log", "fx visitor/child 异常自清:" + e); } catch { /* */ } }
+    };
+    const stepInner = (now) => {
       const t = (now - t0) / 1000 / (1 / fxSpd);   // 受全局动画速度
       if (t >= total) { img.remove(); return; }
       const inPause = !isChild && t >= pauseStart && t < pauseStart + pauseDur;

@@ -359,7 +359,7 @@ fn tray_pin_guidance(app: tauri::AppHandle) {
             use tauri::Emitter;
             let _ = w.emit("tray-guide", ());
         }
-        prefs_set("tray_tip_done", "1");
+        prefs_set(&format!("tray_tip_done_{}", env!("CARGO_PKG_VERSION")), "1");
     });
 }#[cfg(not(windows))]
 fn tray_pin_guidance(_app: tauri::AppHandle) {}
@@ -666,7 +666,21 @@ pub fn run() {
             }
             // 托盘:子菜单化菜单(勾选当前项),左键直接打开
             let menu = build_menu(app.handle())?;
-            if prefs_get("tray_tip_done").is_none() { tray_pin_guidance(app.handle().clone()); }
+            // v1.7.4:引导改为"每版本首启一次"(老板:升级后还想被提醒固定任务栏)
+            let guide_key = format!("tray_tip_done_{}", env!("CARGO_PKG_VERSION"));
+            if prefs_get(&guide_key).is_none() { tray_pin_guidance(app.handle().clone()); }
+            // 开机自启默认开(v1.7.4 老板令):首启无痕 → enable 一次+落标记;此后用户说了算
+            {
+                use tauri_plugin_autostart::ManagerExt;
+                let m = app.autolaunch();
+                if prefs_get("autostart_init").is_none() {
+                    prefs_set("autostart_init", "1");
+                    if !m.is_enabled().unwrap_or(false) {
+                        let _ = m.enable();
+                        crate::kflog::kflog("autostart: 首启默认开启");
+                    }
+                }
+            }
             let _ = TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
