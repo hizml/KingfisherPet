@@ -40,10 +40,10 @@
   </div>
   <div class="row wx">
     <div class="lbl"><span>天气联动 Weather</span></div>
-    <label class="chk"><input id="wxOn" type="checkbox" /><span>启用天气联动</span></label>
+    <label class="chk"><input id="wxOn" type="checkbox" /><span id="wxOnL">启用天气联动</span></label>
     <div class="note" id="wxNote">开启后将请求所选天气源查询天气(约 30 分钟一次);城市填短名(如 北京/顺义,勿带"市/区"后缀),留空时用 IP 粗略定位。</div>
-    <div class="wxrow"><span class="k">城市</span><input id="wxCity" type="text" placeholder="如:北京 / 顺义;留空 = IP 定位" /></div>
-    <div class="wxrow"><span class="k">数据源</span>
+    <div class="wxrow"><span class="k" id="cityK">城市</span><input id="wxCity" type="text" placeholder="如:北京 / 顺义;留空 = IP 定位" /></div>
+    <div class="wxrow"><span class="k" id="provK">数据源</span>
       <select id="wxProv">
         <option value="open-meteo">Open-Meteo(免费,无需 Key)</option>
         <option value="qweather">和风天气(需 API Key)</option>
@@ -55,9 +55,9 @@
   </div>
   <div class="wx">
     <div class="wxh">🐦 局域网小鸟 LAN Birds</div>
-    <label class="chk"><input id="lanOn" type="checkbox" /><span>发现同一网络里的翡(对唱/串门/送鱼)</span></label>
+    <label class="chk"><input id="lanOn" type="checkbox" /><span id="lanOnL">发现同一网络里的翡(对唱/串门/送鱼)</span></label>
     <div class="wxstat" id="lanName"></div>
-    <div class="wxstat">需同一路由器且未开「AP 隔离/客户端隔离」;Windows 首次启动若弹防火墙询问请点「允许」(专用网络),拦了就互相发现不了。公司/公共 WiFi 可能发现不到邻居。广播仅代号与主题,不含 IP/主机名。</div>
+    <div class="wxstat" id="lanNote"></div>
     <div class="wxstat" id="lanPeers">邻居:—</div>
   </div>
   <div class="row">
@@ -112,7 +112,7 @@
       for (const b of langsEl.children) b.classList.toggle("on", b.dataset.l === curLang);
     }
     paintLang();
-    listen("lang", (e) => { curLang = e.payload; paintLang(); });
+    listen("lang", (e) => { curLang = e.payload; paintLang(); applyLang(); });   // v1.7.2:切语言全窗即时适配
     listen("theme", (e) => { curTheme = e.payload; paintTheme(); });
     emit("settings-need-state", null);   // 主动拉 Rust 侧权威状态(语言;经 settings-open/settings-sync 回传)
     // 滑杆:标签即时,设置载荷 250ms 节流(每 tick emit 会触发 Rust 重建托盘菜单,拖一路重建一路,白烧)
@@ -125,6 +125,26 @@
     const wxOn = document.getElementById("wxOn"), wxCity = document.getElementById("wxCity"),
           wxProv = document.getElementById("wxProv"), wxKey = document.getElementById("wxKey"),
           wxHost = document.getElementById("wxHost"), wxStat = document.getElementById("wxStat");
+    // v1.7.2 设置窗完整中英适配(老板:切语言所有内容都要适配;此前天气/LAN 区中文硬编码)
+    const applyLang = () => {
+      const zh = zhUI();
+      const T = (e, z, en) => { if (e) e.textContent = zh ? z : en; };
+      T(document.getElementById("wxOnL"), "启用天气联动", "Enable weather integration");
+      document.getElementById("wxNote").textContent = zh
+        ? '开启后将请求所选天气源查询天气(约 30 分钟一次);城市填短名(如 北京/顺义,勿带"市/区"后缀),留空时用 IP 粗略定位。'
+        : "When on, the selected provider is queried every ~30 min; use short city names (e.g. Beijing, no \"City/District\" suffix); empty = rough IP location.";
+      T(document.getElementById("cityK"), "城市", "City");
+      document.getElementById("wxCity").placeholder = zh ? "如:北京 / 顺义;留空 = IP 定位" : "e.g. Beijing; empty = IP location";
+      T(document.getElementById("provK"), "数据源", "Provider");
+      document.getElementById("wxProv").options[0].textContent = zh ? "Open-Meteo(免费,无需 Key)" : "Open-Meteo (free, no key)";
+      document.getElementById("wxProv").options[1].textContent = zh ? "和风天气(需 API Key)" : "QWeather (API key required)";
+      T(document.getElementById("lanOnL"), "发现同一网络里的翡(对唱/串门/送鱼)", "Discover other KingfisherPets on this network");
+      document.getElementById("lanNote").textContent = zh
+        ? '需同一路由器且未开「AP 隔离/客户端隔离」;Windows 首次启动若弹防火墙询问请点「允许」(专用网络),拦了就互相发现不了。公司/公共 WiFi 可能发现不到邻居。广播仅代号与主题,不含 IP/主机名。'
+        : "Needs the same router without AP/client isolation; allow the app through Windows Firewall when prompted (private network), or peers cannot find each other. Corporate/public Wi-Fi may block discovery. Broadcasts codename + theme only, never IP/hostname.";
+      document.getElementById("wxStat").textContent = zh ? "状态:未开启" : "Status: off";
+      renderPeers();
+    };
     const paintQW = () => {
       const qw = wxProv.value === "qweather";
       for (const el of document.querySelectorAll(".qw-only")) el.hidden = !qw;
@@ -134,6 +154,7 @@
     wxProv.value = localStorage.getItem("kf_weather_provider") === "qweather" ? "qweather" : "open-meteo";
     wxKey.value = localStorage.getItem("kf_weather_key") || "";
     wxHost.value = localStorage.getItem("kf_weather_host") || "";
+    applyLang();
     paintQW();
     wxOn.onchange = () => emit("setting", "weather_on:" + wxOn.checked);
     // 局域网小鸟(v1.7.0):开关走 lansvc;邻居列表支持允许/拒绝(配对=隐私红线)
@@ -144,13 +165,13 @@
       if (lanName) lanName.textContent = "我的代号:" + lan.name;
       let peers = [];
       try { peers = await invoke("lan_peers"); } catch { peers = []; }
-      if (!peers.length) { lanPeers.textContent = "邻居:暂无"; return; }
+      if (!peers.length) { lanPeers.textContent = zhUI() ? "邻居:暂无" : "Neighbors: none"; return; }
       lanPeers.innerHTML = "";
       for (const n of peers) {
         const b = document.createElement("button");
         b.style.cssText = "margin:2px 6px 2px 0;padding:1px 8px;border-radius:6px;border:1px solid #999;background:#fff;cursor:pointer;font-size:11px;";
         const st = (lanSvc && lanSvc.allowed.includes(n)) ? "✅ " : ((lanSvc && lanSvc.denied.includes(n)) ? "🚫 " : "❓ ");
-        b.textContent = st + n + (st === "❓ " ? "(允许)" : "");
+        b.textContent = st + n + (st === "❓ " ? (zhUI() ? "(允许)" : " (allow)") : "");
         b.onclick = () => { if (lanSvc) lanSvc.allowPeer(n); renderPeers(); };
         lanPeers.appendChild(b);
       }

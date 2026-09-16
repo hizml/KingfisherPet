@@ -249,10 +249,13 @@ static WEATHER_TITLE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(N
 static GROWTH_TITLE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 static LAN_TITLE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 static LAN_MENU_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static LAN_READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// on=设置开关(关=LAN 菜单全隐藏);ready=有已配对在线邻居(无=串门/送鱼置灰,老板要求)
 #[tauri::command]
-fn set_lan_menu(app: tauri::AppHandle, on: Option<bool>) {
+fn set_lan_menu(app: tauri::AppHandle, on: Option<bool>, ready: Option<bool>) {
     LAN_MENU_ON.store(on.unwrap_or(false), std::sync::atomic::Ordering::Relaxed);
+    LAN_READY.store(ready.unwrap_or(false), std::sync::atomic::Ordering::Relaxed);
     refresh_menu(&app);
 }
 
@@ -392,8 +395,9 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
     let peck = MenuItem::with_id(app, "peck", t("啄一下", "Peck"), true, None::<&str>)?;
     let show = MenuItem::with_id(app, "show", t("显示 / 隐藏", "Show / Hide"), true, None::<&str>)?;
     let lan_on = LAN_MENU_ON.load(std::sync::atomic::Ordering::Relaxed);
-    let lanvisit = MenuItem::with_id(app, "lanvisit", t("去邻居家串门", "Visit a Neighbor"), lan_on, None::<&str>)?;
-    let lanfish = MenuItem::with_id(app, "lanfish", t("给邻居送条鱼", "Send a Fish"), lan_on, None::<&str>)?;
+    let lan_act = lan_on && LAN_READY.load(std::sync::atomic::Ordering::Relaxed);   // 无邻居置灰
+    let lanvisit = MenuItem::with_id(app, "lanvisit", t("去邻居家串门", "Visit a Neighbor"), lan_act, None::<&str>)?;
+    let lanfish = MenuItem::with_id(app, "lanfish", t("给邻居送条鱼", "Send a Fish"), lan_act, None::<&str>)?;
 
     let repair = MenuItem::with_id(app, "repair", t("修复屏幕", "Repair Screen"), true, None::<&str>)?;
 
