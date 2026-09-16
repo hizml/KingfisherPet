@@ -251,7 +251,40 @@ static LAN_TITLE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None)
 static LAN_MENU_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static LAN_READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// on=设置开关(关=LAN 菜单全隐藏);ready=有已配对在线邻居(无=串门/送鱼置灰,老板要求)
+/// LAN 配置唯一权威(v1.7.5 老板实锤:localStorage 随设置窗关闭丢失,勾不保)。
+/// on/name/allowed/denied 全存 Rust prefs;开关即启停服务(前端不再自存状态)。
+#[derive(serde::Serialize, serde::Deserialize, Clone, Default)]
+struct LanCfg { on: bool, name: String, allowed: Vec<String>, denied: Vec<String> }
+
+fn lan_cfg_load() -> LanCfg {
+    prefs_get("lan_cfg").and_then(|v| serde_json::from_str::<LanCfg>(&v).ok()).unwrap_or_default()
+}
+fn lan_cfg_save(c: &LanCfg) { prefs_set("lan_cfg", &serde_json::to_string(c).unwrap_or_default()); }
+
+#[tauri::command]
+fn lan_config(app: tauri::AppHandle, on: Option<bool>, allow: Option<String>, deny: Option<String>) -> LanCfg {
+    let mut c = lan_cfg_load();
+    let mut menu_dirty = false;
+    if let Some(v) = on { if c.on != v { c.on = v; menu_dirty = true; } }
+    if let Some(n) = allow { if !c.allowed.contains(&n) { c.allowed.push(n); menu_dirty = true; } }
+    if let Some(n) = deny { if !c.denied.contains(&n) { c.denied.push(n); } }
+    lan_cfg_save(&c);
+    // 开关即启停(name 首次自动生成;theme 取当前 UI)
+    if menu_dirty {
+        if c.on {
+            if c.name.is_empty() { c.name = crate::lan::Lan::lanCodename_stub(); lan_cfg_save(&c); }
+            let theme = UI.lock().unwrap().theme.clone();
+            let _ = crate::lan::lan_start(app.clone(), c.name.clone(), theme);
+            crate::kflog::kflog(&format!("lan: 开启 {}", c.name));
+        } else {
+            let _ = crate::lan::lan_stop();
+            crate::lan::lan_send_stop();
+        }
+    }
+    c
+}
+
+/// on=设置开关(关=LAN 菜单全隐藏);ready=有已配对在线邻居(无=串门/送鱼置灰,老板要求)/// on=设置开关(关=LAN 菜单全隐藏);ready=有已配对在线邻居(无=串门/送鱼置灰,老板要求)
 #[tauri::command]
 fn set_lan_menu(app: tauri::AppHandle, on: Option<bool>, ready: Option<bool>) {
     LAN_MENU_ON.store(on.unwrap_or(false), std::sync::atomic::Ordering::Relaxed);
@@ -540,7 +573,7 @@ pub fn run() {
         
 
 .invoke_handler(tauri::generate_handler![
-        open_url, get_dnd_state, set_lan_status, set_lan_menu, lan::lan_start, lan::lan_stop, lan::lan_send, lan::lan_peers, set_update_badge, set_weather_status, set_growth_status, front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, diag_append, assert_z_cmd, anim_guard])
+        open_url, get_dnd_state, set_lan_status, set_lan_menu, lan_config, lan::lan_start, lan::lan_stop, lan::lan_send, lan::lan_peers, set_update_badge, set_weather_status, set_growth_status, front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, diag_append, assert_z_cmd, anim_guard])
         .setup(|app| {
             crate::system::setup_power(app.handle().clone());   // 睡眠/锁屏/唤醒/会话 → emit sleep/wake/session-change
             // 设置窗主动拉状态(打开时):回语言/自启
@@ -669,6 +702,17 @@ pub fn run() {
             // v1.7.4:引导改为"每版本首启一次"(老板:升级后还想被提醒固定任务栏)
             let guide_key = format!("tray_tip_done_{}", env!("CARGO_PKG_VERSION"));
             if prefs_get(&guide_key).is_none() { tray_pin_guidance(app.handle().clone()); }
+            // LAN:配置在 Rust(v1.7.5),开机若开 → 自启服务+推菜单可见
+            {
+                let c = lan_cfg_load();
+                if c.on {
+                    let theme = UI.lock().unwrap().theme.clone();
+                    let name = if c.name.is_empty() { let n = crate::lan::Lan::lanCodename_stub(); lan_cfg_save(&LanCfg { on: true, name: n.clone(), ..c.clone() }); n } else { c.name.clone() };
+                    let _ = crate::lan::lan_start(app.handle().clone(), name, theme);
+                }
+                let _ = app.handle().clone();
+                crate::kflog::kflog(&format!("lan: 启动配置 on={}", c.on));
+            }
             // 开机自启默认开(v1.7.4 老板令):首启无痕 → enable 一次+落标记;此后用户说了算
             {
                 use tauri_plugin_autostart::ManagerExt;

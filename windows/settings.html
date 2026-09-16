@@ -49,7 +49,7 @@
         <option value="qweather">和风天气(需 API Key)</option>
       </select>
     </div>
-    <div class="wxrow qw-only" hidden><span class="k">API Key</span><input id="wxKey" type="password" /></div>
+    <div class="wxrow qw-only" hidden><span class="k">API Key</span><input id="wxKey" type="password" /><button id="wxKeyTest" style="flex:none;padding:3px 10px;border:1px solid #0e7c86;color:#0e7c86;border-radius:6px;background:#fff;cursor:pointer;">测试</button></div>
     <div class="wxrow qw-only" hidden><span class="k">API Host</span><input id="wxHost" type="text" placeholder="devapi.qweather.com(*.qweather.com)" /></div>
     <div class="wxstat" id="wxStat">状态:未开启</div>
   </div>
@@ -177,10 +177,28 @@
       }
     };
     let lanSvc = null;   // lansvc 动态加载(es2021 无顶层 await)
-    import("./src/lansvc").then((m) => {
+    import("./src/lansvc").then(async (m) => {
       lanSvc = m.lan;
-      lanOn.checked = m.lan.enabled;   // 同源 localStorage,与主窗一致
+      const cfg = await m.lan.loadCfg().catch(() => null);   // Rust 权威(老板实锤:localStorage 关窗丢勾)
+      lanOn.checked = cfg ? cfg.on : m.lan.enabled;
+      renderPeers();
     });
+    // API Key 测试(老板要求):打和风 geo 探一口,通不通状态行直说
+    document.getElementById("wxKeyTest").onclick = async () => {
+      const key = wxKey.value.trim(), host = wxHost.value.trim() || "devapi.qweather.com";
+      wxStat.textContent = zhUI() ? "状态:测试中…" : "Status: testing…";
+      try {
+        const r = await fetch(`https://${host}/v2/city/lookup?location=beijing&key=${encodeURIComponent(key)}&number=1`,
+                              { signal: AbortSignal.timeout(10000) });
+        const j = await r.json().catch(() => ({}));
+        const ok = r.ok && Array.isArray(j.location) && j.location.length > 0;
+        wxStat.textContent = ok
+          ? (zhUI() ? `状态:Key 有效(${host})` : `Status: key works (${host})`)
+          : (zhUI() ? `状态:Key 无效(HTTP ${r.status}${j.code ? " code " + j.code : ""})` : `Status: key rejected (HTTP ${r.status})`);
+      } catch (e) {
+        wxStat.textContent = zhUI() ? `状态:测试失败(网络/Host 不通)` : "Status: test failed (network/host)";
+      }
+    };
     lanOn.onchange = () => { if (lanSvc) lanSvc.enabled = lanOn.checked; emit("setting", "lan:" + lanOn.checked); renderPeers(); };
     renderPeers();
     import("@tauri-apps/api/event").then(({ listen: _lsn }) => _lsn("lan-peers-changed", () => renderPeers()));

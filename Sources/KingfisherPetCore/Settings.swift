@@ -350,6 +350,14 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
             keyField.autoresizingMask = [.width]
             keyField.identifier = NSUserInterfaceItemIdentifier("wx.key")
             root.addSubview(keyField)
+            // 测试 Key(老板要求):和风 geo 探一口,通不通状态行直说
+            let testBtn = NSButton(title: Language.t("settings.weather.testKey"), target: self,
+                                   action: #selector(testApiKey(_:)))
+            testBtn.bezelStyle = .rounded
+            testBtn.font = .systemFont(ofSize: 11)
+            testBtn.frame = NSRect(x: root.bounds.width - margin - 56, y: y - 3, width: 56, height: 22)
+            root.addSubview(testBtn)
+            keyField.frame.size.width -= 62   // 给按钮腾位
             y -= 32
             let hostTitle = label(Language.t("settings.weather.host"))
             hostTitle.font = NSFont.systemFont(ofSize: 12)
@@ -491,6 +499,31 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
     @objc private func weatherToggled(_ b: NSButton) {
         Settings.shared.weatherEnabled = (b.state == .on)
     }
+    /// 测试和风 Key:geo 查北京,200+有 location=有效(状态行给结论)
+    @objc private func testApiKey(_ b: NSButton) {
+        let s = Settings.shared
+        let key = s.weatherKey.trimmingCharacters(in: .whitespaces)
+        let host = WeatherService.sanitizedHost(s.weatherHost.isEmpty ? "devapi.qweather.com" : s.weatherHost) ?? "devapi.qweather.com"
+        weatherStatusLabel?.stringValue = Language.t("settings.weather.testing")
+        let url = URL(string: "https://\(host)/v2/city/lookup?location=beijing&number=1&key=\(key.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? key)")!
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.timeoutIntervalForRequest = 10
+        URLSession(configuration: cfg).dataTask(with: url) { [weak self] data, resp, _ in
+            let http = (resp as? HTTPURLResponse)?.statusCode ?? -1
+            var ok = false
+            var code = ""
+            if let d = data, let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
+                code = obj["code"] as? String ?? ""
+                ok = (200..<300).contains(http) && (obj["location"] as? [[String: Any]])?.isEmpty == false
+            }
+            DispatchQueue.main.async {
+                self?.weatherStatusLabel?.stringValue = ok
+                    ? String(format: Language.t("settings.weather.keyOK"), host)
+                    : String(format: Language.t("settings.weather.keyBad"), http, code)
+            }
+        }.resume()
+    }
+
     @objc private func lanToggled(_ b: NSButton) {
         Settings.shared.lanBirds = (b.state == .on)
     }

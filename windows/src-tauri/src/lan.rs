@@ -271,3 +271,16 @@ fn machine_id() -> String {
     format!("{:016x}", h)
 }
 
+pub struct Lan;
+
+impl Lan {
+    /// 随机代号(与前端 shared.mjs lanCodename 同格式;Rust 侧兜底生成)
+    pub fn lanCodename_stub() -> String {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let n = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.subsec_nanos() as u64).unwrap_or(0);
+        format!("翠鸟-{:04X}", (n % 0x10000) as u32)
+    }
+}
+
+/// 发送线程停止通知(心跳循环见 running 标志;此处保留接口)
+pub fn lan_send_stop() {}
