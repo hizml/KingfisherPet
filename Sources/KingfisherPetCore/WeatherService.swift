@@ -34,6 +34,10 @@ public final class WeatherService {
 
     private var timer: Timer?
     private let refreshInterval: TimeInterval = 30 * 60   // 30 分钟
+    /// 城市解析缓存(键=源+城市):城市不变不重查 geo——此前每 30 分钟对同一城市名
+    /// 重复查,占和风口子 1/3 请求量。键含源:两家首条匹配口径不同(「朝阳」
+    /// Open-Meteo 首条=重庆),换源必须重查。IP 定位不缓存(网络位置会变)。
+    private var cityGeo: (provider: String, city: String, lat: Double, lon: Double)?
 
     // MARK: - 启停(由 AppDelegate 按设置驱动)
 
@@ -215,6 +219,10 @@ public final class WeatherService {
             }
             return
         }
+        if let geo = cityGeo, geo.city == city, geo.provider == Settings.shared.weatherProvider {
+            done(geo.lat, geo.lon)
+            return
+        }
         if Settings.shared.weatherProvider == "qweather" {
             var comp = URLComponents(string: "https://geoapi.qweather.com/v2/city/lookup")!
             comp.queryItems = [URLQueryItem(name: "location", value: city),
@@ -226,6 +234,7 @@ public final class WeatherService {
                       let lon = Double(first["lon"] as? String ?? "") else {
                     self.fail("和风城市查找失败(名字/Key)"); return
                 }
+                self.rememberCity(provider: "qweather", city: city, lat: lat, lon: lon, first: first)
                 done(lat, lon)
             }
         } else {
@@ -241,9 +250,18 @@ public final class WeatherService {
                       let lon = (first["longitude"] as? NSNumber)?.doubleValue else {
                     self.fail("Open-Meteo 城市查找失败(名字?)"); return
                 }
+                self.rememberCity(provider: "open-meteo", city: city, lat: lat, lon: lon, first: first)
                 done(lat, lon)
             }
         }
+    }
+
+    /// 解析成功才落缓存;重名地名首条可能不符预期(如「朝阳」),解析结果写日志可查
+    private func rememberCity(provider: String, city: String, lat: Double, lon: Double, first: [String: Any]) {
+        cityGeo = (provider: provider, city: city, lat: lat, lon: lon)
+        let name = (first["name"] as? String) ?? "?"
+        let adm = (first["adm1"] as? String) ?? (first["admin1"] as? String) ?? ""
+        kfLog("weather: 定位 \(city) → \(adm.isEmpty || adm == name ? name : "\(name)(\(adm))")")
     }
 
     /// 统一 GET → JSON(回调恒主线程;失败 obj=nil)

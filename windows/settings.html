@@ -40,8 +40,8 @@
   <div class="row wx">
     <div class="lbl"><span>天气联动 Weather</span></div>
     <label class="chk"><input id="wxOn" type="checkbox" /><span>启用天气联动</span></label>
-    <div class="note" id="wxNote">开启后将请求所选天气源查询天气(约 30 分钟一次);城市留空时用 IP 粗略定位。</div>
-    <div class="wxrow"><span class="k">城市</span><input id="wxCity" type="text" placeholder="留空 = IP 定位" /></div>
+    <div class="note" id="wxNote">开启后将请求所选天气源查询天气(约 30 分钟一次);城市填短名(如 北京/顺义,勿带"市/区"后缀),留空时用 IP 粗略定位。</div>
+    <div class="wxrow"><span class="k">城市</span><input id="wxCity" type="text" placeholder="如:北京 / 顺义;留空 = IP 定位" /></div>
     <div class="wxrow"><span class="k">数据源</span>
       <select id="wxProv">
         <option value="open-meteo">Open-Meteo(免费,无需 Key)</option>

@@ -155,6 +155,11 @@ async function refreshQWeather() {
 }
 
 // ── 定位(城市 → 各源 geocoding;留空 → ipapi.co IP 粗定位)──
+// 城市解析缓存(键=源+城市):城市不变不重查——此前每 30 分钟对同一城市名重复
+// geo,占和风口子 1/3 请求量。键含源:两家首条匹配口径不同(「朝阳」Open-Meteo
+// 首条=重庆),换源必须重查。IP 定位不缓存(网络位置会变)。
+let cityGeo: { provider: string; city: string; lat: number; lon: number } | null = null;
+
 async function locate(): Promise<{ lat: number; lon: number }> {
   const city = (settings.weatherCity || "").trim();
   if (!city) {
@@ -164,6 +169,9 @@ async function locate(): Promise<{ lat: number; lon: number }> {
     }
     return { lat: ip.latitude, lon: ip.longitude };
   }
+  if (cityGeo && cityGeo.city === city && cityGeo.provider === settings.weatherProvider) {
+    return { lat: cityGeo.lat, lon: cityGeo.lon };
+  }
   if (settings.weatherProvider === "qweather") {
     const obj = await jget(`https://geoapi.qweather.com/v2/city/lookup?location=${encodeURIComponent(city)}&key=${encodeURIComponent((settings.weatherKey || "").trim())}`);
     const first = (obj?.location as Array<Record<string, unknown>> | undefined)?.[0];
@@ -171,6 +179,7 @@ async function locate(): Promise<{ lat: number; lon: number }> {
     if (obj?.code !== "200" || !Number.isFinite(lat) || !Number.isFinite(lon)) {
       throw new Error("和风城市查找失败(名字/Key)");
     }
+    rememberCity("qweather", city, lat, lon, first);
     return { lat, lon };
   }
   const obj = await jget(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=zh&format=json`);
@@ -178,7 +187,16 @@ async function locate(): Promise<{ lat: number; lon: number }> {
   if (typeof first?.latitude !== "number" || typeof first?.longitude !== "number") {
     throw new Error("Open-Meteo 城市查找失败(名字?)");
   }
+  rememberCity("open-meteo", city, first.latitude, first.longitude, first);
   return { lat: first.latitude, lon: first.longitude };
+}
+
+/// 解析成功才落缓存;重名地名首条可能不符预期(如「朝阳」),解析结果写日志可查
+function rememberCity(provider: string, city: string, lat: number, lon: number, first?: Record<string, unknown>) {
+  cityGeo = { provider, city, lat, lon };
+  const name = typeof first?.name === "string" ? first.name : "?";
+  const adm = typeof first?.adm1 === "string" ? first.adm1 : typeof first?.admin1 === "string" ? first.admin1 : "";
+  emit("log", `weather: 定位 ${city} → ${adm && adm !== name ? `${name}(${adm})` : name}`);
 }
 
 async function jget(url: string): Promise<Record<string, unknown> | null> {
