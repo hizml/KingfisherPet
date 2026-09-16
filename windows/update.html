@@ -105,7 +105,10 @@
       img.style.cssText = "position:absolute;top:14px;right:16px;width:52px;image-rendering:pixelated;";
       document.body.style.position = "relative";
       document.body.appendChild(img);
-      btn(L.githubB, true, () => { open("https://github.com/hizml/KingfisherPet").then(() => close(), () => {}); }); btn(L.ok, false, close); }
+      btn(L.githubB, true, () => { open("https://github.com/hizml/KingfisherPet").then(() => close(), () => {}); });
+      // 诊断信息挪进关于(老板:托盘菜单学 Mac 精简;点了照旧收集并打开记事本,不关本窗)
+      btn(zh ? "诊断信息" : "Diagnostics", false, () => { try { void emit("menu", "diag"); } catch { /* */ } });
+      btn(L.ok, false, close); }
   </script>
 </body>
 </html>

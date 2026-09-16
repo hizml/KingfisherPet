@@ -248,6 +248,13 @@ static WEATHER_TITLE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(N
 /// 成长状态行(v1.5.x):前端 growth 服务 invoke 推标题(None=未推,隐藏)。
 static GROWTH_TITLE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 static LAN_TITLE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+static LAN_MENU_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[tauri::command]
+fn set_lan_menu(app: tauri::AppHandle, on: Option<bool>) {
+    LAN_MENU_ON.store(on.unwrap_or(false), std::sync::atomic::Ordering::Relaxed);
+    refresh_menu(&app);
+}
 
 #[tauri::command]
 fn set_lan_status(app: tauri::AppHandle, title: Option<String>) {
@@ -384,9 +391,10 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
     let perch = MenuItem::with_id(app, "perch", t("停到窗口上", "Perch on a Window"), true, None::<&str>)?;
     let peck = MenuItem::with_id(app, "peck", t("啄一下", "Peck"), true, None::<&str>)?;
     let show = MenuItem::with_id(app, "show", t("显示 / 隐藏", "Show / Hide"), true, None::<&str>)?;
-    let lanvisit = MenuItem::with_id(app, "lanvisit", t("去邻居家串门", "Visit a Neighbor"), true, None::<&str>)?;
-    let lanfish = MenuItem::with_id(app, "lanfish", t("给邻居送条鱼", "Send a Fish"), true, None::<&str>)?;
-    let diag = MenuItem::with_id(app, "diag", t("诊断信息", "Diagnostics"), true, None::<&str>)?;
+    let lan_on = LAN_MENU_ON.load(std::sync::atomic::Ordering::Relaxed);
+    let lanvisit = MenuItem::with_id(app, "lanvisit", t("去邻居家串门", "Visit a Neighbor"), lan_on, None::<&str>)?;
+    let lanfish = MenuItem::with_id(app, "lanfish", t("给邻居送条鱼", "Send a Fish"), lan_on, None::<&str>)?;
+
     let repair = MenuItem::with_id(app, "repair", t("修复屏幕", "Repair Screen"), true, None::<&str>)?;
 
     // ── 高频项放外边(用户指令:使用频率高的放外边,低的收设置窗):
@@ -440,7 +448,7 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
         }
     }
     let items_raw: Vec<&dyn IsMenuItem<tauri::Wry>> = vec![
-        &call, &fish, &sing, &feed, &perch, &peck, &show, &lanvisit, &lanfish, &repair, &diag,
+        &call, &fish, &sing, &feed, &perch, &peck, &show, &lanvisit, &lanfish, &repair,
         &m_theme, &sound, &autostart, &settings, &checkupd, &about, &quit,
     ];
     let mut items: Vec<&dyn IsMenuItem<tauri::Wry>> = items_raw;
@@ -457,9 +465,11 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
     if let Some(t) = GROWTH_TITLE.lock().unwrap().clone() {
         head.push(Box::new(MenuItem::with_id(app, "growth", t, false, None::<&str>)?));
     }
-    // 局域网小鸟状态行(v1.7.0;前端开启才推标题 → 才显示)
-    if let Some(t) = LAN_TITLE.lock().unwrap().clone() {
-        head.push(Box::new(MenuItem::with_id(app, "lan", t, false, None::<&str>)?));
+    // 局域网小鸟(v1.7.2:设置没开就不出现任何 LAN 菜单项——老板要求;状态行+两动作一起)
+    if LAN_MENU_ON.load(std::sync::atomic::Ordering::Relaxed) {
+        if let Some(t) = LAN_TITLE.lock().unwrap().clone() {
+            head.push(Box::new(MenuItem::with_id(app, "lan", t, false, None::<&str>)?));
+        }
     }
     if !head.is_empty() {
         let refs: Vec<&dyn IsMenuItem<tauri::Wry>> = head.iter().map(|b| b.as_ref()).collect();
@@ -526,7 +536,7 @@ pub fn run() {
         
 
 .invoke_handler(tauri::generate_handler![
-        open_url, get_dnd_state, set_lan_status, lan::lan_start, lan::lan_stop, lan::lan_send, lan::lan_peers, set_update_badge, set_weather_status, set_growth_status, front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, diag_append, assert_z_cmd, anim_guard])
+        open_url, get_dnd_state, set_lan_status, set_lan_menu, lan::lan_start, lan::lan_stop, lan::lan_send, lan::lan_peers, set_update_badge, set_weather_status, set_growth_status, front_perch_cmd, cursor_pos_cmd, window_at_point_cmd, window_rect_cmd, surfaces_below_cmd, show_no_activate, stage_visibility, work_area_cmd, diag_append, assert_z_cmd, anim_guard])
         .setup(|app| {
             crate::system::setup_power(app.handle().clone());   // 睡眠/锁屏/唤醒/会话 → emit sleep/wake/session-change
             // 设置窗主动拉状态(打开时):回语言/自启

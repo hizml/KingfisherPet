@@ -8,6 +8,7 @@ export const lan = {
   get enabled(): boolean { return localStorage.getItem("kf_lan_on") === "1"; },
   set enabled(v: boolean) {
     localStorage.setItem("kf_lan_on", v ? "1" : "0");
+    invoke("set_lan_menu", { on: v }).catch(() => {});   // v1.7.2:菜单项随开关显隐(老板要求)
     if (v) lan.start(); else { invoke("lan_stop").catch(() => {}); lan.syncTray(); }
   },
   get name(): string {
@@ -35,6 +36,7 @@ export const lan = {
   async start() {
     try {
       await invoke("lan_start", { name: lan.name, theme: localStorage.getItem("kf_theme") || "flat" });
+      await invoke("set_lan_menu", { on: true }).catch(() => {});
     } catch (e) { console.error("lan_start", e); }
     lan.syncTray();
   },

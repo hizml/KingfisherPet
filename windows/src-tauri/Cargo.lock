@@ -1852,7 +1852,7 @@ dependencies = [
 
 [[package]]
 name = "kingfisherpet"
-version = "1.7.1"
+version = "1.7.2"
 dependencies = [
  "mdns-sd",
  "open",

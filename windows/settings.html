@@ -15,6 +15,7 @@
     .themes button.on { background: #0e7c86; color: #fff; border-color: #0e7c86; }
     label.chk { display: flex; gap: 6px; align-items: center; cursor: pointer; }
     .wx .note { font-size: 11px; color: #777; margin: 4px 0 8px; }
+    [hidden] { display: none !important; }   /* display:flex 会压过 hidden 属性(老板实测 Key 框常显的根因) */
     .wx .wxrow { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
     .wx .wxrow .k { width: 58px; flex: none; color: #555; }
     .wx .wxrow input, .wx .wxrow select { flex: 1; padding: 3px 6px; border: 1px solid #bbb;
@@ -56,7 +57,7 @@
     <div class="wxh">🐦 局域网小鸟 LAN Birds</div>
     <label class="chk"><input id="lanOn" type="checkbox" /><span>发现同一网络里的翡(对唱/串门/送鱼)</span></label>
     <div class="wxstat" id="lanName"></div>
-    <div class="wxstat">需同一路由器且未开「AP 隔离/客户端隔离」,公司或公共 WiFi 可能发现不到邻居。广播仅代号与主题,不含 IP/主机名。</div>
+    <div class="wxstat">需同一路由器且未开「AP 隔离/客户端隔离」;Windows 首次启动若弹防火墙询问请点「允许」(专用网络),拦了就互相发现不了。公司/公共 WiFi 可能发现不到邻居。广播仅代号与主题,不含 IP/主机名。</div>
     <div class="wxstat" id="lanPeers">邻居:—</div>
   </div>
   <div class="row">

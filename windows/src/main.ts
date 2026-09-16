@@ -64,7 +64,7 @@ async function main() {
     setupBranch(lib);
     setupTheme(lib);
     setupAudio();
-    void import("./lansvc").then((m) => m.setupLan());   // 局域网小鸟(v1.7.0)
+    void import("./lansvc").then((m) => { m.setupLan(); m.lan.enabled = m.lan.enabled; });   // 局域网小鸟(v1.7.0;enabled 自赋=把当前开关态推给托盘菜单
     setSoundOn(settings.soundOn);
     setupDrag();
     listen<string>("menu", (e) => {
