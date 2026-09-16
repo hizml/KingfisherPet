@@ -78,6 +78,9 @@ final public class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
     private static let kAutoLogin = "kingfisher.autoLogin"
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
+        // 隐藏主菜单(accessory 应用无菜单栏,Cmd+V/Cmd+C/Cmd+A 在文本框没有目标=
+        // 设置窗 API Key/城市等全部粘不了,老板实锤)。装上后密钥等价键由系统派发
+        installHiddenEditMenu()
         // 加载资源(默认 flat);如保存的主题不是 flat,切过去
         let s = Settings.shared
         if s.theme != SpriteLibrary.shared.currentTheme {
@@ -625,6 +628,25 @@ final public class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
     }
 
     /// 托盘邻居行刷新(状态可见纪律)
+    /// accessory 应用的隐藏主菜单:仅一个 Edit 菜单(剪切/复制/粘贴/全选,标准选择器)
+    private func installHiddenEditMenu() {
+        let main = NSMenu()
+        let editItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
+        let editMenu = NSMenu(title: "Edit")
+        let items: [(String, Selector, String)] = [
+            ("Cut", #selector(NSText.cut(_:)), "x"),
+            ("Copy", #selector(NSText.copy(_:)), "c"),
+            ("Paste", #selector(NSText.paste(_:)), "v"),
+            ("Select All", #selector(NSText.selectAll(_:)), "a"),
+        ]
+        for (title, sel, key) in items {
+            editMenu.addItem(withTitle: title, action: sel, keyEquivalent: key)
+        }
+        editItem.submenu = editMenu
+        main.addItem(editItem)
+        NSApp.mainMenu = main
+    }
+
     private func refreshLanMenu() {
         guard let status = lanStatusItem else { return }
         let names = lan.onlineNames.filter { lan.allowed.contains($0) }
