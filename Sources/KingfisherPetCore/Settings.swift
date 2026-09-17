@@ -335,6 +335,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
         cityField.frame = NSRect(x: margin + labelCol, y: y - 2, width: root.bounds.width - margin * 2 - labelCol, height: 24)
         cityField.autoresizingMask = [.width]
         cityField.formatter = NoNewlineFormatter()   // 单行纪律:换行进不了字段
+        for f in [cityField] { f.usesSingleLineMode = true; f.cell?.truncatesLastVisibleLine = true }
         cityField.identifier = NSUserInterfaceItemIdentifier("wx.city")
         root.addSubview(cityField)
         // 数据源(选和风时下方多出 Key/Host 两行:重建窗口换布局,比动态增删行稳)
@@ -373,6 +374,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
             keyField.frame = NSRect(x: margin + labelCol, y: y - 2, width: root.bounds.width - margin * 2 - labelCol, height: 24)
             keyField.autoresizingMask = [.width]
             keyField.formatter = NoNewlineFormatter()
+            keyField.usesSingleLineMode = true; keyField.cell?.truncatesLastVisibleLine = true
             keyField.identifier = NSUserInterfaceItemIdentifier("wx.key")
             root.addSubview(keyField)
             // 测试 Key(老板要求):和风 geo 探一口,通不通状态行直说
@@ -397,6 +399,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
             hostField.frame = NSRect(x: margin + labelCol, y: y - 2, width: root.bounds.width - margin * 2 - labelCol, height: 24)
             hostField.autoresizingMask = [.width]
             hostField.formatter = NoNewlineFormatter()
+            hostField.usesSingleLineMode = true; hostField.cell?.truncatesLastVisibleLine = true
             hostField.identifier = NSUserInterfaceItemIdentifier("wx.host")
             root.addSubview(hostField)
         }
@@ -541,10 +544,20 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
         let key = s.weatherKey.filter { !$0.isWhitespace }
         let host = WeatherService.sanitizedHost(s.weatherHost.isEmpty ? "devapi.qweather.com" : s.weatherHost) ?? "devapi.qweather.com"
         weatherStatusLabel?.stringValue = Language.t("settings.weather.testing")
-        let url = URL(string: "https://\(host)/v2/city/lookup?location=beijing&number=1&key=\(key.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? key)")!
+        // 协议自适应:新版专属 Host(*.qweatherapi.com)=X-QW-Api-Key Header + /geo/v2;
+        // 老版(devapi 等)=query key + /v2(老板实测:新 Key 走老协议必 404/401)
+        let isNew = host.lowercased().hasSuffix(".qweatherapi.com")
+        let path = isNew ? "/geo/v2/city/lookup" : "/v2/city/lookup"
+        guard var comp = URLComponents(string: "https://\(host)\(path)") else { return }
+        comp.queryItems = [URLQueryItem(name: "location", value: "beijing"), URLQueryItem(name: "number", value: "1")]
+        if !isNew { comp.queryItems?.append(URLQueryItem(name: "key", value: key)) }
+        guard let url = comp.url else { return }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 10
+        if isNew { req.setValue(key, forHTTPHeaderField: "X-QW-Api-Key") }
         let cfg = URLSessionConfiguration.ephemeral
         cfg.timeoutIntervalForRequest = 10
-        URLSession(configuration: cfg).dataTask(with: url) { [weak self] data, resp, _ in
+        URLSession(configuration: cfg).dataTask(with: req) { [weak self] data, resp, _ in
             let http = (resp as? HTTPURLResponse)?.statusCode ?? -1
             var ok = false
             var code = ""

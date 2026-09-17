@@ -125,7 +125,7 @@ async function refreshQWeather() {
   const host = qwHost();
   const { lat, lon } = await locate();
   const loc = `${lon.toFixed(2)},${lat.toFixed(2)}`;   // 和风 location = 经,纬
-  const wobj = await jget(`https://${host}/v7/weather/now?location=${encodeURIComponent(loc)}&key=${encodeURIComponent(key)}`);
+  const wobj = await qwGet(host, "/v7/weather/now", loc, key);
   if (wobj?.code !== "200") { fail("和风天气不可用(code/key)"); return; }
   const n = (wobj.now ?? {}) as Record<string, unknown>;
   const code = parseInt(String(n.code ?? ""), 10);
@@ -138,7 +138,7 @@ async function refreshQWeather() {
   // 预警同一周期同查(和风口子专属福利);预警失败不拖垮天气本身
   let alerts: WeatherAlert[] = [];
   try {
-    const aobj = await jget(`https://${host}/v7/warning/now?location=${encodeURIComponent(loc)}&key=${encodeURIComponent(key)}`);
+    const aobj = await qwGet(host, "/v7/warning/now", loc, key);
     if (aobj?.code === "200" && Array.isArray(aobj.warning)) {
       alerts = (aobj.warning as Array<Record<string, unknown>>)
         .filter((w) => typeof w.id === "string")
@@ -173,7 +173,11 @@ async function locate(): Promise<{ lat: number; lon: number }> {
     return { lat: cityGeo.lat, lon: cityGeo.lon };
   }
   if (settings.weatherProvider === "qweather") {
-    const obj = await jget(`https://geoapi.qweather.com/v2/city/lookup?location=${encodeURIComponent(city)}&key=${encodeURIComponent((settings.weatherKey || "").trim())}`);
+    const key0 = (settings.weatherKey || "").replace(/\s+/g, "");
+    const host = settings.weatherHost || "devapi.qweather.com";
+    const obj = await qwGet(qwIsNew(host) ? host : "geoapi.qweather.com",
+                            qwIsNew(host) ? "/geo/v2/city/lookup" : "/v2/city/lookup",
+                            city, key0);
     const first = (obj?.location as Array<Record<string, unknown>> | undefined)?.[0];
     const lat = Number(first?.lat), lon = Number(first?.lon);
     if (obj?.code !== "200" || !Number.isFinite(lat) || !Number.isFinite(lon)) {
@@ -199,9 +203,24 @@ function rememberCity(provider: string, city: string, lat: number, lon: number, 
   emit("log", `weather: 定位 ${city} → ${adm && adm !== name ? `${name}(${adm})` : name}`);
 }
 
+/// 和风新版 API(2025+,专属 *.qweatherapi.com):X-QW-Api-Key Header 鉴权(老板实测实锤)
+function qwIsNew(host: string): boolean { return host.toLowerCase().endsWith(".qweatherapi.com"); }
+
+async function qwGet(host: string, path: string, loc: string, key: string): Promise<Record<string, unknown> | null> {
+  const base = `https://${host}${path}?location=${encodeURIComponent(loc)}`;
+  if (qwIsNew(host)) {
+    return jget2(base, { headers: { "X-QW-Api-Key": key } });
+  }
+  return jget(`${base}&key=${encodeURIComponent(key)}`);
+}
+
 async function jget(url: string): Promise<Record<string, unknown> | null> {
+  return jget2(url, {});
+}
+
+async function jget2(url: string, init: RequestInit): Promise<Record<string, unknown> | null> {
   try {
-    const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    const r = await fetch(url, { ...init, signal: AbortSignal.timeout(15000) });
     if (!r.ok) { emit("log", "weather: HTTP " + r.status + " " + new URL(url).host); return null; }
     return await r.json();
   } catch (e) {

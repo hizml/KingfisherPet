@@ -50,7 +50,7 @@
       </select>
     </div>
     <div class="wxrow qw-only" hidden><span class="k">API Key</span><input id="wxKey" type="password" /><button id="wxKeyTest" style="flex:none;padding:3px 10px;border:1px solid #0e7c86;color:#0e7c86;border-radius:6px;background:#fff;cursor:pointer;">测试</button></div>
-    <div class="wxrow qw-only" hidden><span class="k">API Host</span><input id="wxHost" type="text" placeholder="devapi.qweather.com(*.qweather.com)" /></div>
+    <div class="wxrow qw-only" hidden><span class="k">API Host</span><input id="wxHost" type="text" placeholder="devapi.qweather.com 或 专属 xxx.qweatherapi.com" /></div>
     <div class="wxstat" id="wxStat">状态:未开启</div>
   </div>
   <div class="wx">
@@ -209,13 +209,20 @@
       const host = host0 || "devapi.qweather.com";
       wxStat.textContent = zhUI() ? "状态:测试中…" : "Status: testing…";
       try {
-        const r = await fetch(`https://${host}/v2/city/lookup?location=beijing&key=${encodeURIComponent(key)}&number=1`,
-                              { signal: AbortSignal.timeout(10000) });
+        // 协议自适应:新版专属 Host(*.qweatherapi.com)=X-QW-Api-Key Header+/geo/v2;
+        // 老版=query key+/v2(老板实测:新 Key 走老协议必 404/401)
+        const isNew = host.toLowerCase().endsWith(".qweatherapi.com");
+        const path = isNew ? "/geo/v2/city/lookup" : "/v2/city/lookup";
+        const url0 = `https://${host}${path}?location=beijing&number=1`;
+        const r = isNew
+          ? await fetch(url0, { signal: AbortSignal.timeout(10000), headers: { "X-QW-Api-Key": key } })
+          : await fetch(`${url0}&key=${encodeURIComponent(key)}`, { signal: AbortSignal.timeout(10000) });
         const j = await r.json().catch(() => ({}));
         const ok = r.ok && Array.isArray(j.location) && j.location.length > 0;
+        const errDetail = j.error && j.error.status ? ` type=${j.error.status}` : (j.code ? ` code ${j.code}` : "");
         wxStat.textContent = ok
           ? (zhUI() ? `状态:Key 有效(${host})` : `Status: key works (${host})`)
-          : (zhUI() ? `状态:Key 无效(HTTP ${r.status}${j.code ? " code " + j.code : ""})` : `Status: key rejected (HTTP ${r.status})`);
+          : (zhUI() ? `状态:Key 无效(HTTP ${r.status}${errDetail})` : `Status: key rejected (HTTP ${r.status}${errDetail})`);
       } catch (e) {
         wxStat.textContent = zhUI() ? `状态:测试失败(网络/Host 不通)` : "Status: test failed (network/host)";
       }

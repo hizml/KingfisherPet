@@ -144,10 +144,10 @@ public final class WeatherService {
             guard let self else { return }
             let loc = String(format: "%.2f,%.2f", lon, lat)   // 和风 location = 经,纬
             // 天气 + 预警同一周期同查(预警是和风口子专属福利)
-            guard let nowURL = Self.qwURL(host: host, path: "/v7/weather/now", loc: loc, key: key) else {
+            guard let nowReq = Self.qwURL(host: host, path: "/v7/weather/now", loc: loc, key: key) else {
                 self.fail("和风 Host 无效(\(host))"); return
             }
-            Self.getJSON(nowURL) { wobj in
+            Self.getJSON(nowReq) { wobj in
                 guard let wobj, (wobj["code"] as? String) == "200",
                       let n = wobj["now"] as? [String: Any],
                       let codeStr = n["code"] as? String, let code = Int(codeStr) else {
@@ -158,14 +158,14 @@ public final class WeatherService {
                 let main = Self.mainFromQWeather(code: code, windScale: windScale)
                 guard let main else { self.fail("和风未知码 \(code)"); return }
                 let (hot, cold) = Self.tempFlags(tempC: temp)
-                guard let warnURL = Self.qwURL(host: host, path: "/v7/warning/now", loc: loc, key: key) else {
+                guard let warnReq = Self.qwURL(host: host, path: "/v7/warning/now", loc: loc, key: key) else {
                     self.succeed(now: WeatherNow(main: main, hot: hot, cold: cold,
                                                  tempC: temp,
                                                  raw: "QW#\(code) wind\(windScale) t\(temp.map { String(format: "%.0f", $0) } ?? "?")°"),
                                  alerts: [])   // 预警 URL 构不出:预警置空,天气照常
                     return
                 }
-                Self.getJSON(warnURL) { aobj in
+                Self.getJSON(warnReq) { aobj in
                     // 预警查询失败不拖垮天气本身:预警置空、天气照常
                     var alerts: [WeatherAlert] = []
                     if let aobj, (aobj["code"] as? String) == "200",
@@ -195,12 +195,22 @@ public final class WeatherService {
         return h
     }
 
-    private static func qwURL(host: String, path: String, loc: String, key: String) -> URL? {
-        guard let host = sanitizedHost(host),
+    /// 和风新版 API(2025+,专属 *.qweatherapi.com):X-QW-Api-Key Header 鉴权(老板实测实锤)
+    static func qwIsNewAPI(_ host: String) -> Bool { host.lowercased().hasSuffix(".qweatherapi.com") }
+
+    private static func qwURL(host rawHost: String, path: String, loc: String, key: String) -> URLRequest? {
+        guard let host = sanitizedHost(rawHost),
               var comp = URLComponents(string: "https://\(host)\(path)") else { return nil }   // 评审 A4:用户输入不配强解包
-        comp.queryItems = [URLQueryItem(name: "location", value: loc),
-                           URLQueryItem(name: "key", value: key)]
-        return comp.url
+        comp.queryItems = [URLQueryItem(name: "location", value: loc)]
+        var req = URLRequest(url: comp.url!)
+        req.timeoutInterval = 12
+        if qwIsNewAPI(host) {
+            req.setValue(key, forHTTPHeaderField: "X-QW-Api-Key")   // 新版:Header 鉴权
+        } else {
+            comp.queryItems?.append(URLQueryItem(name: "key", value: key))   // 老版:query 参数
+            req.url = comp.url
+        }
+        return req
     }
 
     // MARK: - 定位(城市名 → 各源 geocoding;留空 → ipapi.co IP 粗定位)
@@ -224,11 +234,21 @@ public final class WeatherService {
             return
         }
         if Settings.shared.weatherProvider == "qweather" {
-            var comp = URLComponents(string: "https://geoapi.qweather.com/v2/city/lookup")!
-            comp.queryItems = [URLQueryItem(name: "location", value: city),
-                               URLQueryItem(name: "key", value: Settings.shared.weatherKey.trimmingCharacters(in: .whitespaces))]
-            Self.getJSON(comp.url!) { obj in
-                guard let obj, (obj["code"] as? String) == "200",
+            // 新版专属 Host:geo 走自身域名 /geo/v2(geoapi.qweather.com 不认识新 Key);
+            // 老版走 geoapi + query key。成功判定看 location 数组(新版错误体是 error 结构,无 code)
+            let key = Settings.shared.weatherKey.filter { !$0.isWhitespace }
+            let geoReq: URLRequest?
+            if Self.qwIsNewAPI(Settings.shared.weatherHost) {
+                geoReq = Self.qwURL(host: Settings.shared.weatherHost, path: "/geo/v2/city/lookup", loc: city, key: key)
+            } else {
+                var comp = URLComponents(string: "https://geoapi.qweather.com/v2/city/lookup")
+                comp?.queryItems = [URLQueryItem(name: "location", value: city),
+                                    URLQueryItem(name: "key", value: key)]
+                geoReq = comp?.url.map { var r = URLRequest(url: $0); r.timeoutInterval = 12; return r }
+            }
+            guard let geoReq else { self.fail("和风 Host 无效"); return }
+            Self.getJSON(geoReq) { obj in
+                guard let obj,
                       let first = (obj["location"] as? [[String: Any]])?.first,
                       let lat = Double(first["lat"] as? String ?? ""),
                       let lon = Double(first["lon"] as? String ?? "") else {
@@ -266,15 +286,18 @@ public final class WeatherService {
 
     /// 统一 GET → JSON(回调恒主线程;失败 obj=nil)
     private static func getJSON(_ url: URL, done: @escaping ([String: Any]?) -> Void) {
-        var req = URLRequest(url: url)
-        req.timeoutInterval = 15
-        URLSession.shared.dataTask(with: req) { data, resp, err in
+        var req = URLRequest(url: url); req.timeoutInterval = 12
+        getJSON(req, done: done)
+    }
+
+    private static func getJSON(_ request: URLRequest, done: @escaping ([String: Any]?) -> Void) {
+        URLSession.shared.dataTask(with: request) { data, resp, err in
             var obj: [String: Any]?
             if let data, (resp as? HTTPURLResponse)?.statusCode == 200 || resp == nil,
                let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 obj = parsed
             }
-            if obj == nil { kfLog("weather: 请求失败 \(url.host ?? "?") \(err.map(String.init(describing:)) ?? "非200")") }
+            if obj == nil { kfLog("weather: 请求失败 \(request.url?.host ?? "?") \(err.map(String.init(describing:)) ?? "非200")") }
             DispatchQueue.main.async { done(obj) }
         }.resume()
     }
