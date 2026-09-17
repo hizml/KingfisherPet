@@ -17,7 +17,14 @@ export const lan = {
     if (!v) { invoke("lan_stop").catch(() => {}); }
     lan.syncTray();
   },
-  get name(): string { return lan.cfg?.name || localStorage.getItem("kf_lan_name") || lanCodename(); },
+  get name(): string {
+    const n = lan.cfg?.name || localStorage.getItem("kf_lan_name") || "";
+    if (n) return n;
+    // 主窗兜底生成的代号必须落盘(此前每次启动当场随机=重启换名,对端看到「新邻居」)
+    const c = lanCodename();
+    localStorage.setItem("kf_lan_name", c);
+    return c;
+  },
   get allowed(): string[] { return lan.cfg?.allowed ?? JSON.parse(localStorage.getItem("kf_lan_allowed") ?? "[]"); },
   get denied(): string[] { return lan.cfg?.denied ?? JSON.parse(localStorage.getItem("kf_lan_denied") ?? "[]"); },
   allowPeer(n: string) {
@@ -71,9 +78,14 @@ export const lan = {
   },
 };
 
-/// 事件 → 行为机(behavior 经由全局事件转发,避免循环 import)
+/// 事件 → 行为机(behavior 经由全局事件转发,避免循环 import)。
+/// v1.7.18:先拉 Rust 权威 cfg 再判启停——此前凭隔离 localStorage 缓存直接 start,
+/// 设置窗关掉 LAN 后主窗重启会用陈旧缓存复活服务
 export function setupLan() {
-  if (lan.enabled) lan.start();
+  void lan.loadCfg().then(() => {
+    if (lan.enabled) void lan.start();
+    else lan.syncTray();   // 关着也推一次状态(清托盘行)
+  });
   listen<{ type: string; name: string }>("lan-event", (e) => {
     const { type, name } = e.payload;
     if (type === "peersChanged") { lan.syncTray(); emit("lan-peers-changed", {}).catch(() => {}); return; }

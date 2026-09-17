@@ -992,9 +992,16 @@ export async function start() {
       }
     } catch { /* 校验失败不阻塞 */ }
   } catch (e) { console.error("start", e); }
-  // 破壳登场:整蛋→裂纹→探头(macOS hatchIn 同款)再开始活动
+  // 破壳登场:整蛋→裂纹→探头(macOS hatchIn 同款)再开始活动。
+  // 评审 M7:resolve 不走 gen 守卫的 hold——启动 1.4s 窗口内进一次勿扰(dndSet 先 gen++)
+  // 会把 Promise 永久吊死,main() 卡在 await=start() 之后全部不跑(tick/看门狗/心跳)。
+  // gen 变了只跳过状态迁移(resolve 必达),中断方(dnd/睡眠)自管后续状态。
   enter("egg");
-  await new Promise<void>(r => hold(1.4, () => { enter("idle"); scheduleThink(); emit("log", "hatchIn: 破壳完成"); r(); }));   // 破壳完成才 resolve
+  const g0 = gen;
+  await new Promise<void>(r => setTimeout(() => {
+    if (gen === g0) { enter("idle"); scheduleThink(); emit("log", "hatchIn: 破壳完成"); }
+    r();
+  }, sp(1.4) * 1000));
 }
 
 /// 点击(非拖拽)→ 啾一声 + 心眼害羞 0.8s(macOS petViewWasClicked)

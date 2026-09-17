@@ -14,3 +14,5 @@ export declare function lanDecode(line: string): { type: string; name: string } 
 export declare const LAN_VISIT_COOLDOWN_MS: number;
 export declare function lanVisitAllowed(nowMs: number, lastVisitMs: number | null): boolean;
 export declare function qwIsNewAPI(host: string): boolean;
+/// 天气刷新周期:成功 30 分钟,失败 5 分钟(毫秒;契约见 shared.mjs 同名实现)
+export declare function nextWeatherIntervalMs(succeeded: boolean): number;

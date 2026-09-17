@@ -64,7 +64,10 @@ async function main() {
     setupBranch(lib);
     setupTheme(lib);
     setupAudio();
-    void import("./lansvc").then((m) => { m.setupLan(); m.lan.enabled = m.lan.enabled; });   // 局域网小鸟(v1.7.0;enabled 自赋=把当前开关态推给托盘菜单
+    // 局域网小鸟(v1.7.0)。v1.7.18:先拉 Rust 权威 cfg 再决定启停(此前凭主窗隔离的
+    // localStorage 缓存判定,设置窗关掉 LAN 后主窗重启会把陈旧缓存倒灌复活;
+    // 「enabled 自赋值」同批删除——推托盘状态交给 setupLan/syncTray)
+    void import("./lansvc").then((m) => { m.setupLan(); });
     setSoundOn(settings.soundOn);
     setupDrag();
     listen<string>("menu", (e) => {
@@ -104,9 +107,6 @@ async function main() {
       else if (v.startsWith("weather_on:")) { setWeatherEnabled(v.split(":")[1] === "true"); weatherSettingsChanged(); }
       else if (v.startsWith("weather_city:")) { setWeatherCity(decodeURIComponent(v.slice("weather_city:".length))); weatherSettingsChanged(); }
       else if (v.startsWith("weather_provider:")) { setWeatherProvider(v.split(":")[1]); weatherSettingsChanged(); }
-      else if (v.startsWith("weather_on:")) { setWeatherEnabled(v.split(":")[1] === "true"); weatherSettingsChanged(); }
-      else if (v.startsWith("weather_key:")) { setWeatherKey(decodeURIComponent(v.slice("weather_key:".length))); weatherSettingsChanged(); }
-      else if (v.startsWith("weather_host:")) { setWeatherHost(decodeURIComponent(v.slice("weather_host:".length))); weatherSettingsChanged(); }
       else if (v.startsWith("weather_key:")) { setWeatherKey(decodeURIComponent(v.slice("weather_key:".length))); weatherSettingsChanged(); }
       else if (v.startsWith("weather_host:")) { setWeatherHost(decodeURIComponent(v.slice("weather_host:".length))); weatherSettingsChanged(); }
       syncSettingsOutlets();   // 回推:托盘勾选(Rust ui-state)+ 设置窗滑杆
@@ -210,6 +210,7 @@ async function main() {
         provider: localStorage.getItem("kf_weather_provider") === "qweather" ? "qweather" : "open-meteo",
         key: localStorage.getItem("kf_weather_key") || "",
         host: localStorage.getItem("kf_weather_host") || "devapi.qweather.com",
+        status: weather.status,   // v1.7.18:设置窗状态行初值由真值驱动(此前恒「未开启」)
       });
     });
     // v1.6.0:弹窗「立即更新」→ 下载验签安装 → 自动重启;失败回退浏览器下载
@@ -225,9 +226,14 @@ async function main() {
         let received = 0, total = 0;
         await up.downloadAndInstall((ev) => {
           if (ev.event === "Started" && ev.data.contentLength) total = ev.data.contentLength;
-          else if (ev.event === "Progress" && total > 0) {
+          else if (ev.event === "Progress") {
             received += ev.data.chunkLength;
-            emit("update-progress", { pct: Math.min(99, Math.round(received / total * 100)) }).catch(() => {});
+            if (total > 0) {
+              emit("update-progress", { pct: Math.min(99, Math.round(received / total * 100)) }).catch(() => {});
+            } else {
+              // 无 contentLength(代理/缓存剥了头):不定态+已收字节(此前恒 0% 跳 100%)
+              emit("update-progress", { pct: -1, mb: received }).catch(() => {});
+            }
           }
         });
         emit("update-progress", { pct: 100 }).catch(() => {});

@@ -27,6 +27,16 @@ async function groundY(): Promise<number> {
   return groundCache < 0 ? 1040 : groundCache;
 }
 
+/// scaleFactor 缓存(评审 🟢:此前每次 updateShadow 都打一次 IPC,飞行期约 20 次/秒;
+/// behavior.ts 同款模式——缓存 + onScaleChanged 失效)
+let scCache = 0;
+win.onScaleChanged(() => { scCache = 0; });
+async function scaleFactor(): Promise<number> {
+  if (scCache > 0) return scCache;
+  try { scCache = await win.scaleFactor(); } catch { scCache = 1; }
+  return scCache;
+}
+
 let lastEmit = 0;
 export async function updateShadow(birdX: number, birdY: number) {
   const now = performance.now();
@@ -35,7 +45,7 @@ export async function updateShadow(birdX: number, birdY: number) {
   try {
     await ensurePoopStage();
     const ground = await groundY();   // 物理
-    const sc = await win.scaleFactor();
+    const sc = await scaleFactor();
     const midY = birdY + 80 * sc;   // 鸟身中心(物理)
     const heightAbove = Math.max(0, ground - midY);   // 物理
     const w = (150 + Math.min(heightAbove * 0.12, 70 * sc)) / sc;   // CSS 逻辑

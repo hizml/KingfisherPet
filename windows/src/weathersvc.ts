@@ -1,4 +1,4 @@
-import { qwIsNewAPI } from "./shared.mjs";
+import { qwIsNewAPI, nextWeatherIntervalMs } from "./shared.mjs";
 // 天气联动服务(v1.5.0 B;macOS WeatherService.swift 对称实现):
 // 双 provider(Open-Meteo 默认免 key / 和风 Key+专属 Host 含预警)→ 归一化 11 档
 // → 30 分钟刷新 → 通知 behavior。纪律:默认关,开启才发首个请求;失败/断网/key
@@ -38,12 +38,21 @@ function notify() { for (const cb of cbs) cb(); }
 
 let timer: ReturnType<typeof setInterval> | null = null;
 let refreshing = false;
+const FULL_MS = nextWeatherIntervalMs(true);
+const RETRY_MS = nextWeatherIntervalMs(false);
+
+/// 周期调度:成功 30 分钟,失败 5 分钟(v1.7.13 承诺的「失败 5 分钟重试」此前从未
+/// 实现——固定 30 分钟,VPN 断了/Key 修好最长要干等半小时才翻身;老板实锤过同款)
+function scheduleNext(ms: number) {
+  if (timer) { clearInterval(timer); timer = null; }
+  timer = setInterval(refresh, ms);
+}
 
 export function startWeather() {
   stopWeather();
   weather.status = "ok";
   refresh();   // 开启即发首个请求
-  timer = setInterval(refresh, 30 * 60 * 1000);
+  scheduleNext(FULL_MS);
   emit("log", `weather: 启动(源=${settings.weatherProvider} 城市=${settings.weatherCity || "北京"})`);
 }
 
@@ -67,6 +76,7 @@ function fail(why: string) {
   weather.now = null;
   weather.alerts = [];
   weather.status = "unavailable";
+  scheduleNext(RETRY_MS);   // 失败态快周期自愈(成功即恢复 30 分钟)
   syncTray();
   emit("log", "weather: 降级(" + why + ")");
   notify();
@@ -76,6 +86,7 @@ function succeed(now: WeatherNow, alerts: WeatherAlert[]) {
   weather.now = now;
   weather.alerts = alerts;
   weather.status = "ok";
+  scheduleNext(FULL_MS);
   syncTray();
   emit("log", `weather: ok ${now.raw} 预警=${alerts.length}`);
   notify();
@@ -113,15 +124,21 @@ async function refreshOpenMeteo() {
 }
 
 // ── 和风(专属口子:Key + Host,含预警)──
+/// Host 净化(剥空白+误粘协议+字符白名单;畸形回默认)。geo 与天气请求必须同口径
+/// (此前 locate 直接用原始串判新旧 API,Host 尾带空格即两路径分裂)
 function qwHost(): string {
   let h = (settings.weatherHost || "").trim();
   for (const p of ["https://", "http://"]) if (h.startsWith(p)) h = h.slice(p.length).trim();
   if (h && /^[A-Za-z0-9.-]+$/.test(h)) return h;   // 评审 A4 对称:剥误粘协议+白名单字符
   return "devapi.qweather.com";   // 以控制台分配的专属 Host 为准;畸形回默认(静默降级)
 }
+/// Key 净化:剥全部空白(控制台复制常带尾部换行;geo 与天气同口径)
+function qwKey(): string {
+  return (settings.weatherKey || "").replace(/\s+/g, "");
+}
 
 async function refreshQWeather() {
-  const key = (settings.weatherKey || "").trim();
+  const key = qwKey();
   if (!key) { fail("和风未填 Key"); return; }
   const host = qwHost();
   const { lat, lon } = await locate();
@@ -168,8 +185,8 @@ async function locate(): Promise<{ lat: number; lon: number }> {
     return { lat: cityGeo.lat, lon: cityGeo.lon };
   }
   if (settings.weatherProvider === "qweather") {
-    const key0 = (settings.weatherKey || "").replace(/\s+/g, "");
-    const host = settings.weatherHost || "devapi.qweather.com";
+    const key0 = qwKey();
+    const host = qwHost();   // 净化后再判新旧 API(与 qwGet 同口径)
     const obj = await qwGet(qwIsNew(host) ? host : "geoapi.qweather.com",
                             qwIsNew(host) ? "/geo/v2/city/lookup" : "/v2/city/lookup",
                             city, key0);

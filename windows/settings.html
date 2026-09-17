@@ -125,6 +125,15 @@
     const wxOn = document.getElementById("wxOn"), wxCity = document.getElementById("wxCity"),
           wxProv = document.getElementById("wxProv"), wxKey = document.getElementById("wxKey"),
           wxHost = document.getElementById("wxHost"), wxStat = document.getElementById("wxStat");
+    // 语言判定与状态行文案:必须先于 applyLang 声明(v1.7.17 TDZ 复发实锤——
+    // 初始化调用曾插在本声明之前,点击「测试」处理器里 zhUI() 永久 TDZ 静默崩)
+    const zhUI = () => (localStorage.getItem("kf_lang") || "system") === "zh"
+      || ((localStorage.getItem("kf_lang") || "system") === "system"
+          && (navigator.language || "en").toLowerCase().startsWith("zh"));
+    const paintWxStat = (st) => {
+      if (!zhUI()) { wxStat.textContent = "Status: " + (st === "ok" ? "ok" : st === "unavailable" ? "unavailable (degraded silently)" : "off"); return; }
+      wxStat.textContent = "状态:" + (st === "ok" ? "正常" : st === "unavailable" ? "天气源不可用(已静默降级,不干预行为)" : "未开启");
+    };
     // v1.7.2 设置窗完整中英适配(老板:切语言所有内容都要适配;此前天气/LAN 区中文硬编码)
     const applyLang = () => {
       const zh = zhUI();
@@ -134,7 +143,7 @@
         ? '开启后将请求所选天气源查询天气(约 30 分钟一次);城市必填,留空默认北京;填短名(如 北京/顺义,勿带"市/区"后缀)。'
         : "When on, the selected provider is queried every ~30 min; city is required and defaults to Beijing; use short names (no suffix).";
       T(document.getElementById("cityK"), "城市", "City");
-      document.getElementById("wxCity").placeholder = zh ? "如:北京 / 顺义;留空 = IP 定位" : "e.g. Beijing; empty = Beijing";
+      document.getElementById("wxCity").placeholder = zh ? "如:北京 / 顺义;留空 = 北京" : "e.g. Beijing; empty = Beijing";
       T(document.getElementById("provK"), "数据源", "Provider");
       document.getElementById("wxProv").options[0].textContent = zh ? "Open-Meteo(免费,无需 Key)" : "Open-Meteo (free, no key)";
       document.getElementById("wxProv").options[1].textContent = zh ? "和风天气(需 API Key)" : "QWeather (API key required)";
@@ -149,7 +158,8 @@
       const qw = wxProv.value === "qweather";
       for (const el of document.querySelectorAll(".qw-only")) el.hidden = !qw;
     };
-    // v1.7.8:两窗 localStorage 隔离——以主窗推来的真值填充(自己的存储是空/陈旧的)
+    // v1.7.8:两窗 localStorage 隔离——以主窗推来的真值填充(自己的存储是空/陈旧的);
+    // v1.7.18:载荷带 status,状态行初值也由真值驱动(此前读隔离存储恒显示「未开启」)
     const fillWeather = (w) => {
       if (!w) return;
       wxOn.checked = !!w.on;
@@ -158,6 +168,7 @@
       wxKey.value = w.key || "";
       wxHost.value = w.host || "devapi.qweather.com";
       paintQW();   // 按真 provider 显隐 Key/Host 行(老板实锤:选和风再开窗输入框消失)
+      paintWxStat(w.status || (w.on ? "ok" : "off"));
     };
     listen("settings-weather", (e) => fillWeather(e.payload));
     wxOn.checked = false; wxCity.value = ""; wxKey.value = ""; wxHost.value = "";   // 等主窗真值
@@ -172,16 +183,18 @@
     // (初始化调用移到脚本末尾——applyLang 内调 renderPeers,此处其 const 尚未声明,
     // TDZ ReferenceError 会杀死整个脚本:wxProv.onchange/lanOn.onchange 全都挂不上
     // =选和风无反应+LAN 勾不上的真根因,老板 v1.7.16 实锤)
+    // (天气文本框的提交统一走下方 commitOnDone:失焦/回车才提交,且 trim——
+    //  此处曾有三行 onchange 先挂后被覆盖的死代码,v1.7.18 清理)
     wxOn.onchange = () => emit("setting", "weather_on:" + wxOn.checked);
-    wxCity.onchange = () => emit("setting", "weather_city:" + encodeURIComponent(wxCity.value));
-    wxKey.onchange = () => emit("setting", "weather_key:" + encodeURIComponent(wxKey.value));
-    wxHost.onchange = () => emit("setting", "weather_host:" + encodeURIComponent(wxHost.value));
     // 局域网小鸟(v1.7.0):开关走 lansvc;邻居列表支持允许/拒绝(配对=隐私红线)
     const lanOn = document.getElementById("lanOn"),
           lanName = document.getElementById("lanName"),
           lanPeers = document.getElementById("lanPeers");
     const renderPeers = async () => {
-      if (lanName) lanName.textContent = "我的代号:" + lan.name;
+      // 代号以 Rust 权威 cfg 为准(v1.7.18 前这里引用了从未 import 的裸标识符 lan,
+      // 每次调用 ReferenceError ——「我的代号」与邻居列表自 v1.7.0 起从未工作过)
+      const myName = (lanSvc && lanSvc.cfg && lanSvc.cfg.name) || "";
+      if (lanName) lanName.textContent = myName ? ("我的代号:" + myName) : "我的代号:…";
       let peers = [];
       try { peers = await invoke("lan_peers"); } catch { peers = []; }
       if (!peers.length) { lanPeers.textContent = zhUI() ? "邻居:暂无" : "Neighbors: none"; return; }
@@ -224,6 +237,12 @@
         wxStat.textContent = ok
           ? (zhUI() ? `状态:Key 有效(${host})` : `Status: key works (${host})`)
           : (zhUI() ? `状态:Key 无效(HTTP ${r.status}${errDetail})` : `Status: key rejected (HTTP ${r.status}${errDetail})`);
+        // 测试通过 → 把这份 Key/Host 推给主窗重刷天气服务(对齐 Mac「测试通过即重刷」;
+        // 此前成功只改文案,状态要等下个周期才翻身——v1.7.13 老板实锤的同款问题)
+        if (ok) {
+          emit("setting", "weather_key:" + encodeURIComponent(key));
+          emit("setting", "weather_host:" + encodeURIComponent(host));
+        }
       } catch (e) {
         wxStat.textContent = zhUI() ? `状态:测试失败(网络/Host 不通)` : "Status: test failed (network/host)";
       }
@@ -240,17 +259,9 @@
     commitOnDone(wxCity, "weather_city");
     commitOnDone(wxKey, "weather_key");
     commitOnDone(wxHost, "weather_host");
-    // 初始化(必须在全部 const 声明之后)
+    // 初始化(zhUI/paintWxStat 已上移至 applyLang 之前声明;状态行初值等主窗 settings-weather 真值)
     applyLang();
     paintQW();
-    const zhUI = () => (localStorage.getItem("kf_lang") || "system") === "zh"
-      || ((localStorage.getItem("kf_lang") || "system") === "system"
-          && (navigator.language || "en").toLowerCase().startsWith("zh"));
-    const paintWxStat = (st) => {
-      if (!zhUI()) { wxStat.textContent = "Status: " + (st === "ok" ? "ok" : st === "unavailable" ? "unavailable (degraded silently)" : "off"); return; }
-      wxStat.textContent = "状态:" + (st === "ok" ? "正常" : st === "unavailable" ? "天气源不可用(已静默降级,不干预行为)" : "未开启");
-    };
-    paintWxStat(localStorage.getItem("kf_weather_on") === "1" ? "ok" : "off");
     listen("wx-state", (e) => paintWxStat(e.payload?.status));   // 主窗天气状态变化 → 实时标注
     // 主窗回推的当前值(打开时同步真实状态)
     listen("settings-sync", (e) => {

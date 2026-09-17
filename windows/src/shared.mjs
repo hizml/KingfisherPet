@@ -97,3 +97,7 @@ export function lanVisitAllowed(nowMs, lastVisitMs) {
 export function qwIsNewAPI(host) {
   return String(host || "").toLowerCase().endsWith(".qweatherapi.com");
 }
+
+/// 天气刷新周期:成功 30 分钟,失败 5 分钟(v1.7.13 提交说明承诺过"失败 5 分钟重试"
+/// 但从未实现——固定 30 分钟。纯函数锁契约,weathersvc 消费,tests 直测)
+export function nextWeatherIntervalMs(succeeded) { return succeeded ? 30 * 60 * 1000 : 5 * 60 * 1000; }

@@ -12,6 +12,8 @@
     button { padding: 5px 14px; font-size: 12.5px; cursor: pointer;
              border: 1px solid #bbb; border-radius: 6px; background: #fff; }
     button.primary { background: #0e7c86; color: #fff; border-color: #0e7c86; }
+    @keyframes kf-indet { from { transform: translateX(-120%); } to { transform: translateX(400%); } }
+    .indet { width: 24% !important; animation: kf-indet 1.2s linear infinite; }
   </style>
 </head>
 <body>
@@ -25,8 +27,13 @@
     // 内容由 query 驱动:t=found|latest|error|guide,latest=/cur= 版本号
     const q = new URLSearchParams(location.search);
     // 同窗变形监听推迟到渲染之后注册并兜底 catch(提前 listen 若遇 IPC 未就绪
-    // 会让整页脚本死=按钮全不渲染,关于框"找不到诊断信息"同源防御)
-    const _deferListen = () => { try { void listen("update-result", (e) => { try { location.replace("update.html?" + (e.payload?.qs ?? "t=error")); } catch { /* */ } }); } catch { /* */ } };
+    // 会让整页脚本死=按钮全不渲染,关于框"找不到诊断信息"同源防御)。
+    // v1.7.18:listen 失败是 promise reject,同步 try/catch 捕不到(评审 🟢)——
+    // 注册失败时 3s 未变形回退重开,弹窗不再可能永卡「正在检查…」
+    const _deferListen = () => {
+      listen("update-result", (e) => { try { location.replace("update.html?" + (e.payload?.qs ?? "t=error")); } catch { /* */ } })
+        .catch((err) => { emit("log", "update-win: 变形监听注册失败 " + String(err)).catch(() => {}); });
+    };
     const lang = localStorage.getItem("kf_lang") || "system";
     const zh = lang === "zh" || (lang === "system" && (navigator.language || "en").toLowerCase().startsWith("zh"));
     const close = () => getCurrentWindow().close();
@@ -75,7 +82,18 @@
         prog.style.display = "block";
       });
       btn(L.later, false, close);
-      listen<number>("update-progress", (e) => { bar.style.width = (e.payload ?? 0) + "%"; }).catch(() => {});
+      // 进度:pct>=0 百分比;无 contentLength 时主窗发 pct:-1+已收字节 → 不定态动画+MB 数
+      // (评审 🟢:此前 total 缺失时进度条全程 0%、完成瞬间跳 100%。html 内联脚本是纯 JS,禁 TS 语法)
+      listen("update-progress", (e) => {
+        const p = e.payload;
+        if (!p || typeof p.pct !== "number" || p.pct < 0) {
+          bar.classList.add("indet");
+          if (p && p.mb) st.textContent = (zh ? "正在更新…" : "Updating…") + " " + (p.mb / 1048576).toFixed(1) + " MB";
+        } else {
+          bar.classList.remove("indet");
+          bar.style.width = p.pct + "%";
+        }
+      }).catch(() => {});
       // 评审 W3:失败/无包 → 恢复按钮(重试 + 前往下载),不再死屏
       listen("update-fail", () => {
         elB.textContent = "";

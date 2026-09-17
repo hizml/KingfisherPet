@@ -16,11 +16,13 @@ localStorage.setItem("kf_crack_probe", "module-import-ok " + Date.now());
 try {
 const cv = document.getElementById("c");
 const ctx = cv.getContext("2d");
+let DPR = window.devicePixelRatio || 1;   // 物理→CSS(let:resize 时随系统缩放刷新;曾因丢失声明 → crack-at 每次抛 ReferenceError = 裂纹从未画出来)
 function resize() {   // 画布按 DPR 渲染(逻辑分辨率在高 DPI 屏上发糊);坐标系仍用 CSS 逻辑
   const d = window.devicePixelRatio || 1;
   cv.width = Math.round(window.innerWidth * d);
   cv.height = Math.round(window.innerHeight * d);
   ctx.setTransform(d, 0, 0, d, 0, 0);
+  DPR = d;   // 坐标换算同步用当前值(评审 M24:启动快照+resize 动态双口径,切缩放后裂纹错位)
 }
 resize(); window.addEventListener("resize", resize);
 
@@ -38,7 +40,6 @@ async function loadThemeColors(t) {
 loadThemeColors(theme);
 listen("theme", (e) => { theme = e.payload; loadThemeColors(theme); });
 
-const DPR = window.devicePixelRatio || 1;    // 物理→CSS(重写时曾丢失声明 → crack-at 每次抛 ReferenceError = 裂纹从未画出来)
 const MAX_CRACKS = 8;                        // 上限(macOS maxCracks=8)
 const cracks = [];                          // {x, y, r, polys: [[{x,y}...], ...]} 累积(旧痕保留)
 // macOS CrackController 同款累积式:每次啄击【追加】——

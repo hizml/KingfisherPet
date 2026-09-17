@@ -26,7 +26,10 @@ window.addEventListener("error", (e) => {
 <script type="module">
 import { listen, emit } from "@tauri-apps/api/event";
 localStorage.setItem("kf_poop_probe", "module-import-ok " + Date.now());
-const DPR = window.devicePixelRatio || 1;   // 物理→CSS 换算(之前整个文件没声明,所有内容处理器首事件即崩)
+// 物理→CSS 换算(之前整个文件没声明,所有内容处理器首事件即崩)。
+// let+resize 刷新:切显示缩放后旧快照会让全部内容物错位(评审 M24)
+let DPR = window.devicePixelRatio || 1;
+window.addEventListener("resize", () => { DPR = window.devicePixelRatio || DPR; });
 try {
 let theme = localStorage.getItem("kf_theme") || "flat";
 listen("theme", (e) => { theme = e.payload; });   // 主窗切主题(reload 不影响本窗),素材跟着换
