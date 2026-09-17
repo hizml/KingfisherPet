@@ -129,8 +129,8 @@ async function refreshQWeather() {
   const wobj = await qwGet(host, "/v7/weather/now", loc, key);
   if (wobj?.code !== "200") { fail("和风天气不可用(code/key)"); return; }
   const n = (wobj.now ?? {}) as Record<string, unknown>;
-  const code = parseInt(String(n.code ?? ""), 10);
-  if (!Number.isInteger(code)) { fail("和风响应缺 code"); return; }
+  const code = parseInt(String(n.code ?? n.icon ?? ""), 10);   // 新版 API 把 now.code 换成 icon(同码表)
+  if (!Number.isInteger(code)) { fail("和风响应缺 code/icon"); return; }
   const temp = Number(n.temp);
   const windScale = parseInt(String(n.windScale ?? "0"), 10) || 0;
   const main = mainFromQWeather(code, windScale);

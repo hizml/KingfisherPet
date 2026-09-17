@@ -154,7 +154,8 @@ public final class WeatherService {
             Self.getJSON(nowReq) { wobj in
                 guard let wobj, (wobj["code"] as? String) == "200",
                       let n = wobj["now"] as? [String: Any],
-                      let codeStr = n["code"] as? String, let code = Int(codeStr) else {
+                      // 新版 API 把 now.code 换成了 icon(同码表);老版两者都有
+                      let codeStr = (n["code"] as? String) ?? (n["icon"] as? String), let code = Int(codeStr) else {
                     self.fail("和风天气不可用(code/key)"); return
                 }
                 let temp = (n["temp"] as? String).flatMap(Double.init)
