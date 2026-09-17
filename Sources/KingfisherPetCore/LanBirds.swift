@@ -148,27 +148,36 @@ public final class LanBirds {
         browser?.cancel(); browser = nil
         listener?.cancel(); listener = nil
         heartbeatTimer?.invalidate(); heartbeatTimer = nil
-        for (_, p) in peers { p.conn.cancel() }
         let had = !peers.isEmpty
+        // 先广播 BYE 再断(对端立即感知,不再干等 10s 无包超时;与 Win v1.7.18 同款)
+        for (_, p) in peers {
+            send(p.conn, obj: ["t": "BYE", "v": Lan.protoVersion, "name": myName])
+            p.conn.cancel()
+        }
         peers.removeAll(); connNames.removeAll(); lineBuf.removeAll()
-        if had { DispatchQueue.main.async { self.onEvent?(.peersChanged) } }
+        if had { onEvent?(.peersChanged) }
         kfLog("lan: 已关闭")
     }
 
-    /// 浏览:服务名 > 自己名字的邻居由我方发起连接(< 的由对方连我,避免双连接)
+    /// 浏览:服务名 > 自己名字的邻居由我方发起连接(< 的由对方连我,避免双连接)。
+    /// 线程纪律(R8 修复):所有 NW 回调第一步切主线程再碰状态——browser/connection
+    /// 都是 .global 并发队列,回调线程与主线程对 peers/connNames/lineBuf 的并发读写
+    /// 是未定义行为(随机崩溃源)
     private func browse() {
         guard browser == nil else { return }
         let params = NWParameters()
         params.includePeerToPeer = false
         let b = NWBrowser(for: .bonjour(type: Lan.serviceType, domain: nil), using: params)
         b.browseResultsChangedHandler = { [weak self] results, _ in
-            guard let self = self else { return }
-            for r in results {
-                guard case let .service(name, _, _, _) = r.endpoint,
-                      name > self.myName, self.peers[name] == nil else { continue }
-                kfLog("lan: 发现邻居 \(name),发起连接")
-                let c = NWConnection(to: r.endpoint, using: .tcp)
-                self.connect(c, peerName: name)
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                for r in results {
+                    guard case let .service(name, _, _, _) = r.endpoint,
+                          name > self.myName, self.peers[name] == nil else { continue }
+                    kfLog("lan: 发现邻居 \(name),发起连接")
+                    let c = NWConnection(to: r.endpoint, using: .tcp)
+                    self.connect(c, peerName: name)
+                }
             }
         }
         b.start(queue: .global(qos: .utility))
@@ -179,13 +188,15 @@ public final class LanBirds {
         peers[peerName] = Peer(conn: c, lastRecv: CACurrentMediaTime())
         connNames[ObjectIdentifier(c)] = peerName
         c.stateUpdateHandler = { [weak self] st in
-            guard let self = self else { return }
-            switch st {
-            case .ready: self.send(c, obj: ["t": "HELLO", "v": Lan.protoVersion, "name": self.myName,
-                                            "mid": self.myMid,
-                                            "theme": SpriteLibrary.shared.currentTheme])
-            case .failed, .cancelled: self.drop(peerName)
-            default: break
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                switch st {
+                case .ready: self.send(c, obj: ["t": "HELLO", "v": Lan.protoVersion, "name": self.myName,
+                                                "mid": self.myMid,
+                                                "theme": SpriteLibrary.shared.currentTheme])
+                case .failed, .cancelled: self.drop(peerName)
+                default: break
+                }
             }
         }
         c.start(queue: .global(qos: .utility))
@@ -195,7 +206,13 @@ public final class LanBirds {
     private func accept(_ c: NWConnection) {
         c.stateUpdateHandler = { [weak self] st in
             guard let self = self else { return }
-            if case .failed = st, let n = self.connNames[ObjectIdentifier(c)] { self.drop(n) }
+            if case .failed = st {
+                DispatchQueue.main.async {
+                    let key = ObjectIdentifier(c)
+                    if let n = self.connNames[key] { self.drop(n) }
+                    self.lineBuf[key] = nil   // 匿名连接(没等到 HELLO)也清残留缓冲
+                }
+            }
         }
         c.start(queue: .global(qos: .utility))
         receiveLoop(c)
@@ -211,24 +228,37 @@ public final class LanBirds {
     private func receiveLoop(_ c: NWConnection) {
         c.receive(minimumIncompleteLength: 1, maximumLength: Lan.maxLine) { [weak self] data, _, isComplete, err in
             guard let self = self else { return }
-            if let d = data, !d.isEmpty { self.feed(d, conn: c) }
+            if let d = data, !d.isEmpty {
+                DispatchQueue.main.async { self.feed(d, conn: c) }   // feed 写 lineBuf:主线程
+            }
             if err == nil && !isComplete {
-                self.receiveLoop(c)
-            } else if let n = self.connNames[ObjectIdentifier(c)] {
-                self.drop(n)
+                self.receiveLoop(c)   // 重挂留在连接队列(与连接同队列,Network 框架要求)
+            } else {
+                DispatchQueue.main.async {
+                    let key = ObjectIdentifier(c)
+                    if let n = self.connNames[key] { self.drop(n) }
+                    self.lineBuf[key] = nil
+                }
             }
         }
     }
 
-    /// 按行切包喂协议
+    /// 按行切包喂协议(主线程)
     private func feed(_ data: Data, conn c: NWConnection) {
         let key = ObjectIdentifier(c)
         let chunk = (lineBuf[key] ?? "") + String(decoding: data, as: UTF8.self)
+        // 防灌包:半行累积超上限即断(此前无上限——对端持续发不带换行的数据可无限撑大内存)
+        guard chunk.count <= Lan.maxLine else {
+            kfLog("lan: 超长行,断开该连接(防灌包)")
+            lineBuf[key] = nil
+            c.cancel()
+            return
+        }
         var lines = chunk.components(separatedBy: "\n")
         lineBuf[key] = lines.removeLast()
         for line in lines where !line.isEmpty {
             guard let m = Lan.decode(line) else { continue }
-            DispatchQueue.main.async { self.handle(m, conn: c) }
+            handle(m, conn: c)   // feed 已在主线程,直接处理
         }
     }
 
@@ -279,8 +309,10 @@ public final class LanBirds {
 
     private func heartbeat() {
         let now = CACurrentMediaTime()
-        for (n, p) in peers {
-            if now - p.lastRecv > Lan.peerTimeout { drop(n); continue }
+        // 先收集后删除(R9 修复:遍历字典期间 drop 原地 removeValue 是未定义行为)
+        let timedOut = peers.filter { now - $0.value.lastRecv > Lan.peerTimeout }.map(\.key)
+        for n in timedOut { drop(n) }
+        for (_, p) in peers {
             send(p.conn, obj: ["t": "PING", "v": Lan.protoVersion, "name": myName])
         }
     }
@@ -292,7 +324,7 @@ public final class LanBirds {
         lineBuf[key] = nil
         p.conn.cancel()
         kfLog("lan: 邻居离线 \(name)")
-        DispatchQueue.main.async { self.onEvent?(.peersChanged) }
+        onEvent?(.peersChanged)   // 调用方已在主线程(R8 收敛后)
     }
 
     // MARK: - 主动动作(App/Behavior 调)

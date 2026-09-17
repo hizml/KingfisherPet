@@ -37,6 +37,9 @@ windows = { version = "0.61", features = [
     "Win32_Media_Audio_Endpoints",
     "Win32_System_Com",
     "Win32_System_ProcessStatus",   # GetProcessMemoryInfo(v1.5.0 C 性能采样;0.61 起在 ProcessStatus)
+    "Win32_NetworkManagement_IpHelper",   # GetAdaptersAddresses(lan.rs 虚拟网卡枚举;门控还需 Ndis+WinSock)
+    "Win32_NetworkManagement_Ndis",       # IP_ADAPTER_ADDRESSES_LH 的依赖类型
+    "Win32_Networking_WinSock",            # SOCKET_ADDRESS(GetAdaptersAddresses 的门控依赖)
 ] }
 
 [profile.release]

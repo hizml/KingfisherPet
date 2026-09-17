@@ -40,7 +40,8 @@ pub fn kflog(line: &str) {
     let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     use std::sync::atomic::{AtomicU64, Ordering};
     static WRITES: AtomicU64 = AtomicU64::new(0);
-    static OFFSET: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
+    // (上次计算时刻, 偏移):每小时重算——OnceLock 只算一次,DST 切换后日志时间错 1h
+    static OFFSET: std::sync::Mutex<(u64, i64)> = std::sync::Mutex::new((0, 0));
     let path = log_path();
     let n = WRITES.fetch_add(1, Ordering::Relaxed);
     if n % 64 == 0 {
@@ -58,7 +59,12 @@ pub fn kflog(line: &str) {
         .map(|d| d.as_secs())
         .unwrap_or(0);
     // 本地时间(此前直接用 epoch = UTC,与用户时钟差 8 小时,排障时间线对不上)
-    let local = (ts as i64 - *OFFSET.get_or_init(utc_offset_secs)).max(0) as u64;
+    let off = {
+        let mut g = OFFSET.lock().unwrap_or_else(|e| e.into_inner());
+        if g.0 == 0 || ts.saturating_sub(g.0) > 3600 { *g = (ts, utc_offset_secs()); }
+        g.1
+    };
+    let local = (ts as i64 - off).max(0) as u64;
     let hh = (local % 86400) / 3600;
     let mm = (local % 3600) / 60;
     let ss = local % 60;

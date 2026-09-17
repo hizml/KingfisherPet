@@ -62,7 +62,7 @@ fn stage_visibility(app: tauri::AppHandle, label: String, show: bool) {
         if show {
             let _ = w.show();
             crate::windows::show_no_activate(&w);
-            let _ = assert_z_cmd(app.clone());   // 置顶后立即收敛:poop(树枝)> main > crack
+            assert_z_cmd(app.clone());   // 置顶后立即收敛:poop(树枝)> main > crack
         } else {
             let _ = w.hide();
         }
@@ -226,7 +226,7 @@ static UI: std::sync::Mutex<UiState> = std::sync::Mutex::new(UiState {
 static UI_DEFAULTS_INIT: std::sync::Once = std::sync::Once::new();
 fn ui_defaults_init() {
     UI_DEFAULTS_INIT.call_once(|| {
-        let mut ui = UI.lock().unwrap();
+        let mut ui = UI.lock().unwrap_or_else(|e| e.into_inner());
         if ui.theme.is_empty() { ui.theme = "flat".into(); }
         if ui.lang.is_empty() { ui.lang = "system".into(); }
     });
@@ -269,16 +269,18 @@ fn lan_config(app: tauri::AppHandle, on: Option<bool>, allow: Option<String>, de
     if let Some(n) = allow { if !c.allowed.contains(&n) { c.allowed.push(n); menu_dirty = true; } }
     if let Some(n) = deny { if !c.denied.contains(&n) { c.denied.push(n); } }
     lan_cfg_save(&c);
-    // 开关即启停(name 首次自动生成;theme 取当前 UI)
+    // 开关即启停(name 首次自动生成;theme 取当前 UI)。启动失败必须留痕
+    // (此前 `let _ =` 吞错,假启动无任何现象——评审 R3 配套)
     if menu_dirty {
         if c.on {
             if c.name.is_empty() { c.name = crate::lan::Lan::lanCodename_stub(); lan_cfg_save(&c); }
-            let theme = UI.lock().unwrap().theme.clone();
-            let _ = crate::lan::lan_start(app.clone(), c.name.clone(), theme);
+            let theme = UI.lock().unwrap_or_else(|e| e.into_inner()).theme.clone();
+            if let Err(e) = crate::lan::lan_start(app.clone(), c.name.clone(), theme) {
+                crate::kflog::kflog(&format!("lan: 开启失败({e})"));
+            }
             crate::kflog::kflog(&format!("lan: 开启 {}", c.name));
         } else {
             let _ = crate::lan::lan_stop();
-            crate::lan::lan_send_stop();
         }
     }
     c
@@ -294,7 +296,7 @@ fn set_lan_menu(app: tauri::AppHandle, on: Option<bool>, ready: Option<bool>) {
 
 #[tauri::command]
 fn set_lan_status(app: tauri::AppHandle, title: Option<String>) {
-    *LAN_TITLE.lock().unwrap() = title;
+    *LAN_TITLE.lock().unwrap_or_else(|e| e.into_inner()) = title;
     refresh_menu(&app);
 }
 
@@ -307,13 +309,13 @@ fn get_dnd_state() -> bool {
 
 #[tauri::command]
 fn set_growth_status(app: tauri::AppHandle, title: Option<String>) {
-    *GROWTH_TITLE.lock().unwrap() = title;
+    *GROWTH_TITLE.lock().unwrap_or_else(|e| e.into_inner()) = title;
     refresh_menu(&app);
 }
 
 #[tauri::command]
 fn set_weather_status(app: tauri::AppHandle, title: Option<String>) {
-    *WEATHER_TITLE.lock().unwrap() = title;
+    *WEATHER_TITLE.lock().unwrap_or_else(|e| e.into_inner()) = title;
     refresh_menu(&app);
 }
 
@@ -398,7 +400,7 @@ fn tray_pin_guidance(app: tauri::AppHandle) {
 fn tray_pin_guidance(_app: tauri::AppHandle) {}
 
 fn ui_lang_zh() -> bool {
-    let l = UI.lock().unwrap().lang.clone();
+    let l = UI.lock().unwrap_or_else(|e| e.into_inner()).lang.clone();
     match l.as_str() {
         "zh" => true,
         "en" => false,
@@ -413,7 +415,7 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
     use tauri::menu::{Menu, MenuItem, CheckMenuItem, Submenu, IsMenuItem};
     ui_defaults_init();   // 静态 String 只能 const 初始化为空,这里补默认值(幂等)
     let zh = ui_lang_zh();
-    let ui = UI.lock().unwrap();
+    let ui = UI.lock().unwrap_or_else(|e| e.into_inner());
 
     let t = |zh_txt: &str, en_txt: &str| -> String { (if zh { zh_txt } else { en_txt }).into() };
 
@@ -492,19 +494,19 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
     for d in &dev_extra { items.push(d); }
 
     // 天气状态行(天气联动开启时由前端推标题;禁用项只展示)—— 插在最前(动作区之上,Mac 同位)
-    let wx_title = WEATHER_TITLE.lock().unwrap().clone();
+    let wx_title = WEATHER_TITLE.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let menu = Menu::with_items(app, &items)?;
     let mut head: Vec<Box<dyn IsMenuItem<tauri::Wry>>> = Vec::new();
     if let Some(t) = wx_title {
         head.push(Box::new(MenuItem::with_id(app, "weather", t, false, None::<&str>)?));
     }
     // 成长状态行(❤ 档位·亲密度;前端启动即推,故通常可见)—— 排天气行下
-    if let Some(t) = GROWTH_TITLE.lock().unwrap().clone() {
+    if let Some(t) = GROWTH_TITLE.lock().unwrap_or_else(|e| e.into_inner()).clone() {
         head.push(Box::new(MenuItem::with_id(app, "growth", t, false, None::<&str>)?));
     }
     // 局域网小鸟(v1.7.2:设置没开就不出现任何 LAN 菜单项——老板要求;状态行+两动作一起)
     if LAN_MENU_ON.load(std::sync::atomic::Ordering::Relaxed) {
-        if let Some(t) = LAN_TITLE.lock().unwrap().clone() {
+        if let Some(t) = LAN_TITLE.lock().unwrap_or_else(|e| e.into_inner()).clone() {
             head.push(Box::new(MenuItem::with_id(app, "lan", t, false, None::<&str>)?));
         }
     }
@@ -550,7 +552,7 @@ fn open_url(url: String) {
         host == "github.com" || host.ends_with(".github.com")
     } else { url.starts_with("ms-settings:") };
     if !ok {
-        crate::kflog::kflog(&format!("open_url: 拒绝白名单外 URL({})", &url[..url.len().min(60)]));
+        crate::kflog::kflog(&format!("open_url: 拒绝白名单外 URL({})", url.chars().take(60).collect::<String>()));   // 按字符截断:字节切片撞 UTF-8 边界即 panic
         return;
     }
     let wide = |s: &str| -> Vec<u16> { s.encode_utf16().chain(std::iter::once(0)).collect() };
@@ -581,7 +583,7 @@ pub fn run() {
                 let app2 = app.handle().clone();
                 app.listen("settings-need-state", move |_| {
                     let (lang, auto) = {
-                        let l = UI.lock().unwrap().lang.clone();
+                        let l = UI.lock().unwrap_or_else(|e| e.into_inner()).lang.clone();
                         use tauri_plugin_autostart::ManagerExt;
                         (l, app2.autolaunch().is_enabled().unwrap_or(false))
                     };
@@ -595,7 +597,7 @@ pub fn run() {
                 app.listen("lang", move |event| {
                     let l = event.payload().trim_matches('"').to_string();
                     if matches!(l.as_str(), "zh" | "en" | "system") {
-                        UI.lock().unwrap().lang = l.clone();
+                        UI.lock().unwrap_or_else(|e| e.into_inner()).lang = l.clone();
                         prefs_set("lang", &l);
                         crate::kflog::kflog(&format!("lang → {l}"));
                         refresh_menu(&app2);
@@ -622,7 +624,7 @@ pub fn run() {
                 let app2 = app.handle().clone();
                 app.listen("hb", |_| {
                     LAST_HB.store(
-                        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+                        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),   // 时钟早于 1970 不崩(同文件其余处同款)
                         Ordering::Relaxed);
                 });
                 std::thread::spawn(move || {
@@ -673,7 +675,7 @@ pub fn run() {
             app.listen("ui-state", move |event| {
                 let app = &state_handle;
                 let p: serde_json::Value = serde_json::from_str(event.payload()).unwrap_or_default();
-                let mut ui = UI.lock().unwrap();
+                let mut ui = UI.lock().unwrap_or_else(|e| e.into_inner());
                 if let Some(t) = p.get("theme").and_then(|v| v.as_str()) {
                     ui.theme = match t { "clay" => "clay", "pixel" => "pixel", "neon" => "neon", "ink" => "ink", "watercolor" => "watercolor", _ => "flat" }.to_string();
                 }
@@ -694,7 +696,7 @@ pub fn run() {
             // 启动恢复持久化的语言(之前重启丢回跟随系统)
             if let Some(l) = prefs_get("lang") {
                 if matches!(l.as_str(), "zh" | "en" | "system") {
-                    UI.lock().unwrap().lang = l;
+                    UI.lock().unwrap_or_else(|e| e.into_inner()).lang = l;
                 }
             }
             // 托盘:子菜单化菜单(勾选当前项),左键直接打开
@@ -708,11 +710,12 @@ pub fn run() {
             {
                 let c = lan_cfg_load();
                 if c.on {
-                    let theme = UI.lock().unwrap().theme.clone();
+                    let theme = UI.lock().unwrap_or_else(|e| e.into_inner()).theme.clone();
                     let name = if c.name.is_empty() { let n = crate::lan::Lan::lanCodename_stub(); lan_cfg_save(&LanCfg { on: true, name: n.clone(), ..c.clone() }); n } else { c.name.clone() };
-                    let _ = crate::lan::lan_start(app.handle().clone(), name, theme);
+                    if let Err(e) = crate::lan::lan_start(app.handle().clone(), name, theme) {
+                        crate::kflog::kflog(&format!("lan: 自启失败({e})"));
+                    }
                 }
-                let _ = app.handle().clone();
                 crate::kflog::kflog(&format!("lan: 启动配置 on={}", c.on));
             }
             // 开机自启默认开(v1.7.4 老板令):首启无痕 → enable 一次+落标记;此后用户说了算
@@ -728,7 +731,10 @@ pub fn run() {
                 }
             }
             let _ = TrayIconBuilder::with_id("main")
-                .icon(app.default_window_icon().unwrap().clone())
+                .icon(app.default_window_icon().cloned().unwrap_or_else(|| {
+                            crate::kflog::kflog("tray: 配置缺图标,用 1px 兜底");
+                            tauri::image::Image::new_owned(vec![0, 0, 0, 0], 1, 1)
+                        }))
                 .menu(&menu)
                 .show_menu_on_left_click(true)   // 左键直接开菜单(Mac 端同款)
                 .on_menu_event(|app, event| {
@@ -765,7 +771,7 @@ pub fn run() {
                             }
                             // 设置窗回推当前值(主窗推行为值;这里补语言/自启)
                             let (lang, auto) = {
-                                let l = UI.lock().unwrap().lang.clone();
+                                let l = UI.lock().unwrap_or_else(|e| e.into_inner()).lang.clone();
                                 use tauri_plugin_autostart::ManagerExt;
                                 (l, app.autolaunch().is_enabled().unwrap_or(false))
                             };
@@ -780,16 +786,11 @@ pub fn run() {
                         }
                         "quit" => app.exit(0),
                         "sound" => {
-                            let mut ui = UI.lock().unwrap();
+                            let mut ui = UI.lock().unwrap_or_else(|e| e.into_inner());
                             ui.sound = !ui.sound;
                             let _ = app.emit("setting", format!("sound:{}", ui.sound));
                             drop(ui);
                             refresh_menu(&handle);
-                        }
-                        "diag" => {
-                            // 诊断:Rust 一手包办(写报告+开记事本),再通知前端追加 webview 数据
-                            diag_run(&handle);
-                            let _ = app.emit("menu", "diag");
                         }
                         "show" => {
                             // 显示/隐藏统一走前端(hatchIn/fallAway);勿扰中忽略(鸟绝不盖全屏)
@@ -801,7 +802,7 @@ pub fn run() {
                         }
                         _ if id.starts_with("theme_") => {
                             let t = id.trim_start_matches("theme_").to_string();
-                            UI.lock().unwrap().theme = t.clone();
+                            UI.lock().unwrap_or_else(|e| e.into_inner()).theme = t.clone();
                             let _ = app.emit("theme", &t);
                             refresh_menu(&handle);
                         }

@@ -427,7 +427,7 @@ pub fn raise_no_show(w: &tauri::WebviewWindow) { let _ = w; }
 pub fn fullscreen_app_present(bird_hwnd_val: isize) -> bool {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Gdi::{MonitorFromWindow, GetMonitorInfoW, MONITORINFO, MONITOR_DEFAULTTONEAREST};
-    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowPlacement, GetWindowThreadProcessId, WINDOWPLACEMENT, SW_SHOWMAXIMIZED};
     use windows::Win32::System::Threading::GetCurrentProcessId;
     unsafe {
         let fg = GetForegroundWindow();
@@ -443,6 +443,13 @@ pub fn fullscreen_app_present(bird_hwnd_val: isize) -> bool {
         // (macOS 版即查鸟所在屏,此处对齐)
         let bird_mon = MonitorFromWindow(HWND(bird_hwnd_val as *mut _), MONITOR_DEFAULTTONEAREST);
         if !bird_mon.is_invalid() && bird_mon != fg_mon { return false; }
+        // 评审 M15:任务栏「自动隐藏」时工作区=整屏,最大化窗口矩形同样盖满 → 被误判
+        // 全屏(用户浏览器最大化=鸟随机消失)。排除法:最大化状态(SW_SHOWMAXIMIZED)的
+        // 窗口不算全屏——真全屏(视频/游戏/F11)不走 maximize 状态。
+        let mut wp = WINDOWPLACEMENT { length: std::mem::size_of::<WINDOWPLACEMENT>() as u32, ..Default::default() };
+        if GetWindowPlacement(fg, &mut wp).is_ok() && wp.showCmd == SW_SHOWMAXIMIZED.0 as u32 {
+            return false;
+        }
         let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
         if !GetMonitorInfoW(fg_mon, &mut mi).as_bool() { return false; }
         let m = mi.rcMonitor;
