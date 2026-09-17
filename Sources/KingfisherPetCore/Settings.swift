@@ -510,8 +510,11 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
                                  Language.t("settings.weather.status.off"))
         case .ok: return String(format: Language.t("settings.weather.status"),
                                 Language.t("settings.weather.status.ok"))
-        case .unavailable: return String(format: Language.t("settings.weather.status"),
-                                         Language.t("settings.weather.status.unavailable"))
+        case .unavailable:
+            // 状态可见:带上真实原因(IP 定位失败?Key?网络?),不再让老板猜
+            let r = WeatherService.shared.lastFail
+            return String(format: Language.t("settings.weather.status"),
+                          Language.t("settings.weather.status.unavailable") + (r.isEmpty ? "" : " · " + r))
         }
     }
 

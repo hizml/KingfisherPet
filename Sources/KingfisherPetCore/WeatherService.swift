@@ -25,6 +25,8 @@ public final class WeatherService {
 
     /// 当前快照;nil = 无系数(未开启/查询失败静默降级中)
     public private(set) var now: WeatherNow?
+    /// 最近一次失败原因(状态可见纪律:不可用时状态行直说,不再让老板猜)
+    public private(set) var lastFail = ""
     /// 生效中的预警(和风源专属;空 = 无)
     public private(set) var alerts: [WeatherAlert] = []
     public private(set) var status: Status = .off
@@ -85,6 +87,7 @@ public final class WeatherService {
         // 静默降级 = 无系数:清快照、标不可用、发通知(行为回无天气),不弹窗不重试
         now = nil
         alerts = []
+        lastFail = why
         status = .unavailable
         updateMenuItem()
         kfLog("weather: 降级(\(why))")
@@ -221,12 +224,22 @@ public final class WeatherService {
         if city.isEmpty {
             // IP 粗定位(设置文案已明示「含 IP 粗略定位」)
             Self.getJSON(URL(string: "https://ipapi.co/json/")!) { obj in
-                guard let obj,
-                      let lat = (obj["latitude"] as? NSNumber)?.doubleValue,
-                      let lon = (obj["longitude"] as? NSNumber)?.doubleValue else {
-                    self.fail("IP 定位失败(ipapi 不可达/限流或断网)"); return
+                if let obj,
+                   let lat = (obj["latitude"] as? NSNumber)?.doubleValue,
+                   let lon = (obj["longitude"] as? NSNumber)?.doubleValue {
+                    done(lat, lon)
+                    return
                 }
-                done(lat, lon)
+                // 备用:ipinfo.io(ipapi 限流/被代理墙时的第二腿,老板实锤城市空=必挂)
+                Self.getJSON(URL(string: "https://ipinfo.io/json")!) { o2 in
+                    if let o2,
+                       let ll = (o2["loc"] as? String)?.split(separator: ","),
+                       let lat = Double(ll.first ?? ""), let lon = Double(ll.count > 1 ? ll[1] : "") {
+                        done(lat, lon)
+                    } else {
+                        self.fail("IP 定位失败(建议在设置里填城市)")
+                    }
+                }
             }
             return
         }
