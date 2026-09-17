@@ -130,6 +130,29 @@ final public class Settings {
 
 /// 独立设置窗口(NSWindow + 纯 AppKit 控件,实时生效)。
 /// 活跃度/速度滑块、声音开关、主题下拉、天气联动区。
+/// 单行格式器(老板:输入框竟然能换行,不对):换行符在进入字段那一刻即被剥掉。
+/// macOS 原生缺陷=回车敲不进但粘贴带得进;返回 false+替换串=字段编辑器采用净化串。
+final class NoNewlineFormatter: Formatter {
+    override func isPartialStringValid(_ partialString: String,
+                                       newEditingString newString: AutoreleasingUnsafeMutablePointer<NSString?>?,
+                                       errorDescription errorString: AutoreleasingUnsafeMutablePointer<NSString?>?) -> Bool {
+        if partialString.contains(where: { $0 == "\n" || $0 == "\r" }) {
+            newString?.pointee = partialString
+                .replacingOccurrences(of: "\n", with: "")
+                .replacingOccurrences(of: "\r", with: "") as NSString
+            return false
+        }
+        return true
+    }
+    override func string(for obj: Any?) -> String? { obj as? String }
+    override func getObjectValue(_ obj: AutoreleasingUnsafeMutablePointer<AnyObject?>?,
+                                 for string: String,
+                                 errorDescription errorString: AutoreleasingUnsafeMutablePointer<NSString?>?) -> Bool {
+        obj?.pointee = string as NSString
+        return true
+    }
+}
+
 final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDelegate {
 
     private var window: NSWindow?
@@ -311,6 +334,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
         cityField.font = NSFont.systemFont(ofSize: 12)
         cityField.frame = NSRect(x: margin + labelCol, y: y - 2, width: root.bounds.width - margin * 2 - labelCol, height: 24)
         cityField.autoresizingMask = [.width]
+        cityField.formatter = NoNewlineFormatter()   // 单行纪律:换行进不了字段
         cityField.identifier = NSUserInterfaceItemIdentifier("wx.city")
         root.addSubview(cityField)
         // 数据源(选和风时下方多出 Key/Host 两行:重建窗口换布局,比动态增删行稳)
@@ -348,6 +372,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
             keyField.font = NSFont.systemFont(ofSize: 12)
             keyField.frame = NSRect(x: margin + labelCol, y: y - 2, width: root.bounds.width - margin * 2 - labelCol, height: 24)
             keyField.autoresizingMask = [.width]
+            keyField.formatter = NoNewlineFormatter()
             keyField.identifier = NSUserInterfaceItemIdentifier("wx.key")
             root.addSubview(keyField)
             // 测试 Key(老板要求):和风 geo 探一口,通不通状态行直说
@@ -371,6 +396,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
             hostField.font = NSFont.systemFont(ofSize: 12)
             hostField.frame = NSRect(x: margin + labelCol, y: y - 2, width: root.bounds.width - margin * 2 - labelCol, height: 24)
             hostField.autoresizingMask = [.width]
+            hostField.formatter = NoNewlineFormatter()
             hostField.identifier = NSUserInterfaceItemIdentifier("wx.host")
             root.addSubview(hostField)
         }
