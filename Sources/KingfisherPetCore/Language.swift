@@ -99,9 +99,9 @@ public enum Language {
         // 天气联动(v1.5.0)
         "settings.weather": "天气联动",
         "settings.weather.enable": "启用天气联动",
-        "settings.weather.note": "开启后将请求所选天气源查询天气(约 30 分钟一次);城市填短名(如 北京/顺义,勿带\"市/区\"后缀),留空时用 IP 粗略定位。",
+        "settings.weather.note": "开启后将请求所选天气源查询天气(约 30 分钟一次);城市必填,留空默认北京;填短名(如 北京/顺义,勿带\"市/区\"后缀)。",
         "settings.weather.city": "城市",
-        "settings.weather.cityPlaceholder": "如:北京 / 顺义;留空 = IP 定位",
+        "settings.weather.cityPlaceholder": "如:北京 / 顺义;留空 = 北京",
         "settings.weather.provider": "数据源",
         "settings.weather.key": "和风 API Key",
         "settings.weather.host": "和风 API Host",
@@ -206,9 +206,9 @@ public enum Language {
         // Weather (v1.5.0)
         "settings.weather": "Weather",
         "settings.weather.enable": "Enable weather",
-        "settings.weather.note": "When on, the selected weather provider is queried every ~30 minutes; use short city names (e.g. Beijing / Shunyi, no \"City/District\" suffix); empty = rough IP location.",
+        "settings.weather.note": "When on, the selected provider is queried every ~30 min; city is required and defaults to Beijing; use short names (no \"City/District\" suffix).",
         "settings.weather.city": "City",
-        "settings.weather.cityPlaceholder": "e.g. Beijing / Shunyi; empty = IP location",
+        "settings.weather.cityPlaceholder": "e.g. Beijing / Shunyi; empty = Beijing",
         "settings.weather.provider": "Provider",
         "settings.weather.key": "QWeather API Key",
         "settings.weather.host": "QWeather API Host",

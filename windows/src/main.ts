@@ -206,7 +206,7 @@ async function main() {
     listen("settings-need-state", () => {
       emit("settings-weather", {
         on: localStorage.getItem("kf_weather_on") === "1",
-        city: localStorage.getItem("kf_weather_city") || "",
+        city: localStorage.getItem("kf_weather_city") || "北京",
         provider: localStorage.getItem("kf_weather_provider") === "qweather" ? "qweather" : "open-meteo",
         key: localStorage.getItem("kf_weather_key") || "",
         host: localStorage.getItem("kf_weather_host") || "devapi.qweather.com",

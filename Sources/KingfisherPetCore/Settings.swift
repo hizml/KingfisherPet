@@ -50,8 +50,12 @@ final public class Settings {
         set { set(K.weatherEnabled, newValue) }
     }
     /// 城市名;空 = IP 粗定位
+    /// 城市必填(老板令:留空默认北京——IP 定位对代理用户永远是错的:出口在节点所在地)
     var weatherCity: String {
-        get { Defaults.string(forKey: K.weatherCity, default: "") }
+        get {
+            let c = Defaults.string(forKey: K.weatherCity, default: "").trimmingCharacters(in: .whitespaces)
+            return c.isEmpty ? "北京" : c
+        }
         set { set(K.weatherCity, newValue) }
     }
     /// 数据源:open-meteo(默认免 key)/ qweather(和风)

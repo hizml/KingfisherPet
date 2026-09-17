@@ -217,32 +217,11 @@ public final class WeatherService {
         return req
     }
 
-    // MARK: - 定位(城市名 → 各源 geocoding;留空 → ipapi.co IP 粗定位)
+    // MARK: - 定位(城市名 → 各源 geocoding;城市必填,空=北京——老板令砍 IP 定位:
+    // ipapi 限流单点 + 代理用户出口在节点所在地,定位出来必是错的)
 
     private func locate(done: @escaping (Double, Double) -> Void) {
         let city = Settings.shared.weatherCity.trimmingCharacters(in: .whitespaces)
-        if city.isEmpty {
-            // IP 粗定位(设置文案已明示「含 IP 粗略定位」)
-            Self.getJSON(URL(string: "https://ipapi.co/json/")!) { obj in
-                if let obj,
-                   let lat = (obj["latitude"] as? NSNumber)?.doubleValue,
-                   let lon = (obj["longitude"] as? NSNumber)?.doubleValue {
-                    done(lat, lon)
-                    return
-                }
-                // 备用:ipinfo.io(ipapi 限流/被代理墙时的第二腿,老板实锤城市空=必挂)
-                Self.getJSON(URL(string: "https://ipinfo.io/json")!) { o2 in
-                    if let o2,
-                       let ll = (o2["loc"] as? String)?.split(separator: ","),
-                       let lat = Double(ll.first ?? ""), let lon = Double(ll.count > 1 ? ll[1] : "") {
-                        done(lat, lon)
-                    } else {
-                        self.fail("IP 定位失败(建议在设置里填城市)")
-                    }
-                }
-            }
-            return
-        }
         if let geo = cityGeo, geo.city == city, geo.provider == Settings.shared.weatherProvider {
             done(geo.lat, geo.lon)
             return

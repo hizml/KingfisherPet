@@ -44,7 +44,7 @@ export function startWeather() {
   weather.status = "ok";
   refresh();   // 开启即发首个请求
   timer = setInterval(refresh, 30 * 60 * 1000);
-  emit("log", `weather: 启动(源=${settings.weatherProvider} 城市=${settings.weatherCity || "IP定位"})`);
+  emit("log", `weather: 启动(源=${settings.weatherProvider} 城市=${settings.weatherCity || "北京"})`);
 }
 
 export function stopWeather() {
@@ -162,14 +162,8 @@ async function refreshQWeather() {
 let cityGeo: { provider: string; city: string; lat: number; lon: number } | null = null;
 
 async function locate(): Promise<{ lat: number; lon: number }> {
-  const city = (settings.weatherCity || "").trim();
-  if (!city) {
-    const ip = await jget("https://ipapi.co/json/");
-    if (typeof ip?.latitude !== "number" || typeof ip?.longitude !== "number") {
-      throw new Error("IP 定位失败(ipapi 不可达/限流或断网)");
-    }
-    return { lat: ip.latitude, lon: ip.longitude };
-  }
+  // 城市必填(settings 默认北京,老板令砍 IP 定位:ipapi 限流 + 代理用户出口在节点地)
+  const city = (settings.weatherCity || "北京").trim() || "北京";
   if (cityGeo && cityGeo.city === city && cityGeo.provider === settings.weatherProvider) {
     return { lat: cityGeo.lat, lon: cityGeo.lon };
   }

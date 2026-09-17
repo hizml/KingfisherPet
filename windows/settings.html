@@ -41,8 +41,8 @@
   <div class="row wx">
     <div class="lbl"><span>天气联动 Weather</span></div>
     <label class="chk"><input id="wxOn" type="checkbox" /><span id="wxOnL">启用天气联动</span></label>
-    <div class="note" id="wxNote">开启后将请求所选天气源查询天气(约 30 分钟一次);城市填短名(如 北京/顺义,勿带"市/区"后缀),留空时用 IP 粗略定位。</div>
-    <div class="wxrow"><span class="k" id="cityK">城市</span><input id="wxCity" type="text" placeholder="如:北京 / 顺义;留空 = IP 定位" /></div>
+    <div class="note" id="wxNote">开启后将请求所选天气源查询天气(约 30 分钟一次);城市必填,留空默认北京;填短名(如 北京/顺义,勿带"市/区"后缀)。</div>
+    <div class="wxrow"><span class="k" id="cityK">城市</span><input id="wxCity" type="text" placeholder="如:北京 / 顺义;留空 = 北京" /></div>
     <div class="wxrow"><span class="k" id="provK">数据源</span>
       <select id="wxProv">
         <option value="open-meteo">Open-Meteo(免费,无需 Key)</option>
@@ -131,10 +131,10 @@
       const T = (e, z, en) => { if (e) e.textContent = zh ? z : en; };
       T(document.getElementById("wxOnL"), "启用天气联动", "Enable weather integration");
       document.getElementById("wxNote").textContent = zh
-        ? '开启后将请求所选天气源查询天气(约 30 分钟一次);城市填短名(如 北京/顺义,勿带"市/区"后缀),留空时用 IP 粗略定位。'
-        : "When on, the selected provider is queried every ~30 min; use short city names (e.g. Beijing, no \"City/District\" suffix); empty = rough IP location.";
+        ? '开启后将请求所选天气源查询天气(约 30 分钟一次);城市必填,留空默认北京;填短名(如 北京/顺义,勿带"市/区"后缀)。'
+        : "When on, the selected provider is queried every ~30 min; city is required and defaults to Beijing; use short names (no suffix).";
       T(document.getElementById("cityK"), "城市", "City");
-      document.getElementById("wxCity").placeholder = zh ? "如:北京 / 顺义;留空 = IP 定位" : "e.g. Beijing; empty = IP location";
+      document.getElementById("wxCity").placeholder = zh ? "如:北京 / 顺义;留空 = IP 定位" : "e.g. Beijing; empty = Beijing";
       T(document.getElementById("provK"), "数据源", "Provider");
       document.getElementById("wxProv").options[0].textContent = zh ? "Open-Meteo(免费,无需 Key)" : "Open-Meteo (free, no key)";
       document.getElementById("wxProv").options[1].textContent = zh ? "和风天气(需 API Key)" : "QWeather (API key required)";
@@ -153,7 +153,7 @@
     const fillWeather = (w) => {
       if (!w) return;
       wxOn.checked = !!w.on;
-      wxCity.value = w.city || "";
+      wxCity.value = w.city || "北京";
       wxProv.value = w.provider === "qweather" ? "qweather" : "open-meteo";
       wxKey.value = w.key || "";
       wxHost.value = w.host || "devapi.qweather.com";
