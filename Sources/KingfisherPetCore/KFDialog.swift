@@ -195,7 +195,7 @@ final class KFDialog: NSObject, NSWindowDelegate {
     @objc private func tapped(_ b: NSButton) {
         let idx = b.tag - 100
         if noAutoClose == idx {
-            onClose?(idx)         // 只回调不关窗(调用方随后 refresh/进度/手动 close)
+            (onAction ?? onClose)?(idx)   // 同窗流程回调在 onAction(refresh 后重挂);此处曾是 onClose=点击无声(老板实锤)
             return
         }
         finish(idx)
