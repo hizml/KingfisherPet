@@ -118,7 +118,7 @@ final class BranchController {
         //   - 鸟悬空歇着(其余)→ 出
         let scr = b.screen ?? NSScreen.main
         let groundY = (scr?.visibleFrame.minY ?? 0) + 30
-        let feetY = b.frame.minY + 27
+        let feetY = b.frame.minY + Behavior.feetOffsetConst   // 单一事实源(评审:魔数 27 与 26 并存)
         let onGround = feetY < groundY
         let wantsBranch = beh.isResting() && !beh.onWindow && !onGround
         let shouldShow = wantsBranch && !beh.dragging && b.isVisible

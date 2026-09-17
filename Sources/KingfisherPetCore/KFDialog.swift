@@ -61,6 +61,9 @@ final class KFDialog: NSObject, NSWindowDelegate {
         finish(-2)
     }
 
+    /// Esc 等价键入口(KFDialogWindow 回调;等价关闭钮 → -1)
+    func finishFromKeyEquivalent() { finish(-1) }
+
     // MARK: - 内部
 
     // 品牌青(主题色);dark 模式下提亮一档保持可读
@@ -168,9 +171,10 @@ final class KFDialog: NSObject, NSWindowDelegate {
         if let w = window {
             swapContent(to: root, newHeight: contentH)
         } else {
-            let w = NSWindow(contentRect: root.bounds,
-                             styleMask: [.titled, .closable],
-                             backing: .buffered, defer: false)
+            let w = KFDialogWindow(contentRect: root.bounds,
+                                   styleMask: [.titled, .closable],
+                                   backing: .buffered, defer: false)
+            w.escDialog = self
             w.title = ""
             w.titlebarAppearsTransparent = true
             w.isReleasedWhenClosed = false
@@ -213,6 +217,22 @@ final class KFDialog: NSObject, NSWindowDelegate {
         window?.orderOut(nil)
         Self.live.removeAll { $0 === self }
         (onAction ?? onClose)?(idx == -2 ? -1 : idx)
+        // 清回调断环(评审 M8:UpdateService 的 handler 强捕获 dlg,dlg→onAction→dlg
+        // 自环让整棵窗口对象图在关窗后滞留——每次「检查更新」泄漏一份)
+        onAction = nil
+        onClose = nil
+    }
+}
+
+/// 弹窗宿主窗口:Esc = 关闭钮语义(头注释承诺的 onClose(-1),此前无实现)
+final class KFDialogWindow: NSWindow {
+    weak var escDialog: KFDialog?
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.keyCode == 53, let d = escDialog {   // 53 = Esc
+            d.finishFromKeyEquivalent()
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
     }
 }
 

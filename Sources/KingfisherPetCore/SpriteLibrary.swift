@@ -71,9 +71,21 @@ final public class SpriteLibrary {
 
     // MARK: - 加载主题
     func loadTheme(_ theme: String) {
-        currentTheme = theme
-        loadManifest(theme: theme)
+        // 先加载成功再提交标志(评审 M11:此前先改 currentTheme,manifest 失败仅 print
+        // ——GUI 里不可见,且旧 manifest 配新主题=半加载残缺帧表、themedImage 全落空;
+        // 失败主题不提交 → reload 守卫不再挡住重试)
+        var decoded: SpriteManifest?
+        if let url = resourceURL("sprites", ext: "json", theme: theme),
+           let data = try? Data(contentsOf: url) {
+            decoded = try? JSONDecoder().decode(SpriteManifest.self, from: data)
+        }
+        guard let m = decoded else {
+            kfLog("sprites: 主题 \(theme) 的 sprites.json 缺失/损坏,保持 \(currentTheme)(状态可见,不静默)")
+            return
+        }
+        manifest = m
         loadFrames(theme: theme)
+        currentTheme = theme
     }
 
     /// 切换主题:重载资源并通知监听者(不重新加载音效)
@@ -81,16 +93,6 @@ final public class SpriteLibrary {
         guard theme != currentTheme else { return }
         loadTheme(theme)
         for o in themeObservers { o() }
-    }
-
-    private func loadManifest(theme: String) {
-        guard let url = resourceURL("sprites", ext: "json", theme: theme),
-              let data = try? Data(contentsOf: url),
-              let m = try? JSONDecoder().decode(SpriteManifest.self, from: data) else {
-            print("[KingfisherPet] 警告:未找到主题 \(theme) 的 sprites.json")
-            return
-        }
-        manifest = m
     }
 
     private func loadFrames(theme: String) {
@@ -103,7 +105,7 @@ final public class SpriteLibrary {
             guard let url = resourceURL(name, ext: "png", theme: theme),
                   let img = NSImage(contentsOf: url),
                   let cg = cgImage(of: img) else {
-                print("[KingfisherPet] 警告:缺少帧 \(name).png(主题 \(theme))")
+                kfLog("sprites: 缺少帧 \(name).png(主题 \(theme))")
                 continue
             }
             let (alpha, w, h, cleaned) = alphaBuffer(for: cg)

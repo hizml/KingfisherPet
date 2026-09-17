@@ -182,9 +182,13 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// 语言切换时外部调:关掉窗口(isReleasedWhenClosed=false),下次 show 按新语言重建
+    /// 语言切换时外部调:关掉窗口,下次 show 按新语言重建。
+    /// orderOut 后补 close(评审 🟢:只 orderOut 不 close,每次重建泄漏一个僵尸
+    /// NSWindow 及其整棵 contentView——与 Effect/Poop 的"close 真释放"纪律一致)
     func closeWindow() {
         window?.orderOut(nil)
+        window?.close()
+        window = nil
     }
 
     private func buildWindow() {

@@ -76,7 +76,14 @@ final class PetView: NSView {
             }
             RunLoop.main.add(t, forMode: .common)
             timer = t
+        } else if window == nil {
+            timer?.invalidate()   // 脱离窗口即停(评审 🟢:60fps 空转到进程结束)
+            timer = nil
         }
+    }
+
+    deinit {
+        timer?.invalidate()
     }
 
     /// 系统睡眠前停逐帧 timer(防唤醒补发堆积卡死);唤醒后 resumeAnimation 恢复。

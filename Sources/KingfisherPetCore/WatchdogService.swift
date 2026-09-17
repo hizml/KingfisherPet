@@ -28,7 +28,10 @@ final class WatchdogService {
                 task.arguments = ["-p", "\(pid)", "-o", "%cpu,rss"]
                 let pipe = Pipe()
                 task.standardOutput = pipe
-                do { try task.run() } catch { watchdogBusy = false; return }
+                do { try task.run() } catch {
+                    DispatchQueue.main.async { watchdogBusy = false }   // 标志读写统一主线程(评审 M25)
+                    return
+                }
                 // 超时保护:3 秒 ps 不返回就强杀(唤醒后系统高负载时 ps 可能卡)
                 DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 3.0) {
                     if task.isRunning { task.terminate() }

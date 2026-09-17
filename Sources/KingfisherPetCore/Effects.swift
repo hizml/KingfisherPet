@@ -204,7 +204,7 @@ enum Effects {
             }
         }
         e.close(after: 6.0)
-        Effect.active.append(e)
+        // active 登记 init 已做(评审 M9:双重 append 计数虚高一倍)
     }
 
     static func notes(at point: CGPoint, on screen: NSScreen?) {
@@ -402,7 +402,7 @@ static func mood(_ symbol: String, above point: CGPoint, on screen: NSScreen?) {
             layer.addSublayer(t)
         }
         e.close(after: 2.6 + Double(i) * 0.5)
-        Effect.active.append(e)
+        // active 登记 init 已做(评审 M9:双重 append 计数虚高一倍)
     }
 }
 
@@ -438,6 +438,6 @@ static func snow(above point: CGPoint, on screen: NSScreen?) {
         }
     }
     e.close(after: 7.0)
-    Effect.active.append(e)
+    // active 登记 init 已做(评审 M9:双重 append 计数虚高一倍)
 }
 }

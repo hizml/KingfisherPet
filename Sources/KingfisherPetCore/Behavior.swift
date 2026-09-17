@@ -285,11 +285,13 @@ final class Behavior: PetViewDelegate {
         lastAlertIDs = ids
     }
 
-    /// 彩蛋执行口:2h 冷却 + 隐藏/勿扰不表演(勿扰只标菜单,状态可见层的事)
+    /// 彩蛋执行口:2h 冷却 + 隐藏/勿扰不表演(勿扰只标菜单,状态可见层的事)。
+    /// 冷却只在真正演出时占(评审:此前先记账再判可见性,勿扰/隐藏期间发生的彩蛋
+    /// 既不演出又吃掉 2h 冷却=事件凭空丢失)
     private func fireEgg(_ kind: String, _ perform: (Behavior) -> Void) {
         if let at = lastEggAt[kind], Date().timeIntervalSince(at) < 2 * 3600 { return }
-        lastEggAt[kind] = Date()
         guard onScreen, !dndActive else { return }
+        lastEggAt[kind] = Date()
         kfLog("weather: 彩蛋 \(kind) 触发")
         perform(self)
     }
@@ -1064,7 +1066,6 @@ final class Behavior: PetViewDelegate {
     func fallAway() {
         guard let window = window, let scr = screen else { onScreen = false; return }
         beginAction()
-        onScreen = false
         enter("dead")
         let a = scr.visibleFrame
         let startX = window.frame.origin.x
@@ -1073,6 +1074,10 @@ final class Behavior: PetViewDelegate {
             let endY = a.minY - self.size.height - 400
             self.animateWindow(to: CGPoint(x: startX, y: endY), duration: 0.85) { [weak self] in
                 guard let self = self else { return }
+                // onScreen 到此才落账(评审 R7:此前动画前先置 false,~1.15s 动画窗内一次
+                // 点击/拖拽/锁屏即把代际 bump 掉、收尾永不执行 → 鸟可见存活但"官方不可见",
+                // 勿扰永不进入/菜单全哑/唤醒不恢复)
+                self.onScreen = false
                 self.window?.orderOut(nil)
                 self.shadow?.setVisible(false)
                 self.view?.state = "egg"

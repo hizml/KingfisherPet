@@ -99,17 +99,24 @@ final public class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
             name: Growth.didChangeNotification, object: nil)
 
         // 开机自启(v1.7.4 老板令:默认开)。首启无 kingfisher.autoLogin.init 痕迹 →
-        // 注册自启+开菜单勾+落标记;此后完全由用户 kAutoLogin 开关决定(关过不再偷开)
+        // 注册自启+开菜单勾+落标记;此后完全由用户 kAutoLogin 开关决定(关过不再偷开)。
+        // 评审 M5:注册成功才落 kAutoLogin(与 toggleAutoLogin 失败语义对齐——否则注册
+        // 失败时菜单显示"自启 ✓"而实际未注册)
         if UserDefaults.standard.object(forKey: "kingfisher.autoLogin.init") == nil {
             UserDefaults.standard.set(true, forKey: "kingfisher.autoLogin.init")
             if UserDefaults.standard.object(forKey: Self.kAutoLogin) == nil {
-                UserDefaults.standard.set(true, forKey: Self.kAutoLogin)
-                try? SMAppService.mainApp.register()
-                kfLog("自启:首启默认开启")
+                do {
+                    try SMAppService.mainApp.register()
+                    UserDefaults.standard.set(true, forKey: Self.kAutoLogin)
+                    kfLog("自启:首启默认开启")
+                } catch {
+                    kfLog("自启:首启注册失败(\(error.localizedDescription)),保持未开启")
+                }
             }
         }
         if UserDefaults.standard.bool(forKey: Self.kAutoLogin) {
-            try? SMAppService.mainApp.register()
+            do { try SMAppService.mainApp.register() }   // 幂等:确保注册在位
+            catch { kfLog("自启:注册失败(\(error.localizedDescription))") }
         }
 
         // 菜单栏图标

@@ -57,10 +57,16 @@ final class DndMonitor {
         let active = behavior.isOnScreen && !behavior.isSleeping
         if !active { dndSkip(behavior.isOnScreen ? "sleeping" : "offscreen") } else { dndSkip("") }
         let screen = behavior.birdScreen
+        // AppKit 对象在主线程解析成纯值再进后台(评审 M12:NSScreen/NSWorkspace 属主线程类,
+        // 后台取 frame/frontmostApplication 不可靠乃至崩)
+        let scrFrame = screen?.frame ?? .zero
+        let frontApp = NSWorkspace.shared.frontmostApplication
+        let frontPid = frontApp?.processIdentifier
+        let frontName = frontApp?.localizedName
         dndDiagTick += 1
         let tick = dndDiagTick
         axQueue.async { [weak self] in
-            let r = Self.queryFullscreen(screen)
+            let r = Self.queryFullscreen(scrFrame: scrFrame, frontPid: frontPid, frontName: frontName)
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
                 // AX 失败记账(授权未生效):连续 5 拍 → 弹窗引导开辅助功能(用户要求:权限必须明示)
@@ -77,7 +83,7 @@ final class DndMonitor {
                 // 观测脚手架门控:排障期才开(生产每 30s 一次 AX 逐窗查询+日志是纯负载)
                 if !r.fs && tick % 10 == 0 && ProcessInfo.processInfo.environment["KF_DND_DIAG"] == "1" {
                     self.axQueue.async {
-                        let line = Self.fsDiagSnapshot()
+                        let line = Self.fsDiagSnapshot(frontPid: frontPid, frontName: frontName)
                         DispatchQueue.main.async { kfLog(line) }
                     }
                 }
@@ -112,30 +118,28 @@ final class DndMonitor {
     /// v6 前台来源改 NSWorkspace 取 pid + AXUIElementCreateApplication 直连:
     /// systemWide 的 focusedApplication 对 Chromium 系(Edge/Electron)实测恒返回
     /// -25212 NoValue(原生 App 正常)——用户全屏看片恰是浏览器,检测从未生效。
-    private static func queryFullscreen(_ screen: NSScreen?) -> (fs: Bool, axErr: Int32?, front: String?) {
-        let scrFrame = screen?.frame ?? NSScreen.main?.frame ?? .zero
-        guard let frontApp = NSWorkspace.shared.frontmostApplication,
-              frontApp.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return (false, nil, nil) }
-        let appEl = AXUIElementCreateApplication(frontApp.processIdentifier)
+    private static func queryFullscreen(scrFrame: CGRect, frontPid: Int32?, frontName: String?) -> (fs: Bool, axErr: Int32?, front: String?) {
+        guard let frontPid, frontPid != ProcessInfo.processInfo.processIdentifier else { return (false, nil, nil) }
+        let appEl = AXUIElementCreateApplication(frontPid)
         var winsRef: CFTypeRef?
         let werr = AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &winsRef)
         guard werr == .success, let wins = winsRef as? [AXUIElement] else {
             // 授权未生效时此查询失败(本机 macOS 26 表现 -25204/-25212,非教科书 -25211)
-            return (false, werr.rawValue, frontApp.localizedName)
+            return (false, werr.rawValue, frontName)
         }
         for win in wins {
             var fsRef: CFTypeRef?
             if AXUIElementCopyAttributeValue(win, "AXFullScreen" as CFString, &fsRef) == .success,
                let fs = fsRef, (fs as? Bool) == true {
-                return (true, nil, frontApp.localizedName)   // ① 原生全屏
+                return (true, nil, frontName)   // ① 原生全屏
             }
             if let f = axFrame(win), scrFrame.width > 0,
                abs(f.origin.x - scrFrame.origin.x) <= 4, abs(f.origin.y - scrFrame.origin.y) <= 4,
                f.width >= scrFrame.width - 4, f.height >= scrFrame.height - 4 {
-                return (true, nil, frontApp.localizedName)   // ② 自绘全屏:窗口盖满整屏
+                return (true, nil, frontName)   // ② 自绘全屏:窗口盖满整屏
             }
         }
-        return (false, nil, frontApp.localizedName)
+        return (false, nil, frontName)
     }
 
     /// AX 窗口矩形(kAXPosition + kAXSize,AXValue 解包)
@@ -151,14 +155,12 @@ final class DndMonitor {
     }
 
     /// 全屏检测诊断快照(低频):前台 App 名 + 每窗 AXFullScreen 的错误码/值。
-    /// 纯函数返回日志行(在后台队列组装,主线程落日志)。
-    private static func fsDiagSnapshot() -> String {
-        guard let frontApp = NSWorkspace.shared.frontmostApplication else {
-            return "fsDiag: frontmostApplication=nil" }
-        guard frontApp.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
-            return "fsDiag: 前台=自己(忽略)" }
-        let appEl = AXUIElementCreateApplication(frontApp.processIdentifier)
-        let name = frontApp.localizedName ?? "pid:\(frontApp.processIdentifier)"
+    /// 纯函数返回日志行(在后台队列组装,主线程落日志;AppKit 值由主线程快照传入)。
+    private static func fsDiagSnapshot(frontPid: Int32?, frontName: String?) -> String {
+        guard let frontPid, frontPid != ProcessInfo.processInfo.processIdentifier else {
+            return "fsDiag: 前台=自己/无(忽略)" }
+        let appEl = AXUIElementCreateApplication(frontPid)
+        let name = frontName ?? "pid:\(frontPid)"
         var winsRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &winsRef) == .success,
             let wins = winsRef as? [AXUIElement] else {

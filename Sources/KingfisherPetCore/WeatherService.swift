@@ -35,8 +35,8 @@ public final class WeatherService {
     public var alertActive: Bool { !alerts.isEmpty }
 
     private var timer: Timer?
-    private var retryScheduled = false   // 失败态重试防重入
-    private let refreshInterval: TimeInterval = 30 * 60   // 30 分钟
+    private let refreshInterval: TimeInterval = 30 * 60   // 30 分钟(成功周期)
+    private let retryInterval: TimeInterval = 5 * 60      // 失败 5 分钟重试(v1.7.13 承诺过、此前只有一行死变量)
     /// 城市解析缓存(键=源+城市):城市不变不重查 geo——此前每 30 分钟对同一城市名
     /// 重复查,占和风口子 1/3 请求量。键含源:两家首条匹配口径不同(「朝阳」
     /// Open-Meteo 首条=重庆),换源必须重查。IP 定位不缓存(网络位置会变)。
@@ -44,14 +44,22 @@ public final class WeatherService {
 
     // MARK: - 启停(由 AppDelegate 按设置驱动)
 
+    /// 周期调度:成功 30 分钟,失败 5 分钟(VPN 断了/Key 修好尽快自愈,不干等下个 30 分钟周期)
+    private func scheduleNext(_ interval: TimeInterval) {
+        timer?.invalidate()
+        let t = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+            self?.refresh()
+        }
+        RunLoop.main.add(t, forMode: .common)   // 菜单持续打开期间不暂停(与其余服务同口径)
+        timer = t
+    }
+
     func start() {
         stop()
         status = .ok
         refresh()   // 开启即发首个请求
-        timer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
-            self?.refresh()
-        }
-        kfLog("weather: 启动(源=\(Settings.shared.weatherProvider) 城市=\(Settings.shared.weatherCity.isEmpty ? "IP定位" : Settings.shared.weatherCity))")
+        scheduleNext(refreshInterval)
+        kfLog("weather: 启动(源=\(Settings.shared.weatherProvider) 城市=\(Settings.shared.weatherCity.isEmpty ? "北京" : Settings.shared.weatherCity))")
     }
 
     func stop() {
@@ -84,13 +92,15 @@ public final class WeatherService {
     }
 
     private func fail(_ why: String) {
-        // 静默降级 = 无系数:清快照、标不可用、发通知(行为回无天气),不弹窗不重试
+        // 静默降级 = 无系数:清快照、标不可用、发通知(行为回无天气),不弹窗;
+        // 失败转 5 分钟快周期自愈(成功即恢复 30 分钟)
         now = nil
         alerts = []
         lastFail = why
         status = .unavailable
+        scheduleNext(retryInterval)
         updateMenuItem()
-        kfLog("weather: 降级(\(why))")
+        kfLog("weather: 降级(\(why)),5 分钟后重试")
         NotificationCenter.default.post(name: Self.didUpdate, object: nil)
     }
 
@@ -98,6 +108,7 @@ public final class WeatherService {
         self.now = now
         self.alerts = alerts
         status = .ok
+        scheduleNext(refreshInterval)
         updateMenuItem()
         kfLog("weather: ok \(now.raw) 预警=\(alerts.count)")
         NotificationCenter.default.post(name: Self.didUpdate, object: nil)
@@ -141,7 +152,7 @@ public final class WeatherService {
     }
 
     private func refreshQWeather() {
-        let key = Settings.shared.weatherKey.trimmingCharacters(in: .whitespaces)
+        let key = Settings.shared.weatherKey.filter { !$0.isWhitespace }   // 与 locate 同口径(此前仅 trim 首尾,中间粘空格两路径判定不一)
         guard !key.isEmpty else { fail("和风未填 Key"); return }
         let host = qweatherHost()
         locate { [weak self] lat, lon in
@@ -229,11 +240,14 @@ public final class WeatherService {
         }
         if Settings.shared.weatherProvider == "qweather" {
             // 新版专属 Host:geo 走自身域名 /geo/v2(geoapi.qweather.com 不认识新 Key);
-            // 老版走 geoapi + query key。成功判定看 location 数组(新版错误体是 error 结构,无 code)
+            // 老版走 geoapi + query key。成功判定看 location 数组(新版错误体是 error 结构,无 code)。
+            // v1.7.18:host 先经 sanitizedHost 再判新旧 API(与 qwURL 同口径——此前原始串
+            // 尾带空格会把 geo 判去老域名、天气却走新协议,两路径分裂);key 同一清洗口径
             let key = Settings.shared.weatherKey.filter { !$0.isWhitespace }
+            let host = Self.sanitizedHost(Settings.shared.weatherHost) ?? "devapi.qweather.com"
             let geoReq: URLRequest?
-            if Self.qwIsNewAPI(Settings.shared.weatherHost) {
-                geoReq = Self.qwURL(host: Settings.shared.weatherHost, path: "/geo/v2/city/lookup", loc: city, key: key)
+            if Self.qwIsNewAPI(host) {
+                geoReq = Self.qwURL(host: host, path: "/geo/v2/city/lookup", loc: city, key: key)
             } else {
                 var comp = URLComponents(string: "https://geoapi.qweather.com/v2/city/lookup")
                 comp?.queryItems = [URLQueryItem(name: "location", value: city),

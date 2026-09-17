@@ -20,6 +20,17 @@ final public class UpdateService {
         timer = Timer.scheduledTimer(withTimeInterval: 24 * 3600, repeats: true) { [weak self] _ in
             self?.autoCheck()
         }
+        if let t = timer { RunLoop.main.add(t, forMode: .common) }   // 菜单持续打开期间不暂停(与其余服务同口径)
+    }
+
+    /// 进度态取消(评审 M20:进度窗没有任何按钮,点关闭后下载照跑、完成即强制重启
+    /// ——用户的"关闭"被静默忽略)。关窗 = 取消下载,失败弹窗对用户取消静默。
+    static fileprivate var activeTask: URLSessionDataTask?
+    static private var installCancelled = false
+    static func cancelInstall() {
+        installCancelled = true
+        activeTask?.cancel()
+        activeTask = nil
     }
 
     /// 手动检查(菜单):点下立即弹「正在检查新版本…」框(老板:要弹框,别改菜单标题),
@@ -126,7 +137,7 @@ final public class UpdateService {
             if canInstall {
                 let ft = Language.t("update.found") + " \(latest!)"
                 let buttons = [Language.t("update.install"), Language.t("update.openReleases"), Language.t("update.later")]
-                let handler: (Int) -> Void = { [weak self] idx in
+                let handler: (Int) -> Void = { [weak self, weak dlg] idx in
                     switch idx {
                     case 0:
                         // 同窗进度态(老板:老弹框别消失,新框来得慢):此窗原地变进度条
@@ -141,7 +152,10 @@ final public class UpdateService {
                             self?.reportInstallFailure(why)
                         }
                     case 1: NSWorkspace.shared.open(rel)
-                    default: dlg?.close()
+                    default:
+                        // -1(关闭钮/Esc)在进度态 = 取消下载(不再"关了窗还偷偷下完强制重启")
+                        if idx == -1 { Self.cancelInstall() }
+                        dlg?.close()
                     }
                 }
                 if let d = dlg {
@@ -187,6 +201,12 @@ final public class UpdateService {
             let (data, resp) = Download.one(zipURL) { received, total in
                 guard total > 0 else { return }
                 DispatchQueue.main.async { progress?(Int(Double(received) / Double(total) * 100)) }
+            }
+            // 用户取消(关进度窗):静默收场,不弹失败框
+            if Self.installCancelled {
+                Self.installCancelled = false
+                kfLog("update: 用户取消下载")
+                return
             }
             guard let data, let http = resp as? HTTPURLResponse, http.statusCode == 200, data.count > 1_000_000 else {
                 DispatchQueue.main.async { done(false, "下载失败 HTTP \((resp as? HTTPURLResponse)?.statusCode ?? -1)") }
@@ -256,11 +276,12 @@ final public class UpdateService {
                 return
             }
             kfLog("update: 替换完成 \(curApp.path),即将重启")
-            // ⑤ 重启(评审 A16:旧进程先退,1s 后由 shell 拉起新实例——先启后杀会双鸟/双菜单图标短时并存)
+            // ⑤ 重启(评审 A16:旧进程先退,1s 后由 shell 拉起新实例——先启后杀会双鸟/双菜单图标短时并存)。
+            // 路径单引号转义(纵深防御:.app 路径几乎不可能含 ',但拼 shell 必须闭合)
             DispatchQueue.main.async {
                 let rel = Process()
                 rel.executableURL = URL(fileURLWithPath: "/bin/sh")
-                rel.arguments = ["-c", "sleep 1; open -n '\(curApp.path)'"]
+                rel.arguments = ["-c", "sleep 1; open -n '\(curApp.path.replacingOccurrences(of: "'", with: "'\\''"))'"]
                 try? rel.run()
                 NSApp.terminate(nil)
             }
@@ -284,8 +305,10 @@ private enum Download {
         var data: Data?, resp: URLResponse?
         let task = URLSession.shared.dataTask(with: url) { d, r, _ in
             data = d; resp = r
+            UpdateService.activeTask = nil
             sem.signal()
         }
+        UpdateService.activeTask = task   // 进度态可取消(评审 M20)
         // 进度:KVO expectedProgress(系统已按 Content-Length 折算)
         let obs = task.progress.observe(\.fractionCompleted) { p, _ in
             progress(Int64(p.fractionCompleted * 100), 100)

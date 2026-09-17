@@ -17,6 +17,7 @@ final class ProgressWin {
         window.isReleasedWhenClosed = false
         window.level = .floating
         bar.style = .bar
+        bar.isIndeterminate = false   // 默认 true=不定态,doubleValue 不画(KFDialog 同坑已修,此处漏网)
         bar.minValue = 0; bar.maxValue = 100
         bar.frame = NSRect(x: 24, y: 40, width: w - 48, height: 20)
         label.font = .systemFont(ofSize: 12)
