@@ -117,3 +117,15 @@ test("昼夜×天气合成(thinkBands 第三参)", () => {
     }
   }
 });
+
+// 和风新版 API 判定(2025+ 专属 *.qweatherapi.com;与 Mac kf-tests 同一用例口径)
+import { qwIsNewAPI } from "../src/shared.mjs";
+test("qwIsNewAPI:新版专属域/老版域/脏输入", () => {
+  assert.equal(qwIsNewAPI("p663yvpkgn.re.qweatherapi.com"), true);
+  assert.equal(qwIsNewAPI("ABC.re.qweatherapi.com"), true);        // 大小写不敏感
+  assert.equal(qwIsNewAPI("devapi.qweather.com"), false);
+  assert.equal(qwIsNewAPI("geoapi.qweather.com"), false);
+  assert.equal(qwIsNewAPI("qweatherapi.com"), false);              // 裸域不算(须子域)
+  assert.equal(qwIsNewAPI(""), false);
+  assert.equal(qwIsNewAPI(null ?? ""), false);
+});

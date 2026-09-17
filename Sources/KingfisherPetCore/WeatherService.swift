@@ -196,7 +196,7 @@ public final class WeatherService {
     }
 
     /// 和风新版 API(2025+,专属 *.qweatherapi.com):X-QW-Api-Key Header 鉴权(老板实测实锤)
-    static func qwIsNewAPI(_ host: String) -> Bool { host.lowercased().hasSuffix(".qweatherapi.com") }
+    public static func qwIsNewAPI(_ host: String) -> Bool { host.lowercased().hasSuffix(".qweatherapi.com") }
 
     private static func qwURL(host rawHost: String, path: String, loc: String, key: String) -> URLRequest? {
         guard let host = sanitizedHost(rawHost),

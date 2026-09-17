@@ -23,6 +23,10 @@ pub fn setup_power(app: tauri::AppHandle) {
         let mut main_vis = true;   // 主窗可见性监视:翻转即记日志(抓"无声隐藏者"——JS 全部隐藏路径已留痕,仍有无日志的隐藏发生)
         loop {
             std::thread::sleep(std::time::Duration::from_secs(2));
+            // Z 序自愈(老板实锤:偶现鸟盖树枝):鸟窗每次 JS 移动(setPosition 内部
+            // SetWindowPos TOPMOST)都会把自己抬到舞台之上,收敛只在舞台显示时跑=漏。
+            // 每 2s 收敛一次:crack → main → poop(舞台含树枝最顶,Mac 同语义)
+            crate::assert_z_cmd(app.clone());
 
             // --- 真睡眠唤醒(时钟跳变) ---
             let now = unsafe { GetTickCount64() };

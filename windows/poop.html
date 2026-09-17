@@ -397,5 +397,6 @@ emit("child-ready", "poop");   // 告诉主窗 listener 已注册(防首次 emit
   localStorage.setItem("kf_poop_err", "module: " + (err && err.message || err));
   throw err;
 }
+  try { emit("kf-poop-ready", {}); } catch (e) { /* */ }
 </script>
 </body></html>

@@ -1,3 +1,4 @@
+import { qwIsNewAPI } from "./shared.mjs";
 // 天气联动服务(v1.5.0 B;macOS WeatherService.swift 对称实现):
 // 双 provider(Open-Meteo 默认免 key / 和风 Key+专属 Host 含预警)→ 归一化 11 档
 // → 30 分钟刷新 → 通知 behavior。纪律:默认关,开启才发首个请求;失败/断网/key
@@ -204,7 +205,7 @@ function rememberCity(provider: string, city: string, lat: number, lon: number, 
 }
 
 /// 和风新版 API(2025+,专属 *.qweatherapi.com):X-QW-Api-Key Header 鉴权(老板实测实锤)
-function qwIsNew(host: string): boolean { return host.toLowerCase().endsWith(".qweatherapi.com"); }
+const qwIsNew = qwIsNewAPI;   // 纯函数在 shared.mjs(tests 直测同一份)
 
 async function qwGet(host: string, path: string, loc: string, key: string): Promise<Record<string, unknown> | null> {
   const base = `https://${host}${path}?location=${encodeURIComponent(loc)}`;

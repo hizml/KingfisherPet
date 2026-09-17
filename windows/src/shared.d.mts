@@ -13,3 +13,4 @@ export declare function lanEncode(obj: Record<string, unknown>): string | null;
 export declare function lanDecode(line: string): { type: string; name: string } | null;
 export declare const LAN_VISIT_COOLDOWN_MS: number;
 export declare function lanVisitAllowed(nowMs: number, lastVisitMs: number | null): boolean;
+export declare function qwIsNewAPI(host: string): boolean;

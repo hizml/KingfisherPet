@@ -323,6 +323,14 @@ enum TestMain {
             expect("全部消息类型在白名单", LanBirds.Lan.types.count == 8)
         }
 
+        // MARK: - 和风新版 API 判定(2025+ 专属 *.qweatherapi.com;Win shared.mjs 同口径)
+        expect("新API:专属域判定", WeatherService.qwIsNewAPI("p663yvpkgn.re.qweatherapi.com") == true)
+        expect("新API:大小写不敏感", WeatherService.qwIsNewAPI("ABC.RE.QWEATHERAPI.COM") == true)
+        expect("老API:devapi 判 false", WeatherService.qwIsNewAPI("devapi.qweather.com") == false)
+        expect("老API:geoapi 判 false", WeatherService.qwIsNewAPI("geoapi.qweather.com") == false)
+        expect("裸域 qweatherapi.com 不算(须子域)", WeatherService.qwIsNewAPI("qweatherapi.com") == false)
+        expect("空串安全", WeatherService.qwIsNewAPI("") == false)
+
         // MARK: - 和风 Host 清洗(评审 A4:用户输入防强解包)
         print("[Host 清洗]")
         expect("常规 host 通过", WeatherService.sanitizedHost("devapi.qweather.com") == "devapi.qweather.com")

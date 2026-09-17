@@ -91,3 +91,9 @@ export function lanVisitAllowed(nowMs, lastVisitMs) {
   if (nowMs < lastVisitMs) return true;   // 时钟回拨不锁死(macOS A9 同款)
   return nowMs - lastVisitMs >= LAN_VISIT_COOLDOWN_MS;
 }
+
+/// 和风新版 API 判定(2025+ 专属 *.qweatherapi.com;macOS WeatherService.qwIsNewAPI 同口径):
+/// 新版=X-QW-Api-Key Header 鉴权+geo 走 /geo/v2;老版(devapi 等)=query key+/v2
+export function qwIsNewAPI(host) {
+  return String(host || "").toLowerCase().endsWith(".qweatherapi.com");
+}

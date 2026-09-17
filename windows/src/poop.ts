@@ -7,6 +7,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { settings } from "./settings";
 import { warnOnce } from "./log";
 
+// 舞台页就绪握手(老板实锤:偶现半空无枝):poop.html 加载完成才 emit kf-poop-ready,
+// 此前的树枝/特效事件会落空(窗已建但页面监听未挂上)。3s 兜底超时。
+let pageReadyResolve: (() => void) | null = null;
+const pageReady: Promise<void> = new Promise((r) => { pageReadyResolve = r; });
+setTimeout(() => pageReadyResolve?.(), 3000);
+import("@tauri-apps/api/event").then(({ listen }) => listen("kf-poop-ready", () => pageReadyResolve?.())).catch(() => {});
+
 let ready: Promise<void> | null = null;
 export let stageError: string | null = null;   // 创建失败原因(诊断用;之前静默吞掉 → 树枝/阴影/屎全没了也没人知道)
 export let stageHandshaken = false;            // 子页面是否真的在听(诊断:页面加载成功与否)
