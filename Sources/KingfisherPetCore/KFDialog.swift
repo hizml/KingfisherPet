@@ -81,19 +81,19 @@ final class KFDialog: NSObject, NSWindowDelegate {
         b.wantsLayer = true
         b.layer?.cornerRadius = 8
         b.font = .systemFont(ofSize: 13, weight: primary ? .semibold : .regular)
+        let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         if primary {
             b.layer?.backgroundColor = Self.primaryColor().cgColor
             b.contentTintColor = .white
         } else {
-            let bg = NSColor(name: nil) { appearance in
-                appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                    ? NSColor(calibratedWhite: 0.16, alpha: 1)
-                    : NSColor(calibratedWhite: 0.95, alpha: 1)
-            }
-            b.layer?.backgroundColor = bg.cgColor
+            b.layer?.backgroundColor = (dark ? NSColor(calibratedWhite: 0.16, alpha: 1)
+                                             : NSColor(calibratedWhite: 0.95, alpha: 1)).cgColor
             b.layer?.borderWidth = 1
             b.layer?.borderColor = NSColor.separatorColor.cgColor
-            b.contentTintColor = .labelColor
+            // 显式文字色(与底色配套):contentTintColor=.labelColor 在无框按钮上
+            // 解析不可靠 → 白底白字(老板实锤看不清)
+            b.contentTintColor = dark ? NSColor(calibratedWhite: 0.95, alpha: 1)
+                                      : NSColor(calibratedWhite: 0.12, alpha: 1)
         }
         return b
     }
@@ -218,7 +218,7 @@ final class KFDialog: NSObject, NSWindowDelegate {
 
 /// 进度面板内容(检查更新/下载的同窗进度态):标题 + 进度条 + 百分比
 final class ProgressPanel: NSView {
-    static let height: CGFloat = 118
+    static let height: CGFloat = 156   // v1.7.12 加高:此前 118 标题被裁(老板实锤)
     private let bar = NSProgressIndicator()
     private let label = NSTextField(labelWithString: "0%")
 
@@ -226,19 +226,24 @@ final class ProgressPanel: NSView {
         super.init(frame: NSRect(x: 0, y: 0, width: width, height: Self.height))
         let t = NSTextField(wrappingLabelWithString: title)
         t.font = .systemFont(ofSize: 14, weight: .semibold)
-        t.frame = NSRect(x: 24, y: Self.height - 40, width: width - 48, height: 22)
+        t.lineBreakMode = .byCharWrapping
+        t.frame = NSRect(x: 24, y: Self.height - 52, width: width - 48, height: 36)
         bar.style = .bar
+        bar.isIndeterminate = false   // 默认 true=不定态,doubleValue 不画(老板实锤:62% 只画 2%)
         bar.minValue = 0; bar.maxValue = 100
-        bar.frame = NSRect(x: 24, y: 46, width: width - 48, height: 20)
+        bar.frame = NSRect(x: 24, y: 64, width: width - 48, height: 20)
         label.font = .systemFont(ofSize: 12)
         label.textColor = .secondaryLabelColor
         label.alignment = .center
-        label.frame = NSRect(x: 24, y: 20, width: width - 48, height: 18)
+        label.frame = NSRect(x: 24, y: 28, width: width - 48, height: 18)
         addSubview(t); addSubview(bar); addSubview(label)
     }
 
     func update(_ pct: Int) {
-        bar.doubleValue = Double(min(100, max(0, pct)))
+        let v = Double(min(100, max(0, pct)))
+        bar.doubleValue = v
+        bar.needsDisplay = true          // .bar 样式偶发不重绘(老板实锤:62% 只画 2%)
+        bar.displayIfNeeded()
         label.stringValue = "\(min(100, max(0, pct)))%"
     }
 
