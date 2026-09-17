@@ -455,8 +455,18 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
         let s = Settings.shared
         switch tf.identifier?.rawValue {
         case "wx.city": s.weatherCity = tf.stringValue.trimmingCharacters(in: .whitespaces)
-        case "wx.key": s.weatherKey = tf.stringValue.trimmingCharacters(in: .whitespaces)
-        case "wx.host": s.weatherHost = tf.stringValue.trimmingCharacters(in: .whitespaces)
+        case "wx.key", "wx.host":
+            // 粘贴净化:Key/Host 不含任何空白——从控制台复制常带尾部换行(输入框
+            // 显示"换行"、请求带脏字符=测试不通的根因);Host 再剥协议前缀
+            let cleaned = tf.stringValue.filter { !$0.isWhitespace }
+                .replacingOccurrences(of: "https://", with: "")
+                .replacingOccurrences(of: "http://", with: "")
+            if cleaned != tf.stringValue {
+                let sel = tf.currentEditor()?.selectedRange ?? NSRange(location: cleaned.count, length: 0)
+                tf.stringValue = cleaned
+                tf.currentEditor()?.selectedRange = sel
+            }
+            if tf.identifier?.rawValue == "wx.key" { s.weatherKey = cleaned } else { s.weatherHost = cleaned }
         default: break
         }
     }
@@ -502,7 +512,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
     /// 测试和风 Key:geo 查北京,200+有 location=有效(状态行给结论)
     @objc private func testApiKey(_ b: NSButton) {
         let s = Settings.shared
-        let key = s.weatherKey.trimmingCharacters(in: .whitespaces)
+        let key = s.weatherKey.filter { !$0.isWhitespace }
         let host = WeatherService.sanitizedHost(s.weatherHost.isEmpty ? "devapi.qweather.com" : s.weatherHost) ?? "devapi.qweather.com"
         weatherStatusLabel?.stringValue = Language.t("settings.weather.testing")
         let url = URL(string: "https://\(host)/v2/city/lookup?location=beijing&number=1&key=\(key.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? key)")!

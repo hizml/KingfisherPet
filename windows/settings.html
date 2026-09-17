@@ -154,6 +154,14 @@
     wxProv.value = localStorage.getItem("kf_weather_provider") === "qweather" ? "qweather" : "open-meteo";
     wxKey.value = localStorage.getItem("kf_weather_key") || "";
     wxHost.value = localStorage.getItem("kf_weather_host") || "";
+    // 粘贴净化(实时):Key/Host 不得含空白/换行(控制台复制常带尾部换行)
+    const cleanWX = () => {
+      for (const el of [wxKey, wxHost]) {
+        const c = el.value.replace(/\s+/g, "").replace(/^https?:\/\//, "");
+        if (c !== el.value) { const p = el.selectionStart; el.value = c; try { el.setSelectionRange(p, p); } catch (e) { /* */ } }
+      }
+    };
+    wxKey.oninput = wxHost.oninput = () => { cleanWX(); };
     applyLang();
     paintQW();
     wxOn.onchange = () => emit("setting", "weather_on:" + wxOn.checked);
@@ -185,7 +193,10 @@
     });
     // API Key 测试(老板要求):打和风 geo 探一口,通不通状态行直说
     document.getElementById("wxKeyTest").onclick = async () => {
-      const key = wxKey.value.trim(), host = wxHost.value.trim() || "devapi.qweather.com";
+      // 粘贴净化(与主窗天气服务同口径):剥空白/换行+协议前缀(老板实测:粘贴带脏字符→不通)
+      const key = wxKey.value.replace(/\s+/g, "");
+      const host0 = wxHost.value.replace(/\s+/g, "").replace(/^https?:\/\//, "");
+      const host = host0 || "devapi.qweather.com";
       wxStat.textContent = zhUI() ? "状态:测试中…" : "Status: testing…";
       try {
         const r = await fetch(`https://${host}/v2/city/lookup?location=beijing&key=${encodeURIComponent(key)}&number=1`,
