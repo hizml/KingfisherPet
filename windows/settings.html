@@ -169,8 +169,9 @@
       }
     };
     wxKey.oninput = wxHost.oninput = () => { cleanWX(); };
-    applyLang();
-    paintQW();
+    // (初始化调用移到脚本末尾——applyLang 内调 renderPeers,此处其 const 尚未声明,
+    // TDZ ReferenceError 会杀死整个脚本:wxProv.onchange/lanOn.onchange 全都挂不上
+    // =选和风无反应+LAN 勾不上的真根因,老板 v1.7.16 实锤)
     wxOn.onchange = () => emit("setting", "weather_on:" + wxOn.checked);
     wxCity.onchange = () => emit("setting", "weather_city:" + encodeURIComponent(wxCity.value));
     wxKey.onchange = () => emit("setting", "weather_key:" + encodeURIComponent(wxKey.value));
@@ -239,6 +240,9 @@
     commitOnDone(wxCity, "weather_city");
     commitOnDone(wxKey, "weather_key");
     commitOnDone(wxHost, "weather_host");
+    // 初始化(必须在全部 const 声明之后)
+    applyLang();
+    paintQW();
     const zhUI = () => (localStorage.getItem("kf_lang") || "system") === "zh"
       || ((localStorage.getItem("kf_lang") || "system") === "system"
           && (navigator.language || "en").toLowerCase().startsWith("zh"));

@@ -24,8 +24,9 @@
     import { emit, listen } from "@tauri-apps/api/event";   // v1.6.0:安装按钮通知主窗/接收进度
     // 内容由 query 驱动:t=found|latest|error|guide,latest=/cur= 版本号
     const q = new URLSearchParams(location.search);
-    // 同窗变形(单窗单框流):主窗查完 emit update-result{qs} → 本窗原地换状态
-    listen("update-result", (e) => { try { location.replace("update.html?" + (e.payload?.qs ?? "t=error")); } catch { /* */ } });
+    // 同窗变形监听推迟到渲染之后注册并兜底 catch(提前 listen 若遇 IPC 未就绪
+    // 会让整页脚本死=按钮全不渲染,关于框"找不到诊断信息"同源防御)
+    const _deferListen = () => { try { void listen("update-result", (e) => { try { location.replace("update.html?" + (e.payload?.qs ?? "t=error")); } catch { /* */ } }); } catch { /* */ } };
     const lang = localStorage.getItem("kf_lang") || "system";
     const zh = lang === "zh" || (lang === "system" && (navigator.language || "en").toLowerCase().startsWith("zh"));
     const close = () => getCurrentWindow().close();
@@ -109,6 +110,7 @@
       // 诊断信息挪进关于(老板:托盘菜单学 Mac 精简;点了照旧收集并打开记事本,不关本窗)
       btn(zh ? "诊断信息" : "Diagnostics", false, () => { try { void emit("menu", "diag"); } catch { /* */ } });
       btn(L.ok, false, close); }
-  </script>
+    _deferListen();
+</script>
 </body>
 </html>

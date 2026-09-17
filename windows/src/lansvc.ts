@@ -12,7 +12,7 @@ export const lan = {
   cfg: null as LanCfgT | null,
   get enabled(): boolean { return lan.cfg?.on ?? localStorage.getItem("kf_lan_on") === "1"; },
   set enabled(v: boolean) {
-    void invoke("lan_config", { on: v }).then((c) => { lan.cfg = c as never; }).catch(() => {});
+    void invoke("lan_config", { on: v, allow: null, deny: null }).then((c) => { lan.cfg = c as never; }).catch(() => {});
     localStorage.setItem("kf_lan_on", v ? "1" : "0");   // 兼容缓存
     if (!v) { invoke("lan_stop").catch(() => {}); }
     lan.syncTray();
@@ -21,18 +21,18 @@ export const lan = {
   get allowed(): string[] { return lan.cfg?.allowed ?? JSON.parse(localStorage.getItem("kf_lan_allowed") ?? "[]"); },
   get denied(): string[] { return lan.cfg?.denied ?? JSON.parse(localStorage.getItem("kf_lan_denied") ?? "[]"); },
   allowPeer(n: string) {
-    void invoke("lan_config", { allow: n }).then((c) => { lan.cfg = c as never; }).catch(() => {});
+    void invoke("lan_config", { on: null, allow: n, deny: null }).then((c) => { lan.cfg = c as never; }).catch(() => {});
     if (!lan.allowed.includes(n)) localStorage.setItem("kf_lan_allowed", JSON.stringify([...lan.allowed, n]));
     lan.syncTray();
   },
   denyPeer(n: string) {
-    void invoke("lan_config", { deny: n }).then((c) => { lan.cfg = c as never; }).catch(() => {});
+    void invoke("lan_config", { on: null, allow: null, deny: n }).then((c) => { lan.cfg = c as never; }).catch(() => {});
     if (!lan.denied.includes(n)) localStorage.setItem("kf_lan_denied", JSON.stringify([...lan.denied, n]));
     lan.syncTray();
   },
   /// 打开设置窗时拉权威配置(勾选/代号/配对名单的唯一真相)
   async loadCfg() {
-    try { lan.cfg = await invoke("lan_config", {}) as never; } catch { /* */ }
+    try { lan.cfg = await invoke("lan_config", { on: null, allow: null, deny: null }) as never; } catch { /* */ }
     return lan.cfg;
   },
   lastVisitKey(n: string) { return `kf_lan_visit_${n}`; },
