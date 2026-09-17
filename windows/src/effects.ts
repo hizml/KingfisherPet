@@ -60,6 +60,16 @@ export async function visitorTag(x: number, y: number, tag: string) {
 export function eggWobble(x: number, y: number) { fx2("egg", x, y, null); }
 /// 小鸟跟班绕飞(孵化彩蛋):x/y=本鸟中心(屏幕物理)
 export function childFlight(x: number, y: number) { fx2("child", x, y, null); }
+/// 破壳绕飞:ex,ey=蛋位(起飞点),x,y=绕圈中心(macOS fromEgg 同款)
+export async function childFlight2(x: number, y: number, ex: number, ey: number) {
+  try {
+    await ensurePoopStage();
+    const p = await petWin.outerPosition();
+    const sc = await petWin.scaleFactor();
+    await emit("fx", { kind: "child", x: p.x + x * sc, y: p.y + y * sc,
+                       ex: p.x + ex * sc, ey: p.y + ey * sc, spd: settings.speed });
+  } catch { /* */ }
+}
 /// 屏幕物理坐标直发版(成长演出拿到的已是屏幕坐标,不再做本地→屏幕换算)
 async function fx2(kind: string, px: number, py: number, cb: (() => void) | null) {
   try {

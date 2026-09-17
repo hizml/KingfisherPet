@@ -346,7 +346,7 @@ function visitorEvent() {
 export function weatherShiver() {
   if (!onScreen || dndActive) return;
   beginAction();
-  effects.mood(80, 20, "❄️");   // 一眼可读(macOS 同款):头顶飘雪花
+  effects.mood(80, 44, "❄️");   // 一眼可读:头顶飘雪花(44=贴头,20 在窗口上沿外显远)
   if (weather.now?.main === "snowLight" || weather.now?.main === "snowHeavy") effects.snow(80, 80);
   enter("shiver");
   hold(1.6, () => finish());
@@ -356,7 +356,7 @@ export function startPuff() {
   if (!onScreen || dndActive) return;
   beginAction();
   playPeep();
-  effects.mood(80, 20, "💢");   // 一眼可读:头顶飘💢(macOS 同款)
+  effects.mood(80, 44, "💢");   // 一眼可读:头顶飘💢(贴头)
   enter("puff");
   hold(0.9, () => finish());
 }
@@ -380,9 +380,15 @@ function growthHatchEvent() {
   beginAction();
   enter("poop");          // 蹲姿(复用 poop 帧的用力体态,macOS 同款)
   hold(1.2, () => {
+    // 蛋从屁股后边出(与拉屎同一位,老板实测:出生位置不对);小鸟等蛋摆完(2.6s)
+    // 再破壳——此前与蛋同时起飞=看不见"破壳",直接鸟在飞(老板:没见小鸟出来)
     getOrigin().then(o => {
-      effects.eggWobble(o.x + SIZE_P() * 0.8, o.y + FEET_TOP_P());
-      effects.childFlight(o.x + SIZE_P() / 2, o.y + SIZE_P() / 2);   // 绕飞(舞台侧按时间排)
+      const eggX = o.x + (80 + (facingRight ? -50 : 50)) * _scale;
+      const eggY = o.y + (SIZE - 50) * _scale;
+      effects.eggWobble(eggX, eggY);
+      hold(2.4, () => {   // 蛋摆完:小鸟从蛋位破壳绕飞(ex,ey=起飞点;x,y=绕圈中心)
+        effects.childFlight2(o.x + SIZE_P() / 2, o.y + SIZE_P() / 2, eggX, eggY);
+      });
     }).catch(() => {});
     enter("watch");                       // 盯着自己的蛋
     hold(2.6, () => {

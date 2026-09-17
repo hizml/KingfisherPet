@@ -149,11 +149,18 @@
       const qw = wxProv.value === "qweather";
       for (const el of document.querySelectorAll(".qw-only")) el.hidden = !qw;
     };
-    wxOn.checked = localStorage.getItem("kf_weather_on") === "1";
-    wxCity.value = localStorage.getItem("kf_weather_city") || "";
-    wxProv.value = localStorage.getItem("kf_weather_provider") === "qweather" ? "qweather" : "open-meteo";
-    wxKey.value = localStorage.getItem("kf_weather_key") || "";
-    wxHost.value = localStorage.getItem("kf_weather_host") || "";
+    // v1.7.8:两窗 localStorage 隔离——以主窗推来的真值填充(自己的存储是空/陈旧的)
+    const fillWeather = (w) => {
+      if (!w) return;
+      wxOn.checked = !!w.on;
+      wxCity.value = w.city || "";
+      wxProv.value = w.provider === "qweather" ? "qweather" : "open-meteo";
+      wxKey.value = w.key || "";
+      wxHost.value = w.host || "devapi.qweather.com";
+      paintQW();   // 按真 provider 显隐 Key/Host 行(老板实锤:选和风再开窗输入框消失)
+    };
+    listen("settings-weather", (e) => fillWeather(e.payload));
+    wxOn.checked = false; wxCity.value = ""; wxKey.value = ""; wxHost.value = "";   // 等主窗真值
     // 粘贴净化(实时):Key/Host 不得含空白/换行(控制台复制常带尾部换行)
     const cleanWX = () => {
       for (const el of [wxKey, wxHost]) {
@@ -165,6 +172,9 @@
     applyLang();
     paintQW();
     wxOn.onchange = () => emit("setting", "weather_on:" + wxOn.checked);
+    wxCity.onchange = () => emit("setting", "weather_city:" + encodeURIComponent(wxCity.value));
+    wxKey.onchange = () => emit("setting", "weather_key:" + encodeURIComponent(wxKey.value));
+    wxHost.onchange = () => emit("setting", "weather_host:" + encodeURIComponent(wxHost.value));
     // 局域网小鸟(v1.7.0):开关走 lansvc;邻居列表支持允许/拒绝(配对=隐私红线)
     const lanOn = document.getElementById("lanOn"),
           lanName = document.getElementById("lanName"),

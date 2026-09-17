@@ -392,7 +392,7 @@ fn tray_pin_guidance(app: tauri::AppHandle) {
             use tauri::Emitter;
             let _ = w.emit("tray-guide", ());
         }
-        prefs_set(&format!("tray_tip_done_{}", env!("CARGO_PKG_VERSION")), "1");
+        prefs_set("tray_tip_done_any", "1");
     });
 }#[cfg(not(windows))]
 fn tray_pin_guidance(_app: tauri::AppHandle) {}
@@ -699,9 +699,11 @@ pub fn run() {
             }
             // 托盘:子菜单化菜单(勾选当前项),左键直接打开
             let menu = build_menu(app.handle())?;
-            // v1.7.4:引导改为"每版本首启一次"(老板:升级后还想被提醒固定任务栏)
-            let guide_key = format!("tray_tip_done_{}", env!("CARGO_PKG_VERSION"));
-            if prefs_get(&guide_key).is_none() { tray_pin_guidance(app.handle().clone()); }
+            // v1.7.8 回改:一生只弹一次(每版本弹=老板实测烦人);老 key 已置过的用户不再见
+            if prefs_get("tray_tip_done").is_none() && prefs_get("tray_tip_done_any").is_none() {
+                prefs_set("tray_tip_done_any", "1");
+                tray_pin_guidance(app.handle().clone());
+            }
             // LAN:配置在 Rust(v1.7.5),开机若开 → 自启服务+推菜单可见
             {
                 let c = lan_cfg_load();

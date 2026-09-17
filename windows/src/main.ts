@@ -104,6 +104,9 @@ async function main() {
       else if (v.startsWith("weather_on:")) { setWeatherEnabled(v.split(":")[1] === "true"); weatherSettingsChanged(); }
       else if (v.startsWith("weather_city:")) { setWeatherCity(decodeURIComponent(v.slice("weather_city:".length))); weatherSettingsChanged(); }
       else if (v.startsWith("weather_provider:")) { setWeatherProvider(v.split(":")[1]); weatherSettingsChanged(); }
+      else if (v.startsWith("weather_on:")) { setWeatherEnabled(v.split(":")[1] === "true"); weatherSettingsChanged(); }
+      else if (v.startsWith("weather_key:")) { setWeatherKey(decodeURIComponent(v.slice("weather_key:".length))); weatherSettingsChanged(); }
+      else if (v.startsWith("weather_host:")) { setWeatherHost(decodeURIComponent(v.slice("weather_host:".length))); weatherSettingsChanged(); }
       else if (v.startsWith("weather_key:")) { setWeatherKey(decodeURIComponent(v.slice("weather_key:".length))); weatherSettingsChanged(); }
       else if (v.startsWith("weather_host:")) { setWeatherHost(decodeURIComponent(v.slice("weather_host:".length))); weatherSettingsChanged(); }
       syncSettingsOutlets();   // 回推:托盘勾选(Rust ui-state)+ 设置窗滑杆
@@ -198,6 +201,17 @@ async function main() {
       openUpdateDialog("t=guide", zhUI() ? "翡 · KingfisherPet" : "Fei · KingfisherPet").catch(() => {});
     });
     listen("check-update", () => doCheckUpdate(false));
+    // 设置窗拉状态:主窗(唯一权威)回推天气全量——两窗 localStorage 隔离,设置窗
+    // 此前读自己那份空白存储=选了和风再开变回默认、Key 丢失(老板实锤)
+    listen("settings-need-state", () => {
+      emit("settings-weather", {
+        on: localStorage.getItem("kf_weather_on") === "1",
+        city: localStorage.getItem("kf_weather_city") || "",
+        provider: localStorage.getItem("kf_weather_provider") === "qweather" ? "qweather" : "open-meteo",
+        key: localStorage.getItem("kf_weather_key") || "",
+        host: localStorage.getItem("kf_weather_host") || "devapi.qweather.com",
+      });
+    });
     // v1.6.0:弹窗「立即更新」→ 下载验签安装 → 自动重启;失败回退浏览器下载
     // 评审 W3:全路径通知弹窗(无包/失败都 emit update-fail)——按钮清空后不能让用户对死屏
     listen("do-update", async () => {
