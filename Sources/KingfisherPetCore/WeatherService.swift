@@ -33,6 +33,7 @@ public final class WeatherService {
     public var alertActive: Bool { !alerts.isEmpty }
 
     private var timer: Timer?
+    private var retryScheduled = false   // 失败态重试防重入
     private let refreshInterval: TimeInterval = 30 * 60   // 30 分钟
     /// 城市解析缓存(键=源+城市):城市不变不重查 geo——此前每 30 分钟对同一城市名
     /// 重复查,占和风口子 1/3 请求量。键含源:两家首条匹配口径不同(「朝阳」

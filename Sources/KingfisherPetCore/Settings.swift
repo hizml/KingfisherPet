@@ -569,6 +569,11 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
                 self?.weatherStatusLabel?.stringValue = ok
                     ? String(format: Language.t("settings.weather.keyOK"), host)
                     : String(format: Language.t("settings.weather.keyBad"), http, code)
+                if ok {
+                    // 测试通过 → 立刻联动天气服务重刷(老板实锤:测试通了菜单还挂
+                    // 「不可用」——测试按钮此前不触发服务,状态要等下个 30 分钟周期)
+                    WeatherService.shared.settingsChanged()
+                }
             }
         }.resume()
     }
