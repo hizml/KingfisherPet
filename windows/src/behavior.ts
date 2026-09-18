@@ -1174,6 +1174,30 @@ export function lanAnswerPeep() {
   effects.notes(zx, 34);
 }
 
+/// 去邻居家串门:本鸟离家(隐藏)4 秒后飞回来——"串门=鸟真的离开"的逻辑正确性
+/// (老板实锤:点完串门自己的鸟原地不动,不符合直觉)。勿扰/隐藏中不出发。
+export async function lanVisitDepart() {
+  if (dndActive || !onScreen) return;
+  beginAction();
+  onScreen = false;   // 离家期间="不在家":菜单/动作守卫自然生效(勿扰也不受影响)
+  enter("fly");
+  try { await setMainVisible(false, "串门离家"); } catch { /* */ }
+  emit("log", "lan: 串门离家(4s 后回来)");
+  const back = async () => {
+    // 回家:若期间进了勿扰/被隐藏,交给勿扰退出/显示开关,不硬闯
+    if (dndActive || onScreen) return;
+    try {
+      const a = await area();
+      const fromLeft = Math.random() < 0.5;
+      await setOrigin(fromLeft ? a.minX + 8 : a.maxX - SIZE_P() - 8, a.minY + (a.maxY - a.minY) * 0.55);
+      onScreen = true;
+      await setMainVisible(true, "串门回家");
+      await callOver();   // 回来直接飞到你身边(串门回来了!)
+    } catch (e) { emit("log", "lan: 串门回家失败 " + String(e)); onScreen = true; }
+  };
+  setTimeout(() => { void back(); }, 4000);
+}
+
 /// 邻居来串门:访客演出带名牌(poop 舞台 tag 参数)
 export function lanVisit(name: string) {
   emit("log", `lan: 邻居串门 ${name}`);

@@ -1091,6 +1091,53 @@ final class Behavior: PetViewDelegate {
         }
     }
 
+    // MARK: - 串门离家(v1.7.22 老板令:去串门=本鸟真的离开,数秒后飞回)
+    /// 飞出屏幕(随机一侧)→ 挂起全部 timer → 4s 后从边缘飞回并 callOver(回到你身边)。
+    /// 期间 onScreen=false(菜单/勿扰守卫自然生效);若离家期间进了勿扰,回家每 2s 重试
+    /// (不硬闯全屏),最长 60s;用户手动「显示/隐藏」恢复则以用户为准(回家闭包自退)。
+    func lanVisitDepart() {
+        guard onScreen, !dndActive, let window = window, let scr = screen else { return }
+        beginAction()
+        enter("fly")
+        let a = scr.visibleFrame
+        let fromLeft = Bool.random()
+        let endX = fromLeft ? a.minX - size.width : a.maxX + 4
+        let midY = window.frame.midY
+        animateWindow(to: CGPoint(x: endX, y: midY), duration: 0.6) { [weak self] in
+            guard let self = self, !self.dndActive else { return }
+            self.onScreen = false
+            self.window?.orderOut(nil)
+            self.shadow?.setVisible(false)
+            self.view?.suspendAnimation()
+            self.branch?.suspend()
+            self.poopCtl?.suspend()
+            kfLog("lan: 串门离家(4s 后回来)")
+            func retry(_ n: Int) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + (n == 30 ? 4 : 2)) { [weak self] in
+                    guard let self = self else { return }
+                    if self.dndActive { retry(n - 1); return }   // 勿扰中延后回家
+                    self.visitReturnAttempt(fromLeft: fromLeft, tries: n)
+                }
+            }
+            retry(30)
+        }
+    }
+
+    private func visitReturnAttempt(fromLeft: Bool, tries: Int) {
+        guard tries > 0, !dndActive, !onScreen else { return }   // 勿扰中=延后;已被恢复=让位
+        let a = screen?.visibleFrame ?? .zero
+        let startX = fromLeft ? a.minX + 8 : a.maxX - size.width - 8
+        window?.setFrameOrigin(CGPoint(x: startX, y: a.minY + a.height * 0.45))
+        onScreen = true
+        view?.resumeAnimation()
+        branch?.resume()
+        poopCtl?.resume()
+        window?.orderFrontRegardless()
+        shadow?.updateNow()
+        kfLog("lan: 串门回家")
+        callOver()   // 回来直接飞到你身边
+    }
+
     // MARK: - 外部控制
     func callOver() {
         guard let window = window, let scr = screen else { return }

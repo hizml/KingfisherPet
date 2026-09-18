@@ -83,8 +83,8 @@ async function main() {
       else if (id === "show") { behavior.isVisible() ? behavior.fallAway() : behavior.hatchIn(); }   // 显示/隐藏 toggle
       else if (id === "recall") { behavior.dragResetCache(); emit("log", "recall: Rust 出屏找回完成,拖拽缓存已重置"); }   // Rust 看门狗找回后的状态同步
       else if (id === "repair") { clearCracks(); }   // 托盘"修复屏幕"
-      else if (id === "lanvisit") { void import("./lansvc").then(({ lan }) => { void lan.act("visit"); }); }   // v1.7.20:双向门控+托盘反馈(老板实锤"点了没反应")
-      else if (id === "lanfish") { void import("./lansvc").then(({ lan }) => { void lan.act("fish"); }); }
+      else if (id.startsWith("lanvisit:")) { void import("./lansvc").then(({ lan }) => { void lan.act("visit", id.slice("lanvisit:".length)); }); }
+      else if (id.startsWith("lanfish:")) { void import("./lansvc").then(({ lan }) => { void lan.act("fish", id.slice("lanfish:".length)); }); }
       else if (id.startsWith("dev:")) { void import("./behavior").then((b) => b.devTrigger(id.slice(4))); }   // 🧪 测试菜单
     });
     listen<string>("theme", (e) => {   // 主题切换(托盘/设置窗)→ 原地换装 + 回推勾选状态
@@ -194,7 +194,7 @@ async function main() {
     // 关于(Mac NSAlert 同款:文案+鸟图标+GitHub 按钮;之前直接跳网页,弃)
     listen("show-about", async () => {
       const cur = await getVersion().catch(() => "dev");
-      openUpdateDialog(`t=about&cur=${cur}`, zhUI() ? "关于 翡" : "About Fei", 250).catch(() => {});
+      openUpdateDialog(`t=about&cur=${cur}`, zhUI() ? "关于 翡" : "About Fei", 330).catch(() => {});   // v1.7.22:250 装不下,诊断信息按钮被裁出窗
     });
     // 首启托盘常显引导(Rust emit;原系统 MessageBox 丑且盖鸟,统一自绘)
     listen("tray-guide", () => {

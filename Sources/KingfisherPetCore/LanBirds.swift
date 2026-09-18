@@ -333,10 +333,10 @@ public final class LanBirds {
             guard !denied.contains(n) else { send(c, obj: ["t": "BUSY", "v": Lan.protoVersion, "name": myName]); return }
             onEvent?(.peepReceived(n))
         case "VISIT":
-            guard allowed.contains(n), visitCooldownPassed(n) else {
+            // 冷却只由发送端守(每对一个钟,发送方记);接收端曾双重拦截=串门"没鸟飞过来"的一半真相
+            guard allowed.contains(n) else {
                 send(c, obj: ["t": "BUSY", "v": Lan.protoVersion, "name": myName]); return
             }
-            markVisit(n)
             onEvent?(.visitRequest(n))
         case "FISH":
             guard allowed.contains(n) else { send(c, obj: ["t": "BUSY", "v": Lan.protoVersion, "name": myName]); return }
@@ -373,9 +373,12 @@ public final class LanBirds {
             send(p.conn, obj: ["t": "PEEP", "v": Lan.protoVersion, "name": myName])
         }
     }
-    /// 请求去对方屏幕串门(v1.7.20:双向配对才放行;返回 nil=已发出,否则=给人看的失败原因)
-    func requestVisit() -> String? {
-        guard let target = onlineNames.first(where: isDualPaired) else {
+    /// 请求去对方屏幕串门(双向配对才放行;to=指定目标(子菜单),nil=第一个双向在线;
+    /// 返回 nil=已发出,否则=失败原因码)
+    func requestVisit(to want: String? = nil) -> String? {
+        let dualOnline = onlineNames.filter { isDualPaired($0) }
+        let target = want.flatMap { w in dualOnline.first { $0 == w } } ?? dualOnline.first
+        guard let target else {
             return onlineNames.contains(where: allowed.contains) ? "visitNeedDual" : "visitNoPeer"
         }
         guard visitCooldownPassed(target) else { return "visitCooldown" }
@@ -384,9 +387,11 @@ public final class LanBirds {
         send(p.conn, obj: ["t": "VISIT", "v": Lan.protoVersion, "name": myName])
         return nil
     }
-    /// 给邻居送鱼(菜单;双向配对才放行)
-    func sendFish() -> String? {
-        guard let target = onlineNames.first(where: isDualPaired), let p = peers[target] else { return "fishNoPeer" }
+    /// 给邻居送鱼(双向配对才放行;to=指定目标)
+    func sendFish(to want: String? = nil) -> String? {
+        let dualOnline = onlineNames.filter { isDualPaired($0) }
+        let target = want.flatMap { w in dualOnline.first { $0 == w } } ?? dualOnline.first
+        guard let target, let p = peers[target] else { return "fishNoPeer" }
         send(p.conn, obj: ["t": "FISH", "v": Lan.protoVersion, "name": myName])
         return nil
     }

@@ -98,13 +98,14 @@ export const lan = {
     setTimeout(() => { void lan.syncTray(); }, 5000);
   },
   /// 带反馈的动作:先判双向与冷却,再发送;每一步都给托盘文案(老板实锤"点了没反应")
-  async act(kind: "visit" | "fish"): Promise<void> {
+  async act(kind: "visit" | "fish", wantTarget?: string): Promise<void> {
     const zh = (localStorage.getItem("kf_lang") || "system") === "zh"
       || ((localStorage.getItem("kf_lang") || "system") === "system"
           && (navigator.language || "en").toLowerCase().startsWith("zh"));
     let peers: string[] = [];
     try { peers = await invoke<string[]>("lan_peers"); } catch { /* */ }
-    const dual = peers.filter((n) => lan.allowed.includes(n) && lan.inbound.includes(n));
+    let dual = peers.filter((n) => lan.allowed.includes(n) && lan.inbound.includes(n));
+    if (wantTarget) { dual = dual.filter((n) => n === wantTarget); }   // 子菜单指定目标(v1.7.22)
     if (!dual.length) {
       const half = peers.filter((n) => lan.allowed.includes(n));
       await lan.flashStatus(zh ? (half.length ? "🐦 串门/送鱼需对方也确认配对(现在是单向)" : "🐦 没有已配对的在线邻居(设置里配对)") : "🐦 Need mutual pairing first");
@@ -118,6 +119,7 @@ export const lan = {
     }
     if (kind === "visit") lan.markVisit(target);
     const sentTo = await lan.send(kind, kind === "visit" || kind === "fish" ? target : undefined);
+    if (sentTo && kind === "visit") { void import("./behavior").then((b) => { void b.lanVisitDepart(); }); }   // 本鸟飞走
     await lan.flashStatus(sentTo
       ? (zh ? (kind === "visit" ? `🐦 已去 ${sentTo} 家串门(对方屏幕见)` : `🐦 已给 ${sentTo} 送鱼(对方+亲密度)`) : "🐦 Sent")
       : (zh ? "🐦 发送失败(连接断开?)" : "🐦 Send failed"));
@@ -157,8 +159,8 @@ export function setupLan() {
       if (lan.denied.includes(name)) return;
       emit("lan-behavior", { act: "peep", name }).catch(() => {});
     } else if (type === "visit") {
-      if (!lan.allowed.includes(name) || !lan.visitAllowed(name)) return;
-      lan.markVisit(name);
+      // 冷却只由发送端守(每对一个钟,发送方记);接收端曾双重拦截=老板实锤"没鸟飞过去"
+      if (!lan.allowed.includes(name)) return;
       emit("lan-behavior", { act: "visit", name }).catch(() => {});
       void lan.flashStatus(zh2() ? `🐦 ${name} 来串门了(它在你屏幕上)` : `🐦 ${name} is visiting your screen`);
     } else if (type === "fish") {

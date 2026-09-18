@@ -466,8 +466,22 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
     let show = MenuItem::with_id(app, "show", t("显示 / 隐藏", "Show / Hide"), true, None::<&str>)?;
     let lan_on = LAN_MENU_ON.load(std::sync::atomic::Ordering::Relaxed);
     let lan_act = lan_on && LAN_READY.load(std::sync::atomic::Ordering::Relaxed);   // 无邻居置灰
-    let lanvisit = MenuItem::with_id(app, "lanvisit", t("去邻居家串门", "Visit a Neighbor"), lan_act, None::<&str>)?;
-    let lanfish = MenuItem::with_id(app, "lanfish", t("给邻居送条鱼", "Send a Fish"), lan_act, None::<&str>)?;
+    // v1.7.22 二级子菜单选目标(老板令):多邻居时 串门/送鱼 必须能指定给谁;
+    // 无双向在线邻居 → 子菜单挂一个禁用占位(状态可见,不装死)
+    let dual = crate::lan::dual_online_names();
+    let mk_lan_submenu = |label_zh: &str, label_en: &str, prefix: &str| -> Result<Submenu<tauri::Wry>, tauri::Error> {
+        let sm = Submenu::with_id(app, format!("sm_{prefix}"), t(label_zh, label_en), lan_act)?;
+        if dual.is_empty() {
+            sm.append(&MenuItem::with_id(app, format!("{prefix}none"), t("暂无双向配对的在线邻居", "No mutual peer online"), false, None::<&str>)?)?;
+        } else {
+            for n in &dual {
+                sm.append(&MenuItem::with_id(app, format!("{prefix}{n}"), n.clone(), true, None::<&str>)?)?;
+            }
+        }
+        Ok(sm)
+    };
+    let lanvisit = mk_lan_submenu("去邻居家串门", "Visit a Neighbor", "lanvisit:")?;
+    let lanfish = mk_lan_submenu("给邻居送条鱼", "Send a Fish", "lanfish:")?;
 
     let repair = MenuItem::with_id(app, "repair", t("修复屏幕", "Repair Screen"), true, None::<&str>)?;
 

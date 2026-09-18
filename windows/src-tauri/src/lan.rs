@@ -425,6 +425,18 @@ pub fn lan_notify_pair(name: &str, paired: bool, app: &AppHandle) {
     let _ = app;
 }
 
+/// 双向已配对的在线邻居(托盘子菜单数据源:串门/送鱼选目标)
+pub fn dual_online_names() -> Vec<String> {
+    let c = crate::lan_cfg_load();
+    let g = STATE.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(st) = g.as_ref() else { return vec![] };
+    let mut v: Vec<String> = st.peers.keys()
+        .filter(|n| c.allowed.contains(n) && c.inbound.contains(n))
+        .cloned().collect();
+    v.sort();
+    v
+}
+
 /// 在线邻居名单(托盘状态行用)
 #[tauri::command]
 pub fn lan_peers() -> Vec<String> {
