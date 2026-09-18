@@ -710,7 +710,7 @@ final public class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
     @objc private func lanFishTargetAction(_ mi: NSMenuItem) {
         guard let name = mi.representedObject as? String else { return }
         if lan.sendFish(to: name) == nil {
-            petController?.behavior.startSing()
+            petController?.behavior.startSing(broadcast: false)   // 用户主动:不联动邻居唱
             flashLanStatus(String(format: Language.t("lan.fishSent"), name))
         } else {
             flashLanStatus(Language.t("lan.noPeer"))
@@ -793,7 +793,7 @@ final public class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
     @objc private func doSing() {
         let behavior = petController.behavior
         guard behavior.isOnScreen else { return }   // 隐藏时不响应(与 Windows 一致;恢复入口只有显示/隐藏)
-        behavior.startSing()
+        behavior.startSing(broadcast: false)   // 用户点唱:不联动邻居(老板令)
     }
 
     @objc private func doFeed() {   // 喂条鱼(成长系统):eat+happy;加分/冷却都在 feedFish 内

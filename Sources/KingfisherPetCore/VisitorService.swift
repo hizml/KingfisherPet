@@ -33,16 +33,11 @@ final class VisitorService {
         let exit = CGPoint(x: fromLeft ? area.maxX + 160 : area.minX - 160,
                            y: area.midY + CGFloat.random(in: 0...120))
         runFlight(points: [enter, stop, exit], total: 8.0, screen: screen, scale: 1.0,
-                  pauseAt: 0.42, pauseDur: 2.2) { [weak self] in
+                  pauseAt: 0.42, pauseDur: 2.2, nameTag: nameTag) { [weak self] in
             self?.showVisitor(seqName: "visitor_sing", t: CACurrentMediaTime())
             birdSings()
         }
-        // 停留期间头顶名牌(局域网串门):飞行起点后 0.4s 出现,随窗收走
-        if let tag = nameTag {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-                self?.showNameTag(tag)
-            }
-        }
+        // 名牌不再用 asyncAfter(0.4) 延时挂:偶现首访丢失(老板实锤),改为 runFlight tick 内确定性创建
     }
 
     /// 名牌:小圆角气泡 + 代号文本,挂在访客窗顶部
@@ -102,9 +97,10 @@ final class VisitorService {
 
     /// 沿折线匀速飞;总时长 total;pauseAt(飞行进度 0–1, nil=不停留)处停留 pauseDur 秒,
     /// 停留开始后调 onArrivePause(本鸟应答口)。停留期间播 idle/sing,飞行播 fly 帧。
+    /// nameTag:起飞 0.4s 后在 tick 里创建(挂根层,不随鸟翻转)——不依赖 asyncAfter,演出被顶掉时随 tick 一同失效
     private func runFlight(points: [CGPoint], total: CFTimeInterval, screen: NSScreen?,
                            scale: CGFloat, pauseAt: Double?, pauseDur: CFTimeInterval,
-                           onArrivePause: (() -> Void)?) {
+                           nameTag: String? = nil, onArrivePause: (() -> Void)?) {
         prepareWindow(screen: screen)
         guard let layer, points.count >= 2 else { return }
         placeWindow(center: points[0], size: 160, screen: screen, scale: scale)
@@ -113,6 +109,7 @@ final class VisitorService {
         let flySeq = SpriteLibrary.shared.sequence("visitor_fly") ?? ["visitor_fly_2"]
         let idleSeq = SpriteLibrary.shared.sequence("visitor_idle") ?? ["visitor_idle_0"]
         var arrived = false
+        var tagShown = false
         var t: CFTimeInterval = 0
         let dt = 1.0 / 30.0
         var lastX: CGFloat? = nil       // 朝向跟随:绕飞/折返时按水平速度翻转,不"倒着飞"
@@ -121,6 +118,10 @@ final class VisitorService {
             guard let self else { return false }
             t += dt
             if t >= total { self.hide(); return false }
+            if let nameTag, !tagShown, t >= 0.4 {   // 名牌:起飞半拍后出现,随窗收走
+                tagShown = true
+                self.showNameTag(nameTag)
+            }
             let inPause = pauseStart.map { t >= $0 && t < $0 + pauseDur } ?? false
             if inPause {
                 if !arrived, t >= (pauseStart ?? 0) + 0.3 {   // 落定半拍后:开唱 + 本鸟应答

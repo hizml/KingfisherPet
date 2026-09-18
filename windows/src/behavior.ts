@@ -544,7 +544,7 @@ async function startFly(minDist = 0) {
 
 // MARK: 静态动作
 let facingRight = false;   // 朝向(effects/poop/crack 出口随朝向偏移,macOS 同款)
-async function perchBranchHere() {   // 用户触发的静态动作补枝规则(用户定):
+export async function perchBranchHere() {   // 用户触发的静态动作补枝规则(用户定):
   // 只有【真空中】才出枝——栖在窗口上/站在任务栏上/脚下有任何表面都不出。
   if (perchedHwnd != null) return;   // 栖着窗口:脚下是窗口
   try {
@@ -558,8 +558,9 @@ async function perchBranchHere() {   // 用户触发的静态动作补枝规则(
     branch.showBranchAt(o.x + SIZE_P() / 2, feetY);   // 真空 → 出枝
   } catch { /* */ }
 }
-function startSing() {
-  void import("./lansvc").then(({ lan }) => { if (lan.enabled && duetOn()) void lan.send("peep"); });   // 对唱广播(开关门控,macOS 同款)
+function startSing(broadcast = true) {
+  // 对唱广播只留给机器自发/远程应答;用户主动唱(菜单"唱一个")不联动邻居(老板令,macOS 同款)
+  if (broadcast) void import("./lansvc").then(({ lan }) => { if (lan.enabled && duetOn()) void lan.send("peep"); });
   beginAction(); perchBranchHere(); enter("sing"); playPeep();
   effects.notes(facingRight ? 110 : 50, 34);   // 音符从头上方出(macOS 同款:距顶 34)
   hold(1.2 + Math.random() * 0.4, () => finish());
@@ -936,7 +937,7 @@ export async function callOver() {
 /// 菜单动作:隐藏时不响应(用户方案:唯一恢复入口=显示/隐藏)。
 /// (历史:曾用 Rust 直操 show_window_bottom_right 替隐藏后点动作"先显示再执行",
 /// 该命令已随方案废弃移除;现行为=直接 return,与 macOS 菜单守卫一致。)
-export function doSing() { if (!onScreen) return; startSing(); }   // 隐藏时不响应(用户方案)
+export function doSing() { if (!onScreen) return; startSing(false); }   // 用户点唱不广播;隐藏时不响应(用户方案)
 export function doEat() { if (!onScreen) return; startEat(); }
 export function doFish() { if (!onScreen) return; startFish(); }
 

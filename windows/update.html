@@ -118,16 +118,17 @@
       // 版本行(关于弹窗此前没版本号,老板要求)
       if (cur) { const v = document.createElement("div"); v.textContent = (zh ? "当前版本 v" : "Version v") + cur; v.style.cssText = "color:#0e7c86;font-weight:600;margin-bottom:8px;"; elM.before(v); }
       elM.textContent = L.aboutM;
-      // 鸟图标(关于窗专属,Mac NSAlert.icon 同款)
-      const img = document.createElement("img");
-      img.src = new URL("Sprites/flat/idle_0.png", import.meta.env.BASE_URL).href;
-      img.style.cssText = "position:absolute;top:14px;right:16px;width:52px;image-rendering:pixelated;";
-      document.body.style.position = "relative";
-      document.body.appendChild(img);
       btn(L.githubB, true, () => { open("https://github.com/hizml/KingfisherPet").then(() => close(), () => {}); });
       // 诊断信息挪进关于(老板:托盘菜单学 Mac 精简;点了照旧收集并打开记事本,不关本窗)
       btn(zh ? "诊断信息" : "Diagnostics", false, () => { try { void emit("menu", "diag"); } catch { /* */ } });
-      btn(L.ok, false, close); }
+      btn(L.ok, false, close);
+      // 鸟图标放最后加:曾用 new URL(src, BASE_URL),BASE_URL="/" 是非法 base 抛 Invalid URL,
+      // 把排在后面的按钮全崩没了(v1.7.16~24"关于里没按钮"的真凶);按钮先行 + 相对路径拼接(poop.html 同款)
+      const img = document.createElement("img");
+      img.src = `${import.meta.env.BASE_URL}Sprites/flat/idle_0.png`;
+      img.style.cssText = "position:absolute;top:14px;right:16px;width:52px;image-rendering:pixelated;";
+      document.body.style.position = "relative";
+      document.body.appendChild(img); }
     _deferListen();
 </script>
 </body>

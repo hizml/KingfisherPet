@@ -256,7 +256,7 @@ listen("fx", (e) => {
     // 访客鸟/小鸟跟班(v1.5.x 成长;macOS VisitorService 同款参数):
     // visitor=屏边进→鸟旁停 2.2s(对唱)→飞出 8s;child=0.6× 绕鸟两圈 5.5s
     const isChild = kind === "child";
-    const sz = (isChild ? 96 : 128) / DPR;   // 0.6× / 0.8× 逻辑尺寸
+    const sz = (isChild ? 96 : 160) / DPR;   // 0.6× 小鸟 / 1.0× 访客(macOS 同款 160;老板实锤 Win 访客偏小)
     const img = imgEl("visitor_fly_2", sz, sz);
     img.style.position = "absolute"; img.style.willChange = "left,top";
     // 防御(老板实测:左上角卡死一只粉鸟):先钉初始位置再入 DOM——
@@ -302,10 +302,10 @@ listen("fx", (e) => {
       let px, py, seq;
       if (inPause) {
         if (!sang && t >= pauseStart + 0.3) { sang = true;   // 落定半拍后开唱(macOS 同款)
-          if (tag) {   // 局域网串门名牌:停留点头顶代号气泡
+          if (tag) {   // 局域网串门名牌:停留点头顶代号气泡(深底白字+居中定位,老板实锤黑字无底难辨认)
             const lab = document.createElement("div");
             lab.textContent = String(tag);
-            lab.style.cssText = `position:fixed;left:${pts[1][0] - 34}px;top:${pts[1][1] - sz / 2 - 26}px;padding:1px 7px;border-radius:7px;background:rgba(120,120,128,.14);color:#333;font-size:11px;font-weight:500;pointer-events:none;z-index:4;`;
+            lab.style.cssText = `position:fixed;left:${pts[1][0]}px;top:${pts[1][1] - sz / 2 - 30}px;transform:translateX(-50%);padding:2px 8px;border-radius:7px;background:rgba(38,38,40,.92);color:#fff;font-size:11px;font-weight:600;pointer-events:none;z-index:4;white-space:nowrap;`;
             document.body.appendChild(lab);
             setTimeout(() => lab.remove(), 2400);
           }

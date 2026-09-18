@@ -389,6 +389,7 @@ async function endDrag() {
       const p = await petWin.outerPosition();
       if (Math.hypot(p.x - dragStartPos.x, p.y - dragStartPos.y) < 5) {
         behavior.happyAction();
+        void behavior.perchBranchHere();   // mousedown 已 dragBegin 收枝:没拖成=抚摸,真空中的枝补回来(老板实锤抚摸后枝消失)
         return;
       }
     }

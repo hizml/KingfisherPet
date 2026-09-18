@@ -725,7 +725,8 @@ final class Behavior: PetViewDelegate {
     }
 
     // MARK: - 鸣唱
-    func startSing() {
+    /// broadcast:对唱广播只留给机器自发/远程应答;用户主动唱(菜单"唱一个"/喂鱼反应)不联动邻居(老板令)
+    func startSing(broadcast: Bool = true) {
         beginAction()
         enter("sing")
         // 音符从头上方出,左右随朝向
@@ -735,7 +736,7 @@ final class Behavior: PetViewDelegate {
         let y = w.maxY - 34
         Effects.notes(at: CGPoint(x: x, y: y), on: screen)
         SpriteLibrary.shared.playPeep()
-        if LanBirds.shared.isEnabled, Settings.shared.lanDuet { LanBirds.shared.sendPeep() }   // 对唱广播(开关门控)
+        if broadcast, LanBirds.shared.isEnabled, Settings.shared.lanDuet { LanBirds.shared.sendPeep() }
         hold(Double.random(in: 1.2...1.6)) { [weak self] in self?.finish() }
     }
 
@@ -1103,6 +1104,7 @@ final class Behavior: PetViewDelegate {
         let fromLeft = Bool.random()
         let endX = fromLeft ? a.minX - size.width : a.maxX + 4
         let midY = window.frame.midY
+        view?.facingRight = endX > window.frame.midX   // 朝出口方向飞(老板实锤"倒着飞")
         animateWindow(to: CGPoint(x: endX, y: midY), duration: 0.6) { [weak self] in
             guard let self = self, !self.dndActive else { return }
             self.onScreen = false
