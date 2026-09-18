@@ -386,8 +386,12 @@ pub fn lan_peers() -> Vec<String> {
     v
 }
 
+/// mDNS 主机名(SRV 记录 target)。mdns-sd 的 register() 强制要求以 ".local." 结尾——
+/// v1.7.0 起一直传裸 COMPUTERNAME 被拒,但旧代码 `let _ =` 吞错+在注册前就打
+/// 「服务启动」日志,= Win 端 mDNS 服务从未注册成功过(v1.7.18 的错误留痕首次照出)。
+/// 隐私红线(广播不含主机名):用机器指纹哈希派生,不泄漏 COMPUTERNAME。
 fn lan_hostname() -> String {
-    std::env::var("COMPUTERNAME").unwrap_or_else(|_| "kf-win".into())
+    format!("kf-{}.local.", &machine_id()[..8])
 }
 
 /// 机器指纹:机器名 FNV 哈希 16 位十六进制(稳定/不可逆,不广播原名)。
