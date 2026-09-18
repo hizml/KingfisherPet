@@ -164,10 +164,22 @@ async function main() {
         try { await emitTo("update", "update-result", { qs }); }
         catch { await openUpdateDialog(qs, ttCk); }
       };
+      // 检查带快重试(老板 N5105 实锤 2026-09-18:系统代理 192.168.31.254:7890 的境外节点抖动,
+      // api.github.com 秒断 3 次+15s 超时 1 次,直连 curl 全通——WebView2 全流量走系统代理,节点抖=必挂;
+      // HTTP 状态码不重试,只重试网络级失败,重试一次熬过短抖)
+      const fetchCheck = async (): Promise<Response> => {
+        const url = "https://api.github.com/repos/hizml/KingfisherPet/releases/latest";
+        try {
+          return await fetch(url, { signal: AbortSignal.timeout(15000) });   // 评审 W4:无超时会挂死弹窗流程
+        } catch (e) {
+          emit("log", "update: 检查网络失败(" + String(e) + "),3s 后重试一次");
+          await new Promise((res) => setTimeout(res, 3000));
+          return fetch(url, { signal: AbortSignal.timeout(15000) });
+        }
+      };
       try {
         const [r, cur] = await Promise.all([
-          fetch("https://api.github.com/repos/hizml/KingfisherPet/releases/latest",
-                { signal: AbortSignal.timeout(15000) }),   // 评审 W4:无超时会挂死弹窗流程
+          fetchCheck(),
           getVersion(),
         ]);
         if (!r.ok) throw new Error("HTTP " + r.status);
@@ -235,14 +247,15 @@ async function main() {
     });
     // v1.6.0:弹窗「立即更新」/自动更新 → 下载验签安装 → 自动重启;失败回退浏览器下载
     // 评审 W3:全路径通知弹窗(无包/失败都 emit update-fail)——按钮清空后不能让用户对死屏
+    // v1.7.28:下载安装带一次重试——下载同样走系统代理(老板 N5105 实锤代理节点抖动),
+    // 一次网络级失败 3s 后整段重来,两连抖概率平方级下降;无包不算网络失败但也无妨多查一次
     let autoUpdating = false;   // 自动更新防重入(24h 周期与手动路径撞车时只跑一份)
     async function runInAppUpdate() {
-      try {
+      const attempt = async (): Promise<boolean> => {
         const up = await checkUpdate();
         if (!up?.available) {
           emit("log", "update: 触发更新但 updater 无可用包");
-          emit("update-fail", { why: "no-package" }).catch(() => {});
-          return;
+          return false;
         }
         let received = 0, total = 0;
         await up.downloadAndInstall((ev) => {
@@ -260,6 +273,23 @@ async function main() {
         emit("update-progress", { pct: 100 }).catch(() => {});
         emit("log", "update: 下载完成,安装器接管(Windows 下进程将退出并由安装器重启)");
         await relaunch().catch(() => {});   // 评审 R6:Windows 常不可达(安装器先 exit);留作其他平台语义兜底
+        return true;
+      };
+      try {
+        let ok = false;
+        try {
+          ok = await attempt();
+        } catch (e) {
+          emit("log", "update: 下载安装失败(" + String(e) + "),3s 后重试一次");
+        }
+        if (!ok) {
+          await new Promise((res) => setTimeout(res, 3000));
+          ok = await attempt();   // 重试仍失败走外层 catch 的浏览器兜底
+        }
+        if (!ok) {
+          emit("update-fail", { why: "no-package" }).catch(() => {});
+          return;
+        }
       } catch (e) {
         emit("log", "update: 应用内更新失败(" + String(e) + "),回退浏览器下载");
         emit("update-fail", { why: String(e) }).catch(() => {});

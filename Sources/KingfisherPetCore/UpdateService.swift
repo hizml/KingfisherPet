@@ -111,7 +111,21 @@ final public class UpdateService {
 
     /// 拉最新版:(tag, mac 资产 SHA256)。digest 是评审 A1 的完整性第二道防线
     /// (GitHub API 的 assets[].digest 形如 "sha256:…";无该字段的旧 API 返回 nil,验签退化为签名校验)。
+    /// 带快重试:失败(拉不到 tag)3s 后再来一次——老板 N5105 实锤(2026-09-18)系统代理
+    /// 境外节点抖动会让 api.github.com 秒断连发;自动更新上线后检查失败=24h 内不再看,代价变大,必须熬过短抖。
     private func fetchLatest(_ done: @escaping (String?, String?) -> Void) {
+        fetchLatestAttempt { [weak self] latest, digest in
+            if latest == nil, let self {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    self.fetchLatestAttempt { l2, d2 in done(l2, d2) }
+                }
+            } else {
+                done(latest, digest)
+            }
+        }
+    }
+
+    private func fetchLatestAttempt(_ done: @escaping (String?, String?) -> Void) {
         let url = URL(string: "https://api.github.com/repos/hizml/KingfisherPet/releases/latest")!
         // 专用会话超时:URLSession.shared 默认 60s,慢网络下「检查中…」要挂一分钟。
         // 8→12(2026-09-16):代理网络下 api.github.com 偶发尾部慢请求(本机 Clash 实测 10 连测
