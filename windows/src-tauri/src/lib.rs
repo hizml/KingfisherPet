@@ -250,6 +250,7 @@ static GROWTH_TITLE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(No
 static LAN_TITLE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 static LAN_MENU_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static LAN_READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static LAN_VISIT_CD: std::sync::Mutex<Option<std::collections::HashMap<String, u64>>> = std::sync::Mutex::new(None);
 
 /// LAN 配置唯一权威(v1.7.5 老板实锤:localStorage 随设置窗关闭丢失,勾不保)。
 /// on/name/allowed/denied 全存 Rust prefs;开关即启停服务(前端不再自存状态)。
@@ -259,10 +260,47 @@ struct LanCfg {
     /// 对方端已把我加入 allowed(PAIR 消息同步;双向配对判定=allowed+inbound 同时命中)
     #[serde(default)]
     inbound: Vec<String>,
+    /// 本机身份令牌(随机 16 hex,首载生成;所有出站消息携带——假冒代号没有它即被丢弃)
+    #[serde(default)]
+    my_token: String,
+    /// 邻居名 → 对方机器令牌(PAIR 首次交换落账,first-wins 防抢注)
+    #[serde(default)]
+    tokens: std::collections::HashMap<String, String>,
 }
 
 pub(crate) fn lan_cfg_load() -> LanCfg {
-    prefs_get("lan_cfg").and_then(|v| serde_json::from_str::<LanCfg>(&v).ok()).unwrap_or_default()
+    let mut c = prefs_get("lan_cfg").and_then(|v| serde_json::from_str::<LanCfg>(&v).ok()).unwrap_or_default();
+    if c.my_token.is_empty() {
+        // 机器令牌首载生成(std-only 熵:纳秒×pid 混沌;威胁模型=挡随机冒名,非密码学)
+        let n = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64).unwrap_or(0x9e3779b9);
+        let p = std::process::id() as u64;
+        let mut h: u64 = 0xcbf29ce484222325;
+        for b in format!("{n}-{p}-{n}").bytes() { h = (h ^ b as u64).wrapping_mul(0x100000001b3); }
+        c.my_token = format!("{h:016x}");
+        lan_cfg_save(&c);
+    }
+    c
+}
+
+/// 令牌落账(first-wins):已存且不同=false(疑似假冒,调用方丢弃);未存/一致=true
+pub(crate) fn lan_token_remember(name: &str, token: &str) -> bool {
+    if token.is_empty() { return false; }
+    let mut c = lan_cfg_load();
+    match c.tokens.get(name) {
+        Some(t) if t != token => false,
+        Some(_) => true,
+        None => {
+            c.tokens.insert(name.to_string(), token.to_string());
+            lan_cfg_save(&c);
+            true
+        }
+    }
+}
+
+/// 对外暴露给 lan.rs:取已存令牌(校验动作用)
+pub(crate) fn lan_token_of(name: &str) -> Option<String> {
+    lan_cfg_load().tokens.get(name).cloned()
 }
 fn lan_cfg_save(c: &LanCfg) { prefs_set("lan_cfg", &serde_json::to_string(c).unwrap_or_default()); }
 
@@ -323,9 +361,14 @@ fn lan_config(app: tauri::AppHandle, on: Option<bool>, allow: Option<String>, de
 
 /// on=设置开关(关=LAN 菜单全隐藏);ready=有已配对在线邻居(无=串门/送鱼置灰,老板要求)/// on=设置开关(关=LAN 菜单全隐藏);ready=有已配对在线邻居(无=串门/送鱼置灰,老板要求)
 #[tauri::command]
-fn set_lan_menu(app: tauri::AppHandle, on: Option<bool>, ready: Option<bool>) {
+fn set_lan_menu(app: tauri::AppHandle, on: Option<bool>, ready: Option<bool>, cds: Option<String>) {
     LAN_MENU_ON.store(on.unwrap_or(false), std::sync::atomic::Ordering::Relaxed);
     LAN_READY.store(ready.unwrap_or(false), std::sync::atomic::Ordering::Relaxed);
+    // 串门冷却表 {邻居名: 剩余分钟}(前端 localStorage 是权威,Rust 只做菜单标注展示)
+    if let Some(json) = cds {
+        let m: std::collections::HashMap<String, u64> = serde_json::from_str(&json).unwrap_or_default();
+        *LAN_VISIT_CD.lock().unwrap_or_else(|e| e.into_inner()) = Some(m);
+    }
     refresh_menu(&app);
 }
 
@@ -474,8 +517,14 @@ fn build_menu(app: &tauri::AppHandle<tauri::Wry>) -> MenuResult {
         if dual.is_empty() {
             sm.append(&MenuItem::with_id(app, format!("{prefix}none"), t("暂无双向配对的在线邻居", "No mutual peer online"), false, None::<&str>)?)?;
         } else {
+            let cds = LAN_VISIT_CD.lock().unwrap_or_else(|e| e.into_inner()).clone().unwrap_or_default();
             for n in &dual {
-                sm.append(&MenuItem::with_id(app, format!("{prefix}{n}"), n.clone(), true, None::<&str>)?)?;
+                // 冷却标到鸟上(老板令):该邻居串门冷却中 → 名字后带剩余分钟
+                let title = match (prefix, cds.get(n)) {
+                    ("lanvisit:", Some(m)) if *m > 0 => format!("{n} · {} {m} {}", t("串门冷却", "cooldown"), t("分", "min")),
+                    _ => n.clone(),
+                };
+                sm.append(&MenuItem::with_id(app, format!("{prefix}{n}"), title, true, None::<&str>)?)?;
             }
         }
         Ok(sm)

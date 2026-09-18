@@ -12,6 +12,8 @@ final class VisitorService {
     /// 池化窗(一次建好反复用;同时只允许一场演出,后来的顶掉先来的)
     private var win: NSWindow?
     private var layer: CALayer?
+    /// 鸟帧专用子层:翻转(朝向跟随)只作用它——此前名牌是 layer 子层,layer 一镜像文字跟着镜像(老板实锤)
+    private var birdLayer: CALayer?
     private var timer: Timer?
 
     // MARK: - 演出 1:访客飞过(从屏边进 → 本鸟旁停 ~2.2s 对唱 → 飞出)
@@ -66,9 +68,9 @@ final class VisitorService {
     // MARK: - 演出 2:孵化彩蛋的蛋(原地摇摆 ~2.4s 后收窗;破壳瞬间由调用方接小鸟)
     func eggWobble(at point: CGPoint, on screen: NSScreen?) {
         prepareWindow(screen: screen)
-        guard let layer else { return }
+        guard layer != nil else { return }
         placeWindow(center: point, size: 70, screen: screen, scale: 1.0)   // 蛋改小(老板实测太大)
-        layer.contents = SpriteLibrary.shared.frame("egg_0")?.image
+        birdLayer?.contents = SpriteLibrary.shared.frame("egg_0")?.image
         var t: CFTimeInterval = 0
         startTimer(0.24) { [weak self] tick in
             guard let self else { return false }
@@ -76,7 +78,7 @@ final class VisitorService {
             if t >= 2.4 { self.hide(); return false }
             // egg_1/egg_2 交替 = 摇摆;每四拍回 egg_0 = 静止蓄力
             let name = (tick % 4 == 3) ? "egg_0" : ((tick % 2 == 0) ? "egg_1" : "egg_2")
-            layer.contents = SpriteLibrary.shared.frame(name)?.image
+            birdLayer?.contents = SpriteLibrary.shared.frame(name)?.image
             return true
         }
     }
@@ -128,7 +130,7 @@ final class VisitorService {
                 // 停留前段 idle 张望,应答后转 sing(对唱)
                 let seqNow = arrived ? (SpriteLibrary.shared.sequence("visitor_sing") ?? idleSeq) : idleSeq
                 let idx = Int(t / 0.2) % seqNow.count
-                layer.contents = SpriteLibrary.shared.frame(seqNow[idx])?.image
+                birdLayer?.contents = SpriteLibrary.shared.frame(seqNow[idx])?.image
             } else {
                 let tt = inPauseIsBehind(t: t, pauseStart: pauseStart, pauseDur: pauseDur)
                 let prog = min(1.0, tt / flyDur)
@@ -140,16 +142,14 @@ final class VisitorService {
                     let goingRight = c.x > lx
                     if goingRight != facingRightFly {
                         facingRightFly = goingRight
-                        layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
-                        layer.position = CGPoint(x: layer.bounds.midX, y: layer.bounds.midY)
-                        layer.setAffineTransform(goingRight
+                        birdLayer?.setAffineTransform(goingRight
                             ? CGAffineTransform(scaleX: -1, y: 1)
-                            : .identity)
+                            : .identity)   // 只翻鸟层:名牌(兄弟层)不连坐镜像
                     }
                 }
                 lastX = c.x
                 let idx = Int(t / 0.12) % flySeq.count
-                layer.contents = SpriteLibrary.shared.frame(flySeq[idx])?.image
+                birdLayer?.contents = SpriteLibrary.shared.frame(flySeq[idx])?.image
             }
             return true
         }
@@ -165,7 +165,7 @@ final class VisitorService {
     private func showVisitor(seqName: String, t: CFTimeInterval) {
         let seq = SpriteLibrary.shared.sequence(seqName) ?? ["visitor_idle_0"]
         let idx = Int(t / 0.2) % seq.count
-        layer?.contents = SpriteLibrary.shared.frame(seq[idx])?.image
+        birdLayer?.contents = SpriteLibrary.shared.frame(seq[idx])?.image
     }
 
     private func interpolate(points: [CGPoint], t: Double) -> CGPoint {
@@ -182,8 +182,8 @@ final class VisitorService {
     private func prepareWindow(screen: NSScreen?) {
         cancelTimer()
         // 池化窗复用前清残影:上次演出的最后一帧会先闪一帧(老板实锤"蛋出来前闪过鸟")
-        layer?.contents = nil
-        layer?.setAffineTransform(.identity)
+        birdLayer?.contents = nil
+        birdLayer?.setAffineTransform(.identity)
         nameTagLayer?.removeFromSuperlayer()
         nameTagLayer = nil
         if win == nil {
@@ -200,10 +200,14 @@ final class VisitorService {
             v.wantsLayer = true
             let l = CALayer()
             l.frame = CGRect(x: 0, y: 0, width: 160, height: 160)
-            l.contentsGravity = .resize
+            let bl = CALayer()
+            bl.frame = l.bounds
+            bl.contentsGravity = .resize
+            l.addSublayer(bl)
             v.layer = l
             w.contentView = v
             layer = l
+            birdLayer = bl
             win = w
         }
         win?.orderFrontRegardless()
@@ -214,6 +218,7 @@ final class VisitorService {
         win?.setFrame(CGRect(x: center.x - s / 2, y: center.y - s / 2, width: s, height: s),
                       display: false)
         layer?.frame = CGRect(x: 0, y: 0, width: s, height: s)
+        birdLayer?.frame = layer?.bounds ?? .zero
         // 缩放靠 contentsGravity=resize 拉伸帧(素材 256²,缩 0.6 质量足够)
     }
 

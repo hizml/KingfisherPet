@@ -678,7 +678,11 @@ final public class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
             return
         }
         for name in dual {
-            let it = NSMenuItem(title: name,
+            // 冷却标到鸟上(老板令):该邻居串门冷却中 → 名字后带剩余分钟
+            let title = isVisit && !lan.visitCooldownPassed(name)
+                ? "\(name) · 串门冷却 \(lan.visitCooldownRemainingMinutes(name)) 分"
+                : name
+            let it = NSMenuItem(title: title,
                                 action: isVisit ? #selector(lanVisitTargetAction) : #selector(lanFishTargetAction),
                                 keyEquivalent: "")
             it.target = self

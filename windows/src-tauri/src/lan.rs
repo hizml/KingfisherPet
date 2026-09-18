@@ -34,12 +34,14 @@ struct Ident {
     name: String,
     mid: String,
     theme: String,
+    token: String,   // 机器令牌:所有出站消息携带(空=未生成,兼容旧配置)
 }
 
 struct LanState {
     my_name: String,
     my_mid: String,
     theme: String,
+    my_token: String,
     /// 邻居名 → (写端, 最后收包时刻)。连接所有权:每条连接一个读线程。
     peers: HashMap<String, (Arc<Mutex<TcpStream>>, std::time::Instant)>,
     daemon: Option<ServiceDaemon>,
@@ -68,8 +70,9 @@ fn lan_running(gen: u64) -> bool {
 fn ident() -> Ident {
     let g = STATE.lock().unwrap_or_else(|e| e.into_inner());
     match g.as_ref() {
-        Some(st) => Ident { name: st.my_name.clone(), mid: st.my_mid.clone(), theme: st.theme.clone() },
-        None => Ident { name: String::new(), mid: String::new(), theme: String::new() },
+        Some(st) => Ident { name: st.my_name.clone(), mid: st.my_mid.clone(), theme: st.theme.clone(),
+                            token: st.my_token.clone() },
+        None => Ident { name: String::new(), mid: String::new(), theme: String::new(), token: String::new() },
     }
 }
 
@@ -83,6 +86,9 @@ fn send_line(stream: &Arc<Mutex<TcpStream>>, t: &str, id: &Ident) {
     if t == "HELLO" {
         obj["theme"] = serde_json::json!(id.theme);
         obj["mid"] = serde_json::json!(id.mid);
+    }
+    if !id.token.is_empty() {
+        obj["token"] = serde_json::json!(id.token);   // 身份令牌:接收端比对(假冒代号即丢)
     }
     let s = obj.to_string();
     if s.len() + 1 > MAX_LINE { return; }
@@ -101,6 +107,8 @@ fn handle_line(app: &AppHandle, line: &str, stream: &Arc<Mutex<TcpStream>>, peer
     if obj["v"].as_i64() != Some(PROTO_V) { return; }
     let t = match obj["t"].as_str() { Some(s) => s.to_string(), None => return };
     let name = obj["name"].as_str().unwrap_or("").to_string();
+
+    let token = obj["token"].as_str().unwrap_or("").to_string();
 
     if t == "HELLO" {
         let mid = obj["mid"].as_str().unwrap_or("");
@@ -147,16 +155,36 @@ fn handle_line(app: &AppHandle, line: &str, stream: &Arc<Mutex<TcpStream>>, peer
     match t.as_str() {
         "PING" => send_line(stream, "PONG", &id),
         "PONG" => {}
-        // 双向配对状态同步:「对方端已允许了我」。持久化进 lan_cfg.inbound 并广播给前端
+        // 双向配对状态同步:「对方端已允许了我」。令牌 first-wins 落账(已存不同令牌=疑似
+        // 假冒抢注,整条丢弃);持久化进 lan_cfg.inbound 并广播给前端
         "PAIR" => {
+            if !crate::lan_token_remember(&pname, &token) {
+                crate::kflog::kflog(&format!("lan: PAIR 令牌不符({pname}),疑似假冒,已丢弃"));
+                return;
+            }
             crate::lan_pair_update(&pname, true);
             emit_event(app, "pair", &pname);
         }
         "UNPAIR" => {
+            if let Some(stored) = crate::lan_token_of(&pname) {
+                if stored != token {
+                    crate::kflog::kflog(&format!("lan: UNPAIR 令牌不符({pname}),疑似假冒,已丢弃"));
+                    return;
+                }
+            }
             crate::lan_pair_update(&pname, false);
             emit_event(app, "pair", &pname);
         }
-        "PEEP" | "VISIT" | "FISH" | "BYE" => emit_event(app, &t.to_lowercase(), &pname),
+        "PEEP" | "VISIT" | "FISH" | "BYE" => {
+            // 身份校验:已配对邻居必须带对令牌,否则视作假冒丢弃(代号本身不是身份)
+            if let Some(stored) = crate::lan_token_of(&pname) {
+                if stored != token {
+                    crate::kflog::kflog(&format!("lan: {} 令牌不符({pname}),疑似假冒,已丢弃", t));
+                    return;
+                }
+            }
+            emit_event(app, &t.to_lowercase(), &pname)
+        }
         _ => {}
     }
 }
@@ -247,7 +275,8 @@ pub fn lan_start(app: AppHandle, name: String, theme: String) -> Result<(), Stri
     daemon.register(svc).map_err(|e| format!("register: {e}"))?;
 
     let generation = 1 + GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let id = Ident { name: name.clone(), mid: machine_id(), theme };
+    let cfg = crate::lan_cfg_load();
+    let id = Ident { name: name.clone(), mid: machine_id(), theme, token: cfg.my_token.clone() };
     let daemon2 = daemon.clone();   // browse 线程用(daemon 本体随后 move 进 STATE)
     {
         let mut g = STATE.lock().map_err(|e| e.to_string())?;
@@ -258,6 +287,7 @@ pub fn lan_start(app: AppHandle, name: String, theme: String) -> Result<(), Stri
             return Ok(());
         }
         *g = Some(LanState { my_name: name.clone(), my_mid: id.mid.clone(), theme: id.theme.clone(),
+                             my_token: id.token.clone(),
                              peers: HashMap::new(), daemon: Some(daemon), listener: Some(listener_stop),
                              generation, running: true });
     }
@@ -340,7 +370,7 @@ pub fn lan_start(app: AppHandle, name: String, theme: String) -> Result<(), Stri
             for n in &gone { st.peers.remove(n); }   // 遍历结束后再删(不重蹈遍历中删改)
             (targets, gone)
         };
-        let ping_id = Ident { name: hb_name.clone(), mid: String::new(), theme: String::new() };
+        let ping_id = match STATE.lock() { Ok(g) => match g.as_ref() { Some(st) => Ident { name: hb_name.clone(), mid: String::new(), theme: String::new(), token: st.my_token.clone() }, None => Ident { name: hb_name.clone(), mid: String::new(), theme: String::new(), token: String::new() } }, Err(_) => Ident { name: hb_name.clone(), mid: String::new(), theme: String::new(), token: String::new() } };
         for s in &targets { send_line(s, "PING", &ping_id); }
         for n in gone { emit_event(&app5, "peersChanged", &n); }
     });
@@ -361,7 +391,7 @@ pub fn lan_stop() -> Result<(), String> {
         (st.my_name.clone(), peers, daemon, listener)
     };   // 锁到此释放:以下网络收尾绝不持锁
     // 先广播 BYE(对端立即感知下线,不再干等 10s 超时),再硬断
-    let bye_id = Ident { name: my_name, mid: String::new(), theme: String::new() };
+    let bye_id = match crate::lan_cfg_load() { c => Ident { name: my_name, mid: String::new(), theme: String::new(), token: c.my_token } };
     for (_, (s, _)) in &peers { send_line(s, "BYE", &bye_id); }
     for (_, (s, _)) in peers {
         let _ = s.lock().map(|c| c.shutdown(Shutdown::Both));   // 读线程随即 EOF 退出
@@ -405,7 +435,7 @@ pub fn lan_send(kind: String, target: Option<String>) -> Result<Option<String>, 
         }
         (targets, st.my_name.clone())
     };   // 锁外发送(评审 R5)
-    let id = Ident { name: my_name, mid: String::new(), theme: String::new() };
+    let id = match crate::lan_cfg_load() { c => Ident { name: my_name, mid: String::new(), theme: String::new(), token: c.my_token } };
     let mut sent_to: Option<String> = None;
     for (n, s) in &targets { send_line(s, t, &id); if sent_to.is_none() { sent_to = Some(n.clone()); } }
     Ok(sent_to)
@@ -417,7 +447,7 @@ pub fn lan_notify_pair(name: &str, paired: bool, app: &AppHandle) {
         let g = STATE.lock().unwrap_or_else(|e| e.into_inner());
         let Some(st) = g.as_ref() else { return };
         match st.peers.get(name) {
-            Some((s, _)) => (s.clone(), Ident { name: st.my_name.clone(), mid: st.my_mid.clone(), theme: st.theme.clone() }),
+            Some((s, _)) => (s.clone(), Ident { name: st.my_name.clone(), mid: st.my_mid.clone(), theme: st.theme.clone(), token: st.my_token.clone() }),
             None => return,
         }
     };

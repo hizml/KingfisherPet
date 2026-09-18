@@ -34,14 +34,15 @@ public final class LanBirds {
         }
 
         /// 解析一行:超长/坏 JSON/版本不认识/类型不在白名单 → nil(调用方静默丢弃)
-        public static func decode(_ line: String) -> (type: String, v: Int, name: String, mid: String)? {
+        public static func decode(_ line: String) -> (type: String, v: Int, name: String, mid: String, token: String)? {
             guard line.count <= maxLine,
                   let d = line.data(using: .utf8),
                   let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
                   let type = obj["t"] as? String,
                   types.contains(type),
                   let v = obj["v"] as? Int, v == protoVersion else { return nil }
-            return (type, v, obj["name"] as? String ?? "", obj["mid"] as? String ?? "")
+            return (type, v, obj["name"] as? String ?? "", obj["mid"] as? String ?? "",
+                obj["token"] as? String ?? "")   // 身份令牌(冒名防线)
         }
 
         /// 机器指纹:IOPlatformUUID 哈希取 16 位十六进制(稳定/不可逆,不广播原始 UUID)。
@@ -75,6 +76,7 @@ public final class LanBirds {
 
     /// 事件回调(主线程;KingfisherPetApp 注入:配对弹窗/演出/托盘刷新)
     var onEvent: ((Event) -> Void)?
+    private var peepAnswerAt: [String: Double] = [:]   // 对唱应答冷却(每邻居 10s)
     enum Event {
         case peersChanged                       // 托盘刷新
         case peepReceived(String)               // 对唱:对方叫了一声(我们应答)
@@ -88,9 +90,35 @@ public final class LanBirds {
     private static let kAllowed = "kingfisher.lan.allowed"       // [String]
     private static let kDenied = "kingfisher.lan.denied"         // [String]
     private static let kInbound = "kingfisher.lan.inbound"       // [String] 对方端已允许了我(PAIR 同步)
+    private static let kMyToken = "kingfisher.lan.token"          // 本机身份令牌(随机 16 hex,一次生成)
+    private static let kTokens = "kingfisher.lan.tokens"          // [String:String] 邻居名→对方令牌(PAIR 首次落账)
     var allowed: [String] { UserDefaults.standard.stringArray(forKey: Self.kAllowed) ?? [] }
     var denied: [String] { UserDefaults.standard.stringArray(forKey: Self.kDenied) ?? [] }
     var inbound: [String] { UserDefaults.standard.stringArray(forKey: Self.kInbound) ?? [] }
+    /// 本机身份令牌(所有出站消息携带;代号可被冒名,令牌不能)
+    var myToken: String {
+        if let t = UserDefaults.standard.string(forKey: Self.kMyToken), !t.isEmpty { return t }
+        let t = String(format: "%016llx", UInt64.random(in: UInt64.min...UInt64.max))
+        UserDefaults.standard.set(t, forKey: Self.kMyToken)
+        return t
+    }
+    private var tokens: [String: String] {
+        UserDefaults.standard.dictionary(forKey: Self.kTokens) as? [String: String] ?? [:]
+    }
+    /// 令牌落账(first-wins:已存不同=疑似假冒抢注 → false)
+    @discardableResult
+    private func rememberToken(_ name: String, _ token: String) -> Bool {
+        guard !token.isEmpty else { return false }
+        var all = tokens
+        if let t = all[name] { return t == token }
+        all[name] = token
+        UserDefaults.standard.set(all, forKey: Self.kTokens)
+        return true
+    }
+    private func tokenMatches(_ name: String, _ token: String) -> Bool {
+        guard let t = tokens[name] else { return true }   // 未落账(还没交换过)不拦:动作另有 allowed 墙
+        return t == token
+    }
     func allowPeer(_ name: String) {
         if !allowed.contains(name) {
             UserDefaults.standard.set(allowed + [name], forKey: Self.kAllowed)
@@ -249,7 +277,9 @@ public final class LanBirds {
     // MARK: - 收发
 
     private func send(_ c: NWConnection, obj: [String: Any]) {
-        guard let d = Lan.encode(obj) else { return }
+        var o = obj
+        o["token"] = myToken   // 身份令牌:接收端比对(冒名代号即丢)
+        guard let d = Lan.encode(o) else { return }
         c.send(content: d, completion: .contentProcessed { _ in })
     }
 
@@ -290,7 +320,7 @@ public final class LanBirds {
         }
     }
 
-    private func handle(_ m: (type: String, v: Int, name: String, mid: String), conn c: NWConnection) {
+    private func handle(_ m: (type: String, v: Int, name: String, mid: String, token: String), conn c: NWConnection) {
         let key = ObjectIdentifier(c)
         if m.type == "HELLO" {
             // 同机实例互斥:机器指纹相同 → 回 BYE 断开,不入邻居册
@@ -323,6 +353,11 @@ public final class LanBirds {
         case "PING": send(c, obj: ["t": "PONG", "v": Lan.protoVersion, "name": myName])
         case "PONG": break
         case "PAIR", "UNPAIR":
+            // 令牌 first-wins 落账;已存不同令牌=疑似假冒抢注,整条丢弃
+            if !rememberToken(n, m.token) {
+                kfLog("lan: \(m.type) 令牌不符(\(n)),疑似假冒,已丢弃")
+                return
+            }
             let on = m.type == "PAIR"
             let cur = inbound
             let next = on ? (cur.contains(n) ? cur : cur + [n]) : cur.filter { $0 != n }
@@ -331,17 +366,34 @@ public final class LanBirds {
         
         case "PEEP":
             guard !denied.contains(n) else { send(c, obj: ["t": "BUSY", "v": Lan.protoVersion, "name": myName]); return }
+            guard tokenMatches(n, m.token) else {
+                kfLog("lan: PEEP 令牌不符(\(n)),疑似假冒,已丢弃"); return
+            }
+            // 对唱应答冷却(每邻居 10s:恶意刷叫防线的轻量修法)
+            let now = CACurrentMediaTime()
+            if let last = peepAnswerAt[n], now - last < 10 { return }
+            peepAnswerAt[n] = now
             onEvent?(.peepReceived(n))
         case "VISIT":
+            guard tokenMatches(n, m.token) else {
+                kfLog("lan: VISIT 令牌不符(\(n)),疑似假冒,已丢弃"); return
+            }
             // 冷却只由发送端守(每对一个钟,发送方记);接收端曾双重拦截=串门"没鸟飞过来"的一半真相
             guard allowed.contains(n) else {
                 send(c, obj: ["t": "BUSY", "v": Lan.protoVersion, "name": myName]); return
             }
             onEvent?(.visitRequest(n))
         case "FISH":
+            guard tokenMatches(n, m.token) else {
+                kfLog("lan: FISH 令牌不符(\(n)),疑似假冒,已丢弃"); return
+            }
             guard allowed.contains(n) else { send(c, obj: ["t": "BUSY", "v": Lan.protoVersion, "name": myName]); return }
             onEvent?(.fishReceived(n))
-        case "BYE": drop(n)
+        case "BYE":
+            guard tokenMatches(n, m.token) else {
+                kfLog("lan: BYE 令牌不符(\(n)),疑似假冒,已丢弃"); return
+            }
+            drop(n)
         default: break
         }
     }

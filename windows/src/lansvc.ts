@@ -80,8 +80,12 @@ export const lan = {
     }
     let peers: string[] = [];
     try { peers = await invoke<string[]>("lan_peers"); } catch { /* */ }
-    // v1.7.20 修复:此前没有任何前端调用 set_lan_menu → LAN_READY 恒 false → 串门/送鱼永远灰
-    await invoke("set_lan_menu", { on: true, ready: lan.pairReady(peers) }).catch(() => {});
+    // v1.7.20 修复:此前没有任何前端调用 set_lan_menu → LAN_READY 恒 false → 串门/送鱼永远灰。
+    // v1.7.24:cds=每只双向邻居的串门冷却剩余分钟(冷却标到鸟上,老板令)
+    const dualAll = peers.filter((n) => lan.allowed.includes(n) && lan.inbound.includes(n));
+    const cds: Record<string, number> = {};
+    for (const n of dualAll) { const m = lan.visitRemainingMin(n); if (m > 0) cds[n] = m; }
+    await invoke("set_lan_menu", { on: true, ready: dualAll.length > 0, cds: JSON.stringify(cds) }).catch(() => {});
     const dual = peers.filter((n) => lan.allowed.includes(n) && lan.inbound.includes(n));
     const half = peers.filter((n) => lan.allowed.includes(n) && !lan.inbound.includes(n));
     const pending = peers.filter((n) => !lan.allowed.includes(n) && !lan.denied.includes(n));
@@ -138,6 +142,7 @@ export const lan = {
   },
 };
 
+const peepAnswerAt: Record<string, number> = {};   // 对唱应答冷却(每邻居 10s:恶意刷叫防线的轻量修法)
 const zh2 = () => (localStorage.getItem("kf_lang") || "system") === "zh"
   || ((localStorage.getItem("kf_lang") || "system") === "system"
       && (navigator.language || "en").toLowerCase().startsWith("zh"));
@@ -157,6 +162,9 @@ export function setupLan() {
     if (!lan.enabled) return;
     if (type === "peep") {
       if (lan.denied.includes(name)) return;
+      const now = Date.now();
+      if (peepAnswerAt[name] && now - peepAnswerAt[name] < 10_000) return;   // 冷却中的对唱不答(防刷)
+      peepAnswerAt[name] = now;
       emit("log", `lan: 邻居对唱 ${name}`);
       emit("lan-behavior", { act: "peep", name }).catch(() => {});
     } else if (type === "visit") {
