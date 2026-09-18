@@ -1183,8 +1183,8 @@ export function lanVisit(name: string) {
 }
 
 /// 收到邻居送的鱼:喂鱼演出 + 亲密度 +2(每日上限内)
-export function lanFishGift(_name: string) {
-  emit("log", "lan: 收到邻居送的鱼");
+export function lanFishGift(name: string) {
+  emit("log", `lan: 收到 ${name} 送的鱼`);
   growth.add(2);
   feedFish();
 }

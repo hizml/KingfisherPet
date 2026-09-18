@@ -128,6 +128,11 @@ public final class LanBirds {
     func markVisit(_ name: String) {
         UserDefaults.standard.set(Date(), forKey: Self.visitKey(name))
     }
+    /// 串门冷却剩余分钟(0=可串;反馈文案用——老板两连撞冷却,只说"冷却中"等于没说)
+    func visitCooldownRemainingMinutes(_ name: String) -> Int {
+        let last = UserDefaults.standard.object(forKey: Self.visitKey(name)) as? Date ?? .distantPast
+        return max(1, Int(ceil((Lan.visitCooldown - Date().timeIntervalSince(last)) / 60)))
+    }
 
     // MARK: - 生命周期
 

@@ -110,24 +110,35 @@ export const lan = {
       await lan.flashStatus(zh ? (half.length ? "🐦 串门/送鱼需对方也确认配对(现在是单向)" : "🐦 没有已配对的在线邻居(设置里配对)") : "🐦 Need mutual pairing first");
       return;
     }
-    if (kind === "visit") {
-      const target = dual[0];
-      if (!lan.visitAllowed(target)) {
-        await lan.flashStatus(zh ? "🐦 串门冷却中(每对邻居 30 分钟一次)" : "🐦 Visit cooldown (30 min per pair)");
-        return;
-      }
-      lan.markVisit(target);
+    const target = dual[0];
+    if (kind === "visit" && !lan.visitAllowed(target)) {
+      const min = lan.visitRemainingMin(target);
+      await lan.flashStatus(zh ? `🐦 串门冷却中,还剩 ${min} 分钟(每对邻居 30 分钟一次)` : `🐦 Visit cooldown, ${min} min left`);
+      return;
     }
-    const sent = await lan.send(kind);
-    await lan.flashStatus(sent
-      ? (zh ? (kind === "visit" ? `🐦 已去 ${dual[0]} 家串门(对方屏幕见)` : `🐦 已给 ${dual[0]} 送鱼(对方+亲密度)`) : "🐦 Sent")
+    if (kind === "visit") lan.markVisit(target);
+    const sentTo = await lan.send(kind, kind === "visit" || kind === "fish" ? target : undefined);
+    await lan.flashStatus(sentTo
+      ? (zh ? (kind === "visit" ? `🐦 已去 ${sentTo} 家串门(对方屏幕见)` : `🐦 已给 ${sentTo} 送鱼(对方+亲密度)`) : "🐦 Sent")
       : (zh ? "🐦 发送失败(连接断开?)" : "🐦 Send failed"));
   },
   /// 行为机入口(main.ts 事件路由调用)
-  async send(kind: "peep" | "visit" | "fish"): Promise<boolean> {
-    try { return await invoke<boolean>("lan_send", { kind }); } catch { return false; }
+  /// 点对点纪律(v1.7.21):visit/fish 指定收件人;peep 广播(环境音)。
+  /// 返回收件人名(送达)/null(没送出)
+  async send(kind: "peep" | "visit" | "fish", target?: string): Promise<string | null> {
+    try { return await invoke<string | null>("lan_send", { kind, target: target ?? null }); } catch { return null; }
+  },
+  /// 串门冷却剩余分钟(0=可串)
+  visitRemainingMin(n: string): number {
+    const last = Number(localStorage.getItem(lan.lastVisitKey(n)));
+    if (!Number.isFinite(last) || last <= 0) return 0;
+    return Math.max(1, Math.ceil((last + 30 * 60_000 - Date.now()) / 60_000));
   },
 };
+
+const zh2 = () => (localStorage.getItem("kf_lang") || "system") === "zh"
+  || ((localStorage.getItem("kf_lang") || "system") === "system"
+      && (navigator.language || "en").toLowerCase().startsWith("zh"));
 
 /// 事件 → 行为机(behavior 经由全局事件转发,避免循环 import)。
 /// v1.7.18:先拉 Rust 权威 cfg 再判启停——此前凭隔离 localStorage 缓存直接 start,
@@ -149,9 +160,11 @@ export function setupLan() {
       if (!lan.allowed.includes(name) || !lan.visitAllowed(name)) return;
       lan.markVisit(name);
       emit("lan-behavior", { act: "visit", name }).catch(() => {});
+      void lan.flashStatus(zh2() ? `🐦 ${name} 来串门了(它在你屏幕上)` : `🐦 ${name} is visiting your screen`);
     } else if (type === "fish") {
       if (!lan.allowed.includes(name)) return;
       emit("lan-behavior", { act: "fish", name }).catch(() => {});
+      void lan.flashStatus(zh2() ? `🐦 收到 ${name} 送的鱼(亲密度+2)` : `🐦 Fish from ${name} (+2 bonding)`);
     }
   }).catch(() => {});
 }

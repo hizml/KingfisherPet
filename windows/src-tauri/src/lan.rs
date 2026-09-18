@@ -373,22 +373,42 @@ pub fn lan_stop() -> Result<(), String> {
     Ok(())
 }
 
-/// 前端主动动作:PEEP 广播 / VISIT / FISH(在线邻居选第一个配对项由前端管,这里广播给全部)
+/// 前端主动动作。v1.7.21 点对点纪律(老板实锤"送一条鱼不能全体+亲密度"):
+/// - PEEP 对唱 = 广播(环境音性质,全邻居应答)
+/// - VISIT/FISH = 点对点:target 指定收件人;未指定则发给第一个【双向已配对】在线邻居
+/// 返回 Some(收件人名) = 送达;None = 没有合格收件人
 #[tauri::command]
-pub fn lan_send(kind: String) -> Result<bool, String> {
+pub fn lan_send(kind: String, target: Option<String>) -> Result<Option<String>, String> {
     let t = match kind.as_str() {
         "peep" => "PEEP", "visit" => "VISIT", "fish" => "FISH",
-        _ => return Ok(false),
+        _ => return Ok(None),
     };
     let (targets, my_name) = {
         let g = STATE.lock().map_err(|e| e.to_string())?;
-        let Some(st) = g.as_ref() else { return Ok(false) };
-        (st.peers.values().map(|(s, _)| s.clone()).collect::<Vec<_>>(), st.my_name.clone())
+        let Some(st) = g.as_ref() else { return Ok(None) };
+        let mut targets: Vec<(String, Arc<Mutex<TcpStream>>)> = Vec::new();
+        match (&target, t) {
+            (Some(name), "VISIT") | (Some(name), "FISH") => {
+                if let Some((s, _)) = st.peers.get(name) { targets.push((name.clone(), s.clone())); }
+            }
+            (None, "VISIT") | (None, "FISH") => {
+                // 未指定目标:取第一个双向已配对(我允许+对方允许)的在线邻居
+                let c = crate::lan_cfg_load();
+                if let Some((n, (s, _))) = st.peers.iter()
+                    .find(|(n, _)| c.allowed.contains(n) && c.inbound.contains(n)) {
+                    targets.push((n.clone(), s.clone()));
+                }
+            }
+            _ => {   // PEEP:广播
+                for (n, (s, _)) in st.peers.iter() { targets.push((n.clone(), s.clone())); }
+            }
+        }
+        (targets, st.my_name.clone())
     };   // 锁外发送(评审 R5)
     let id = Ident { name: my_name, mid: String::new(), theme: String::new() };
-    let mut sent = false;
-    for s in &targets { send_line(s, t, &id); sent = true; }
-    Ok(sent)
+    let mut sent_to: Option<String> = None;
+    for (n, s) in &targets { send_line(s, t, &id); if sent_to.is_none() { sent_to = Some(n.clone()); } }
+    Ok(sent_to)
 }
 
 /// 本端配对决定 → 通知对端(不在线则忽略:重连握手时 HELLO 后会自动补发 PAIR)

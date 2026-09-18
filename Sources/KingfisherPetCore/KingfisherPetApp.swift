@@ -602,13 +602,14 @@ final public class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         case .peersChanged:
             refreshLanMenu()
             promptPairingForUnknownPeers()
-        case .peepReceived(let name):
-            petController?.behavior.lanAnswerPeep()
-            _ = name
+        case .peepReceived:
+            petController?.behavior.lanAnswerPeep()   // 对唱=环境音,不刷屏
         case .visitRequest(let name):
             petController?.behavior.lanVisit(from: name)
+            flashLanStatus(String(format: Language.t("lan.visitFrom"), name))   // 接收方感知(不看鸟也不错过)
         case .fishReceived(let name):
             petController?.behavior.lanFishGift(from: name)
+            flashLanStatus(String(format: Language.t("lan.fishFrom"), name))
         }
     }
 
@@ -692,8 +693,12 @@ final public class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
 
     @objc private func lanVisitAction() {
         if let why = lan.requestVisit() {
-            let key = why == "visitCooldown" ? "lan.visitCooldown"
-                : (why == "visitNeedDual" ? "lan.needDual" : "lan.noPeer")
+            if why == "visitCooldown", let t = lan.onlineNames.first(where: lan.allowed.contains) {
+                flashLanStatus(String(format: Language.t("lan.visitCooldownLeft"),
+                                      lan.visitCooldownRemainingMinutes(t)))
+                return
+            }
+            let key = why == "visitNeedDual" ? "lan.needDual" : "lan.noPeer"
             kfLog("lan: 串门未发出(\(why))")
             flashLanStatus(Language.t(key))
         } else if let target = lan.onlineNames.first(where: lan.isDualPaired) {
