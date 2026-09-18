@@ -46,7 +46,8 @@ export function sun(x: number, y: number, duration: number) { fx("sun", x, y, du
 /// 抖水水珠(雨停/预警解除,shake 序列配套)
 export function droplets(x: number, y: number) { fx("droplets", x, y); }
 /// 访客飞过(v1.5.x 成长):x/y=本鸟中心(屏幕物理);舞台侧算进出路径与对唱停留
-export function visitorPass(x: number, y: number, onArrive: (() => void) | null, tag?: string) { fx2("visitor", x, y, onArrive, tag); }
+/// 访客飞过(v1.5.x 成长):x/y=本鸟中心(屏幕物理);tag=串门名牌;theme=对方皮肤(访客穿自己的皮肤——老板令)
+export function visitorPass(x: number, y: number, onArrive: (() => void) | null, tag?: string, theme?: string) { fx2("visitor", x, y, onArrive, tag, theme); }
 /// 局域网串门:访客演出 + 头顶名牌(邻居代号)
 export async function visitorTag(x: number, y: number, tag: string) {
   try {
@@ -81,10 +82,10 @@ export async function childFlight2(x: number, y: number, ex: number, ey: number)
   } catch { /* */ }
 }
 /// 屏幕物理坐标直发版(成长演出拿到的已是屏幕坐标,不再做本地→屏幕换算)
-async function fx2(kind: string, px: number, py: number, cb: (() => void) | null, tag?: string) {
+async function fx2(kind: string, px: number, py: number, cb: (() => void) | null, tag?: string, theme?: string) {
   try {
     await ensurePoopStage();
-    await emit("fx", { kind, x: px, y: py, dur: 0, spd: settings.speed, tag });
+    await emit("fx", { kind, x: px, y: py, dur: 0, spd: settings.speed, tag, theme });
     if (cb) setTimeout(cb, 3400);   // 访客落定开唱的大致时刻(路径前段 42%×8s≈3.4s,Mac 同款参数)
   } catch { /* */ }
 }

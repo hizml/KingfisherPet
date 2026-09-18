@@ -19,8 +19,9 @@ final class VisitorService {
     // MARK: - 演出 1:访客飞过(从屏边进 → 本鸟旁停 ~2.2s 对唱 → 飞出)
     /// birdSings:访客落定开唱时回调(本鸟应答一声;由 Behavior 注入)
     /// nameTag(v1.7.0 局域网串门):停留期间头顶显示邻居代号,读完是谁来了
+    /// visitorTheme:对方皮肤(老板令:别的小鸟带着自己的皮肤来串门;空/未知回退本机)
     func visitorPass(near birdFrame: CGRect, on screen: NSScreen?, birdSings: @escaping () -> Void,
-                     nameTag: String? = nil) {
+                     nameTag: String? = nil, visitorTheme: String? = nil) {
         let area = screen?.visibleFrame ?? birdFrame
         let fromLeft = Bool.random()
         let enter = CGPoint(x: fromLeft ? area.minX - 160 : area.maxX + 160,
@@ -33,8 +34,8 @@ final class VisitorService {
         let exit = CGPoint(x: fromLeft ? area.maxX + 160 : area.minX - 160,
                            y: area.midY + CGFloat.random(in: 0...120))
         runFlight(points: [enter, stop, exit], total: 8.0, screen: screen, scale: 1.0,
-                  pauseAt: 0.42, pauseDur: 2.2, nameTag: nameTag) { [weak self] in
-            self?.showVisitor(seqName: "visitor_sing", t: CACurrentMediaTime())
+                  pauseAt: 0.42, pauseDur: 2.2, nameTag: nameTag, visitorTheme: visitorTheme) { [weak self] in
+            self?.showVisitor(seqName: "visitor_sing", t: CACurrentMediaTime(), guestTheme: visitorTheme)
             birdSings()
         }
         // 名牌不再用 asyncAfter(0.4) 延时挂:偶现首访丢失(老板实锤),改为 runFlight tick 内确定性创建
@@ -98,16 +99,27 @@ final class VisitorService {
     /// 沿折线匀速飞;总时长 total;pauseAt(飞行进度 0–1, nil=不停留)处停留 pauseDur 秒,
     /// 停留开始后调 onArrivePause(本鸟应答口)。停留期间播 idle/sing,飞行播 fly 帧。
     /// nameTag:起飞 0.4s 后在 tick 里创建(挂根层,不随鸟翻转)——不依赖 asyncAfter,演出被顶掉时随 tick 一同失效
+    /// visitorTheme:邻居皮肤(老板令)——帧优先取对方主题的 visitor 序列,未知/缺帧回退本机
     private func runFlight(points: [CGPoint], total: CFTimeInterval, screen: NSScreen?,
                            scale: CGFloat, pauseAt: Double?, pauseDur: CFTimeInterval,
-                           nameTag: String? = nil, onArrivePause: (() -> Void)?) {
+                           nameTag: String? = nil, visitorTheme: String? = nil,
+                           onArrivePause: (() -> Void)?) {
         prepareWindow(screen: screen)
         guard let layer, points.count >= 2 else { return }
         placeWindow(center: points[0], size: 160, screen: screen, scale: scale)
         let flyDur = max(0.1, total - pauseDur)
         let pauseStart: CFTimeInterval? = pauseAt.map { $0 * flyDur }
-        let flySeq = SpriteLibrary.shared.sequence("visitor_fly") ?? ["visitor_fly_2"]
-        let idleSeq = SpriteLibrary.shared.sequence("visitor_idle") ?? ["visitor_idle_0"]
+        let gTheme: String? = (visitorTheme?.isEmpty == false) ? visitorTheme : nil
+        let frameOf: (String) -> NSImage? = { name in
+            if let gTheme, let f = SpriteLibrary.shared.guestFrame(name, theme: gTheme) { return f.image }
+            return SpriteLibrary.shared.frame(name)?.image
+        }
+        let flySeq = (gTheme.flatMap { SpriteLibrary.shared.guestSequence("visitor_fly", theme: $0) }
+                      ?? SpriteLibrary.shared.sequence("visitor_fly")) ?? ["visitor_fly_2"]
+        let idleSeq = (gTheme.flatMap { SpriteLibrary.shared.guestSequence("visitor_idle", theme: $0) }
+                       ?? SpriteLibrary.shared.sequence("visitor_idle")) ?? ["visitor_idle_0"]
+        let singSeq = gTheme.flatMap { SpriteLibrary.shared.guestSequence("visitor_sing", theme: $0) }
+                         ?? SpriteLibrary.shared.sequence("visitor_sing")
         var arrived = false
         var tagShown = false
         var t: CFTimeInterval = 0
@@ -129,9 +141,9 @@ final class VisitorService {
                     onArrivePause?()
                 }
                 // 停留前段 idle 张望,应答后转 sing(对唱)
-                let seqNow = arrived ? (SpriteLibrary.shared.sequence("visitor_sing") ?? idleSeq) : idleSeq
+                let seqNow = arrived ? (singSeq ?? idleSeq) : idleSeq
                 let idx = Int(t / 0.2) % seqNow.count
-                birdLayer?.contents = SpriteLibrary.shared.frame(seqNow[idx])?.image
+                birdLayer?.contents = frameOf(seqNow[idx])
             } else {
                 let tt = inPauseIsBehind(t: t, pauseStart: pauseStart, pauseDur: pauseDur)
                 let prog = min(1.0, tt / flyDur)
@@ -150,7 +162,7 @@ final class VisitorService {
                 }
                 lastX = c.x
                 let idx = Int(t / 0.12) % flySeq.count
-                birdLayer?.contents = SpriteLibrary.shared.frame(flySeq[idx])?.image
+                birdLayer?.contents = frameOf(flySeq[idx])
             }
             return true
         }
@@ -163,10 +175,12 @@ final class VisitorService {
     }
 
     /// 停留期外部想换帧给 visitor_sing(应答回调里同步换唱姿,免等下一拍)
-    private func showVisitor(seqName: String, t: CFTimeInterval) {
-        let seq = SpriteLibrary.shared.sequence(seqName) ?? ["visitor_idle_0"]
+    private func showVisitor(seqName: String, t: CFTimeInterval, guestTheme: String? = nil) {
+        let seq = (guestTheme.flatMap { SpriteLibrary.shared.guestSequence(seqName, theme: $0) }
+                   ?? SpriteLibrary.shared.sequence(seqName)) ?? ["visitor_idle_0"]
         let idx = Int(t / 0.2) % seq.count
-        birdLayer?.contents = SpriteLibrary.shared.frame(seq[idx])?.image
+        birdLayer?.contents = (guestTheme.flatMap { SpriteLibrary.shared.guestFrame(seq[idx], theme: $0) }
+                               ?? SpriteLibrary.shared.frame(seq[idx]))?.image
     }
 
     private func interpolate(points: [CGPoint], t: Double) -> CGPoint {

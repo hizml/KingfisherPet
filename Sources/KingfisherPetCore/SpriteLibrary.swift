@@ -132,6 +132,43 @@ final public class SpriteLibrary {
         return cg
     }
 
+    // MARK: - 邻居皮肤(局域网串门:访客穿自己的皮肤来——老板令)
+    /// 只按需加载对方主题的 visitor_fly/idle/sing 三序列帧并缓存;不进主 frames/currentTheme 表
+    /// (主题未知/清单缺失/无访客帧 → 返回 nil,调用方回退本机皮肤,不静默半加载)
+    private var guestLibs: [String: (frames: [String: PetFrame], sequences: [String: [String]])] = [:]
+    func guestFrame(_ name: String, theme: String) -> PetFrame? { guestLib(theme)?.frames[name] }
+    func guestSequence(_ state: String, theme: String) -> [String]? { guestLib(theme)?.sequences[state] }
+    private func guestLib(_ theme: String) -> (frames: [String: PetFrame], sequences: [String: [String]])? {
+        guard !theme.isEmpty, SpriteLibrary.themes.contains(where: { $0.id == theme }) else { return nil }
+        if let cached = guestLibs[theme] { return cached }
+        guard let url = resourceURL("sprites", ext: "json", theme: theme),
+              let data = try? Data(contentsOf: url),
+              let m = try? JSONDecoder().decode(SpriteManifest.self, from: data) else {
+            kfLog("sprites: 邻居主题 \(theme) 清单加载失败,访客回退本机皮肤")
+            return nil
+        }
+        var seqs: [String: [String]] = [:]
+        var names = Set<String>()
+        for s in ["visitor_fly", "visitor_idle", "visitor_sing"] {
+            if let seq = m.sequences[s] { seqs[s] = seq; names.formUnion(seq) }
+        }
+        var fr: [String: PetFrame] = [:]
+        for name in names {
+            guard let url = resourceURL(name, ext: "png", theme: theme),
+                  let img = NSImage(contentsOf: url),
+                  let cg = cgImage(of: img) else { continue }
+            let (a, w, h, cleaned) = alphaBuffer(for: cg)
+            fr[name] = PetFrame(image: img, cgImage: cleaned ?? cg, alpha: a, w: w, h: h)
+        }
+        guard !fr.isEmpty else {
+            kfLog("sprites: 邻居主题 \(theme) 无访客帧,回退本机皮肤")
+            return nil
+        }
+        let lib = (fr, seqs)
+        guestLibs[theme] = lib
+        return lib
+    }
+
     private func cgImage(of nsImage: NSImage) -> CGImage? {
         nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil)
     }

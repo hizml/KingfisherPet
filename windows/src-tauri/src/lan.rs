@@ -44,6 +44,8 @@ struct LanState {
     my_token: String,
     /// 邻居名 → (写端, 最后收包时刻)。连接所有权:每条连接一个读线程。
     peers: HashMap<String, (Arc<Mutex<TcpStream>>, std::time::Instant)>,
+    /// 邻居名 → 对方皮肤主题(HELLO 携带;串门访客穿对方皮肤——老板令)
+    themes: HashMap<String, String>,
     daemon: Option<ServiceDaemon>,
     /// stop 用句柄(与 accept 线程共享同一底层 socket;accept 为非阻塞轮询,靠 running 退出)
     listener: Option<TcpListener>,
@@ -76,8 +78,10 @@ fn ident() -> Ident {
     }
 }
 
-fn emit_event(app: &AppHandle, kind: &str, name: &str) {
-    let _ = app.emit("lan-event", serde_json::json!({ "type": kind, "name": name }));
+fn emit_event(app: &AppHandle, kind: &str, name: &str, theme: Option<&str>) {
+    let mut p = serde_json::json!({ "type": kind, "name": name });
+    if let Some(th) = theme { p["theme"] = serde_json::json!(th); }   // VISIT 带:访客穿对方皮肤(老板令)
+    let _ = app.emit("lan-event", p);
 }
 
 /// 组一行并写 socket。纪律:只准在**不持有 STATE 锁**的上下文调用(身份由调用方传入)
@@ -124,6 +128,8 @@ fn handle_line(app: &AppHandle, line: &str, stream: &Arc<Mutex<TcpStream>>, peer
             } else {
                 is_new = !st.peers.contains_key(&name);
                 st.peers.entry(name.clone()).or_insert_with(|| (stream.clone(), std::time::Instant::now()));
+                let th = obj["theme"].as_str().unwrap_or("").chars().take(32).collect::<String>();
+                if !th.is_empty() { st.themes.insert(name.clone(), th); }   // 记住对方皮肤(串门访客要用)
             }
         }
         let id = ident();
@@ -140,7 +146,7 @@ fn handle_line(app: &AppHandle, line: &str, stream: &Arc<Mutex<TcpStream>>, peer
         }
         if is_new {
             crate::kflog::kflog(&format!("lan: 邻居上线 {}", name));
-            emit_event(app, "peersChanged", &name);
+            emit_event(app, "peersChanged", &name, None);
         }
         return;
     }
@@ -163,7 +169,7 @@ fn handle_line(app: &AppHandle, line: &str, stream: &Arc<Mutex<TcpStream>>, peer
                 return;
             }
             crate::lan_pair_update(&pname, true);
-            emit_event(app, "pair", &pname);
+            emit_event(app, "pair", &pname, None);
         }
         "UNPAIR" => {
             if let Some(stored) = crate::lan_token_of(&pname) {
@@ -173,7 +179,7 @@ fn handle_line(app: &AppHandle, line: &str, stream: &Arc<Mutex<TcpStream>>, peer
                 }
             }
             crate::lan_pair_update(&pname, false);
-            emit_event(app, "pair", &pname);
+            emit_event(app, "pair", &pname, None);
         }
         "PEEP" | "VISIT" | "FISH" | "BYE" => {
             // 身份校验:已配对邻居必须带对令牌,否则视作假冒丢弃(代号本身不是身份)
@@ -183,7 +189,12 @@ fn handle_line(app: &AppHandle, line: &str, stream: &Arc<Mutex<TcpStream>>, peer
                     return;
                 }
             }
-            emit_event(app, &t.to_lowercase(), &pname)
+            // VISIT 附带对方皮肤主题:接收端访客演出穿对方皮肤(老板令)
+            let vtheme = if t == "VISIT" {
+                STATE.lock().ok()
+                    .and_then(|g| g.as_ref().and_then(|st| st.themes.get(&pname).cloned()))
+            } else { None };
+            emit_event(app, &t.to_lowercase(), &pname, vtheme.as_deref())
         }
         _ => {}
     }
@@ -235,10 +246,10 @@ fn reader_loop(app: AppHandle, stream: TcpStream, mark_name: Option<String>, id:
             let mut g = match STATE.lock() { Ok(g) => g, Err(_) => return };
             if let Some(st) = g.as_mut() {
                 let same = st.peers.get(n).map(|(s, _)| Arc::ptr_eq(s, &stream)).unwrap_or(false);
-                if same { st.peers.remove(n); }
+                if same { st.peers.remove(n); st.themes.remove(n); }
             }
         }
-        emit_event(&app, "peersChanged", n);
+        emit_event(&app, "peersChanged", n, None);
     }
 }
 
@@ -288,7 +299,7 @@ pub fn lan_start(app: AppHandle, name: String, theme: String) -> Result<(), Stri
         }
         *g = Some(LanState { my_name: name.clone(), my_mid: id.mid.clone(), theme: id.theme.clone(),
                              my_token: id.token.clone(),
-                             peers: HashMap::new(), daemon: Some(daemon), listener: Some(listener_stop),
+                             peers: HashMap::new(), themes: HashMap::new(), daemon: Some(daemon), listener: Some(listener_stop),
                              generation, running: true });
     }
 
@@ -367,12 +378,12 @@ pub fn lan_start(app: AppHandle, name: String, theme: String) -> Result<(), Stri
                 if last.elapsed().as_secs() > PEER_TIMEOUT_SECS { gone.push(n.clone()); continue; }
                 targets.push(s.clone());
             }
-            for n in &gone { st.peers.remove(n); }   // 遍历结束后再删(不重蹈遍历中删改)
+            for n in &gone { st.peers.remove(n); st.themes.remove(n); }   // 遍历结束后再删(不重蹈遍历中删改)
             (targets, gone)
         };
         let ping_id = match STATE.lock() { Ok(g) => match g.as_ref() { Some(st) => Ident { name: hb_name.clone(), mid: String::new(), theme: String::new(), token: st.my_token.clone() }, None => Ident { name: hb_name.clone(), mid: String::new(), theme: String::new(), token: String::new() } }, Err(_) => Ident { name: hb_name.clone(), mid: String::new(), theme: String::new(), token: String::new() } };
         for s in &targets { send_line(s, "PING", &ping_id); }
-        for n in gone { emit_event(&app5, "peersChanged", &n); }
+        for n in gone { emit_event(&app5, "peersChanged", &n, None); }
     });
 
     crate::kflog::kflog(&format!("lan: 服务启动 {}", name));

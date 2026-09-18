@@ -34,7 +34,7 @@ public final class LanBirds {
         }
 
         /// 解析一行:超长/坏 JSON/版本不认识/类型不在白名单 → nil(调用方静默丢弃)
-        public static func decode(_ line: String) -> (type: String, v: Int, name: String, mid: String, token: String)? {
+        public static func decode(_ line: String) -> (type: String, v: Int, name: String, mid: String, token: String, theme: String)? {
             guard line.count <= maxLine,
                   let d = line.data(using: .utf8),
                   let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
@@ -42,7 +42,8 @@ public final class LanBirds {
                   types.contains(type),
                   let v = obj["v"] as? Int, v == protoVersion else { return nil }
             return (type, v, obj["name"] as? String ?? "", obj["mid"] as? String ?? "",
-                obj["token"] as? String ?? "")   // 身份令牌(冒名防线)
+                obj["token"] as? String ?? "",   // 身份令牌(冒名防线)
+                obj["theme"] as? String ?? "")   // 对方皮肤(HELLO 携带;串门访客穿它——老板令)
         }
 
         /// 机器指纹:IOPlatformUUID 哈希取 16 位十六进制(稳定/不可逆,不广播原始 UUID)。
@@ -67,6 +68,7 @@ public final class LanBirds {
     struct Peer {
         let conn: NWConnection
         var lastRecv: TimeInterval
+        var theme: String = ""   // 对方皮肤(HELLO 携带;串门访客穿对方皮肤——老板令)
     }
 
     private(set) var peers: [String: Peer] = [:]     // 邻居名 → 连接
@@ -80,7 +82,7 @@ public final class LanBirds {
     enum Event {
         case peersChanged                       // 托盘刷新
         case peepReceived(String)               // 对唱:对方叫了一声(我们应答)
-        case visitRequest(String)               // 串门请求(已配对才走到这)
+        case visitRequest(String, String)       // 串门请求(名, 对方皮肤——访客穿它;已配对才走到这)
         case fishReceived(String)               // 收到送鱼
     }
 
@@ -320,7 +322,7 @@ public final class LanBirds {
         }
     }
 
-    private func handle(_ m: (type: String, v: Int, name: String, mid: String, token: String), conn c: NWConnection) {
+    private func handle(_ m: (type: String, v: Int, name: String, mid: String, token: String, theme: String), conn c: NWConnection) {
         let key = ObjectIdentifier(c)
         if m.type == "HELLO" {
             // 同机实例互斥:机器指纹相同 → 回 BYE 断开,不入邻居册
@@ -345,6 +347,7 @@ public final class LanBirds {
                 onEvent?(.peersChanged)
                 kfLog("lan: 邻居上线 \(n)")
             }
+            peers[n]?.theme = m.theme   // 记住对方皮肤(主动连接先登记无名 Peer,对方 HELLO 回来时在此补上)
             return
         }
         guard let n = connNames[key], peers[n] != nil else { return }
@@ -382,7 +385,7 @@ public final class LanBirds {
             guard allowed.contains(n) else {
                 send(c, obj: ["t": "BUSY", "v": Lan.protoVersion, "name": myName]); return
             }
-            onEvent?(.visitRequest(n))
+            onEvent?(.visitRequest(n, peers[n]?.theme ?? ""))
         case "FISH":
             guard tokenMatches(n, m.token) else {
                 kfLog("lan: FISH 令牌不符(\(n)),疑似假冒,已丢弃"); return

@@ -613,8 +613,8 @@ final public class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         case .peepReceived:
             guard Settings.shared.lanDuet else { return }   // 对唱开关:关=听不见(不答)
             petController?.behavior.lanAnswerPeep()   // 对唱=环境音,不刷屏
-        case .visitRequest(let name):
-            petController?.behavior.lanVisit(from: name)
+        case .visitRequest(let name, let theme):
+            petController?.behavior.lanVisit(from: name, theme: theme)
             flashLanStatus(String(format: Language.t("lan.visitFrom"), name))   // 接收方感知(不看鸟也不错过)
         case .fishReceived(let name):
             petController?.behavior.lanFishGift(from: name)

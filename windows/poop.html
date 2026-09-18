@@ -143,7 +143,7 @@ function imgEl(name, w, h) {
 let fxSpd = 1;   // 动画速度(1=正常);时长 = 基准 / fxSpd(快→短)
 let zzzEl = null;   // zzz 单实例(macOS 池化单窗同款:每次 tick 替换,不堆叠)
 listen("fx", (e) => {
-  const { kind, x: px, y: py, dur, spd, sym, tag, ex: pex, ey: pey } = e.payload;
+  const { kind, x: px, y: py, dur, spd, sym, tag, theme: fxTheme, ex: pex, ey: pey } = e.payload;
   const fxArgs = { sym };   // mood 图标参数
   fxSpd = spd ?? 1;
   const x = px / DPR, y = py / DPR;   // 物理 → CSS 逻辑
@@ -256,8 +256,12 @@ listen("fx", (e) => {
     // 访客鸟/小鸟跟班(v1.5.x 成长;macOS VisitorService 同款参数):
     // visitor=屏边进→鸟旁停 2.2s(对唱)→飞出 8s;child=0.6× 绕鸟两圈 5.5s
     const isChild = kind === "child";
-    const sz = (isChild ? 96 : 160) / DPR;   // 0.6× 小鸟 / 1.0× 访客(macOS 同款 160;老板实锤 Win 访客偏小)
+    // CSS 逻辑尺寸(勿 /DPR:/DPR=物理钉死 160,125% 缩放下比主鸟窗口=160×DPR 小一截——老板实锤二连)
+    const sz = isChild ? 96 : 160;   // 0.6× 小鸟 / 1.0× 访客(与主鸟同身量)
+    // 访客穿自己的皮肤(老板令:别的小鸟带着自己的皮肤来串门);未知主题回退本机
+    const vTheme = ["flat", "clay", "pixel", "neon", "ink", "watercolor"].includes(String(fxTheme)) ? String(fxTheme) : theme;
     const img = imgEl("visitor_fly_2", sz, sz);
+    img.src = `${import.meta.env.BASE_URL}Sprites/${vTheme}/visitor_fly_2.png`;   // 首帧就穿对皮肤(imgEl 默认本机主题)
     img.style.position = "absolute"; img.style.willChange = "left,top";
     // 防御(老板实测:左上角卡死一只粉鸟):先钉初始位置再入 DOM——
     // 此前首帧 rAF 前以默认(0,0)渲染;step 一旦抛异常元素永不移除=僵尸贴图
@@ -280,7 +284,7 @@ listen("fx", (e) => {
     } else {
       const fromLeft = Math.random() < 0.5;
       const enter = [fromLeft ? -sz : W + sz, H * (0.15 + Math.random() * 0.3)];
-      const stop = [Math.min(Math.max(x + (fromLeft ? 90 : -90) / DPR, 90), W - 90), Math.max(y - 60 / DPR, 200)];
+      const stop = [Math.min(Math.max(x + (fromLeft ? 90 : -90), 90), W - 90), Math.max(y - 60, 200)];   // 逻辑 90/60(macOS 同款;勿 /DPR)
       const exit = [fromLeft ? W + sz : -sz, H * (0.15 + Math.random() * 0.4)];
       pts = [enter, stop, exit];
     }
@@ -291,25 +295,19 @@ listen("fx", (e) => {
     const singSeq = ["visitor_sing_0", "visitor_sing_1"];
     const t0 = performance.now();
     let sang = false;
+    let tagEl = null;   // 名牌:起飞 0.4s 后出现并每帧跟飞(老板令:跟着鸟走,不是停留才闪现)
     let lastX = null;   // 朝向跟随(macOS 同款)
+    const dropTag = () => { if (tagEl) { tagEl.remove(); tagEl = null; } };
     const step = (now) => {
-      try { stepInner(now); } catch (e) { img.remove(); try { emit("log", "fx visitor/child 异常自清:" + (e && e.stack ? e.stack : e)); } catch { /* */ } }   // 带堆栈:下次崩=精确行号
+      try { stepInner(now); } catch (e) { img.remove(); dropTag(); try { emit("log", "fx visitor/child 异常自清:" + (e && e.stack ? e.stack : e)); } catch { /* */ } }   // 带堆栈:下次崩=精确行号
     };
     const stepInner = (now) => {
       const t = (now - t0) / 1000 / (1 / fxSpd);   // 受全局动画速度
-      if (t >= total) { img.remove(); return; }
+      if (t >= total) { img.remove(); dropTag(); return; }
       const inPause = !isChild && t >= pauseStart && t < pauseStart + pauseDur;
       let px, py, seq;
       if (inPause) {
-        if (!sang && t >= pauseStart + 0.3) { sang = true;   // 落定半拍后开唱(macOS 同款)
-          if (tag) {   // 局域网串门名牌:停留点头顶代号气泡(深底白字+居中定位,老板实锤黑字无底难辨认)
-            const lab = document.createElement("div");
-            lab.textContent = String(tag);
-            lab.style.cssText = `position:fixed;left:${pts[1][0]}px;top:${pts[1][1] - sz / 2 - 30}px;transform:translateX(-50%);padding:2px 8px;border-radius:7px;background:rgba(38,38,40,.92);color:#fff;font-size:11px;font-weight:600;pointer-events:none;z-index:4;white-space:nowrap;`;
-            document.body.appendChild(lab);
-            setTimeout(() => lab.remove(), 2400);
-          }
-        }
+        if (!sang && t >= pauseStart + 0.3) { sang = true; }   // 落定半拍后开唱(macOS 同款)
         seq = sang ? singSeq : idleSeq;
         px = pts[1][0]; py = pts[1][1];   // 停留点
       } else {
@@ -322,9 +320,17 @@ listen("fx", (e) => {
         py = pts[i][1] + (pts[i + 1][1] - pts[i][1]) * seg;
         seq = flySeq;
       }
-      img.src = `${import.meta.env.BASE_URL}Sprites/${theme}/${seq[Math.floor(t / 0.12) % seq.length]}.png`;
+      img.src = `${import.meta.env.BASE_URL}Sprites/${vTheme}/${seq[Math.floor(t / 0.12) % seq.length]}.png`;
       img.style.left = (px - sz / 2) + "px";
       img.style.top = (py - sz / 2) + "px";
+      // 名牌跟飞:起飞半拍后挂上,随鸟每帧走(演出收尾/异常自清时 dropTag)
+      if (tag && !tagEl && t >= 0.4) {
+        tagEl = document.createElement("div");
+        tagEl.textContent = String(tag);
+        tagEl.style.cssText = "position:fixed;transform:translateX(-50%);padding:2px 8px;border-radius:7px;background:rgba(38,38,40,.92);color:#fff;font-size:11px;font-weight:600;pointer-events:none;z-index:4;white-space:nowrap;";
+        document.body.appendChild(tagEl);
+      }
+      if (tagEl) { tagEl.style.left = px + "px"; tagEl.style.top = (py - sz / 2 - 30) + "px"; }
       // 朝向跟随水平速度(macOS 同款):向右飞镜像,不倒着飞
       if (lastX != null && Math.abs(px - lastX) > 1) img.style.transform = (px > lastX) ? "scaleX(-1)" : "";
       lastX = px;

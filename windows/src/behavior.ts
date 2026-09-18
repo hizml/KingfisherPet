@@ -1161,10 +1161,10 @@ export async function hatchIn() {
 
 // ── 局域网小鸟(v1.7.0;main.ts 的 lan-behavior 事件路由到这里)──
 import { listen as _lanListen } from "@tauri-apps/api/event";
-void _lanListen<{ act: string; name: string }>("lan-behavior", (e) => {
+void _lanListen<{ act: string; name: string; theme?: string }>("lan-behavior", (e) => {
   const { act, name } = e.payload;
   if (act === "peep") lanAnswerPeep();
-  else if (act === "visit") lanVisit(name);
+  else if (act === "visit") lanVisit(name, e.payload.theme);
   else if (act === "fish") lanFishGift(name);
 });
 
@@ -1178,14 +1178,30 @@ export function lanAnswerPeep() {
   effects.notes(zx, 34);
 }
 
-/// 去邻居家串门:本鸟离家(隐藏)4 秒后飞回来——"串门=鸟真的离开"的逻辑正确性
-/// (老板实锤:点完串门自己的鸟原地不动,不符合直觉)。勿扰/隐藏中不出发。
+/// 去邻居家串门:本鸟真飞出屏再隐身,4 秒后飞回来——"串门=鸟真的离开"(老板令:像 Mac 一样,
+/// 此前瞬时隐身=点了串门鸟原地消失,不符合直觉)。勿扰/隐藏中不出发。
 export async function lanVisitDepart() {
   if (dndActive || !onScreen) return;
   beginAction();
-  onScreen = false;   // 离家期间="不在家":菜单/动作守卫自然生效(勿扰也不受影响)
   enter("fly");
-  try { await setMainVisible(false, "串门离家"); } catch { /* */ }
+  try {
+    const a = await area();
+    const o = await getOrigin();
+    const fromLeft = Math.random() < 0.5;
+    const target = { x: fromLeft ? a.minX - SIZE_P() - 8 : a.maxX + 8, y: o.y };
+    setFacing(target.x > o.x);   // 朝出口飞(macOS 同款;曾倒飞)
+    branch.hideBranch();
+    // 真飞出去:animateFlight 是 gen 门控(被打断 done 永不来),必须带超时兜底否则卡死离家流程
+    await new Promise<void>((res) => {
+      animateFlight(target, 0.6, () => res());
+      setTimeout(res, 1200);
+    });
+    onScreen = false;   // 离家期间="不在家":菜单/动作守卫自然生效(勿扰也不受影响)
+    await setMainVisible(false, "串门离家");
+  } catch {
+    onScreen = false;
+    try { await setMainVisible(false, "串门离家(直隐兜底)"); } catch { /* */ }
+  }
   emit("log", "lan: 串门离家(4s 后回来)");
   const back = async () => {
     // 回家:若期间进了勿扰/被隐藏,交给勿扰退出/显示开关,不硬闯
@@ -1202,12 +1218,12 @@ export async function lanVisitDepart() {
   setTimeout(() => { void back(); }, 4000);
 }
 
-/// 邻居来串门:访客演出带名牌(poop 舞台 tag 参数)
-export function lanVisit(name: string) {
-  emit("log", `lan: 邻居串门 ${name}(访客鸟+名牌)`);
+/// 邻居来串门:访客演出带名牌(poop 舞台 tag 参数)+ 穿对方自己的皮肤(老板令)
+export function lanVisit(name: string, theme?: string) {
+  emit("log", `lan: 邻居串门 ${name}(访客鸟+名牌+皮肤${theme ? ":" + theme : ""})`);
   const zx = facingRight ? 110 : 50;
   // v1.7.23 修复:此前只画名牌气泡、从不画访客鸟本体(=老板"没有鸟飞过来"的 Win 侧真凶)
-  effects.visitorPass(zx, 34, null, name);
+  effects.visitorPass(zx, 34, null, name, theme);
   void effects.toast(`🐦 ${name} 来串门了`);
   if (duetOn()) setTimeout(() => lanAnswerPeep(), 3400);   // 访客落定开唱时本鸟应答(对唱开关门控)
 }

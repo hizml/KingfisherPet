@@ -155,7 +155,7 @@ export function setupLan() {
     if (lan.enabled) void lan.start();
     else lan.syncTray();   // 关着也推一次状态(清托盘行)
   });
-  listen<{ type: string; name: string }>("lan-event", (e) => {
+  listen<{ type: string; name: string; theme?: string }>("lan-event", (e) => {
     const { type, name } = e.payload;
     if (type === "peersChanged") { void lan.loadCfg().then(() => lan.syncTray()); emit("lan-peers-changed", {}).catch(() => {}); return; }
     if (type === "pair") { void lan.loadCfg().then(() => lan.syncTray()); emit("lan-peers-changed", {}).catch(() => {}); return; }
@@ -170,7 +170,7 @@ export function setupLan() {
     } else if (type === "visit") {
       // 冷却只由发送端守(每对一个钟,发送方记);接收端曾双重拦截=老板实锤"没鸟飞过去"
       if (!lan.allowed.includes(name)) return;
-      emit("lan-behavior", { act: "visit", name }).catch(() => {});
+      emit("lan-behavior", { act: "visit", name, theme: e.payload.theme }).catch(() => {});   // theme=对方皮肤,访客穿它(老板令)
       void lan.flashStatus(zh2() ? `🐦 ${name} 来串门了(它在你屏幕上)` : `🐦 ${name} is visiting your screen`);
     } else if (type === "fish") {
       if (!lan.allowed.includes(name)) return;

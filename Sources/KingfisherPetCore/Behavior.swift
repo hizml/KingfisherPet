@@ -1315,14 +1315,14 @@ final class Behavior: PetViewDelegate {
                                   y: w.frame.maxY - 40), on: screen)
     }
 
-    /// 邻居来串门:访客演出带名牌(已配对+冷却过才会走到这)
-    func lanVisit(from name: String) {
+    /// 邻居来串门:访客演出带名牌+穿对方自己的皮肤(老板令;已配对+冷却过才会走到这)
+    func lanVisit(from name: String, theme: String = "") {
         guard onScreen, !dndActive, let w = window else { return }
-        kfLog("lan: 邻居串门 \(name)")
+        kfLog("lan: 邻居串门 \(name)(皮肤 \(theme.isEmpty ? "本机兜底" : theme))")
         Effects.toast("🐦 \(name) 来串门了", at: CGPoint(x: w.frame.midX, y: w.frame.maxY), on: screen)
         VisitorService.shared.visitorPass(near: w.frame, on: screen, birdSings: { [weak self] in
             self?.lanAnswerPeep()
-        }, nameTag: name)
+        }, nameTag: name, visitorTheme: theme)
     }
 
     /// 收到邻居送的鱼:喂鱼演出 + 亲密度 +2(算每日上限内)
