@@ -174,7 +174,25 @@ async function main() {
         const latest = (await r.json())?.tag_name;   // 限流/异常响应无 tag_name → 走 catch,不弹"发现新版本 undefined"
         if (typeof latest !== "string" || !latest) throw new Error("响应无 tag_name");
         const has = isNewer(latest, cur);
-        if (silent) { invoke("set_update_badge", { on: has }).catch(() => {}); return; }   // 静默:只标菜单
+        if (silent) {
+          invoke("set_update_badge", { on: has }).catch(() => {});
+          // 自动更新(老板令:静默检查发现新版直接装,不等用户点):仅 updater 产物可用时走;
+          // 不可用(无 latest.json/网络面不通)保持老行为只标菜单,交给手动检查兜底
+          if (has && !autoUpdating) {
+            let up: Awaited<ReturnType<typeof checkUpdate>> = null;
+            try { up = await checkUpdate(); } catch { /* */ }
+            if (up?.available) {
+              autoUpdating = true;   // 失败不回置:当天不再自动重试(避免打环),菜单标注兜底手动流
+              const shown = up.version || latest;
+              // 唯一触发=auto 页加载时 emit do-update(与手动点「立即更新」同一条路);
+              // 主窗不直接调 runInAppUpdate,否则页面事件+直调双份下载并发
+              await openUpdateDialog(`t=install&auto=1&latest=${encodeURIComponent(shown)}&cur=${cur}`,
+                zhUI() ? "翡 · 自动更新" : "Fei · Auto Update")
+                .catch(() => { autoUpdating = false; });
+            }
+          }
+          return;
+        }
         invoke("set_update_badge", { on: false }).catch(() => {});                          // 手动看过详情,清标注
         const tt = zhUI() ? "翡 · 检查更新" : "Fei · Update";
         if (!has) { await morph(`t=latest&cur=${cur}`); return; }
@@ -215,13 +233,14 @@ async function main() {
         status: weather.status,   // v1.7.18:设置窗状态行初值由真值驱动(此前恒「未开启」)
       });
     });
-    // v1.6.0:弹窗「立即更新」→ 下载验签安装 → 自动重启;失败回退浏览器下载
+    // v1.6.0:弹窗「立即更新」/自动更新 → 下载验签安装 → 自动重启;失败回退浏览器下载
     // 评审 W3:全路径通知弹窗(无包/失败都 emit update-fail)——按钮清空后不能让用户对死屏
-    listen("do-update", async () => {
+    let autoUpdating = false;   // 自动更新防重入(24h 周期与手动路径撞车时只跑一份)
+    async function runInAppUpdate() {
       try {
         const up = await checkUpdate();
         if (!up?.available) {
-          emit("log", "update: 点了更新但 updater 无可用包");
+          emit("log", "update: 触发更新但 updater 无可用包");
           emit("update-fail", { why: "no-package" }).catch(() => {});
           return;
         }
@@ -249,7 +268,8 @@ async function main() {
         // 评审 W3 补底:走到这里还没被 relaunch/安装器接管(4s 仍活着)= 异常路径,恢复弹窗按钮防死屏
         setTimeout(() => emit("update-fail", { why: "unexpected-return" }).catch(() => {}), 4000);
       }
-    });
+    }
+    listen("do-update", () => { void runInAppUpdate(); });
     setTimeout(() => doCheckUpdate(true), 30_000);
     setInterval(() => doCheckUpdate(true), 24 * 3600_000);
     listen("sleep", () => behavior.sleepForUserAbsence());   // Rust 监听到睡眠 → 鸟睡

@@ -158,10 +158,29 @@ public final class LanBirds {
     func markVisit(_ name: String) {
         UserDefaults.standard.set(Date(), forKey: Self.visitKey(name))
     }
+    /// 串门冷却剩余分钟(纯函数,0=可串/过期;剩不足 1 分按 1 计)。
+    /// 曾用 max(1,…) 永远 ≥1:过期后菜单永远挂着「冷却 1 分」、从未串过的也显示 1(Win 同款病同日修)
+    public static func visitCdMinutes(elapsed: TimeInterval) -> Int {
+        let remain = Lan.visitCooldown - elapsed
+        guard remain > 0 else { return 0 }
+        return max(1, Int(ceil(remain / 60)))
+    }
     /// 串门冷却剩余分钟(0=可串;反馈文案用——老板两连撞冷却,只说"冷却中"等于没说)
     func visitCooldownRemainingMinutes(_ name: String) -> Int {
         let last = UserDefaults.standard.object(forKey: Self.visitKey(name)) as? Date ?? .distantPast
-        return max(1, Int(ceil((Lan.visitCooldown - Date().timeIntervalSince(last)) / 60)))
+        return LanBirds.visitCdMinutes(elapsed: Date().timeIntervalSince(last))
+    }
+
+    /// 对唱应答冷却判定(纯函数,每邻居 10s:恶意刷叫防线的轻量修法)
+    public static func answerCdOk(last: TimeInterval?, now: TimeInterval) -> Bool {
+        guard let last else { return true }
+        return now - last >= 10
+    }
+
+    /// 访客皮肤白名单(纯函数;与 Win shared.mjs LAN_THEMES 同口径):
+    /// 只认六主题 id,空/未知回退本机(访客穿自己的皮肤——老板令)
+    public static func guestThemeValid(_ theme: String) -> Bool {
+        !theme.isEmpty && SpriteLibrary.themes.contains { $0.id == theme }
     }
 
     // MARK: - 生命周期
@@ -374,7 +393,7 @@ public final class LanBirds {
             }
             // 对唱应答冷却(每邻居 10s:恶意刷叫防线的轻量修法)
             let now = CACurrentMediaTime()
-            if let last = peepAnswerAt[n], now - last < 10 { return }
+            if !LanBirds.answerCdOk(last: peepAnswerAt[n], now: now) { return }
             peepAnswerAt[n] = now
             onEvent?(.peepReceived(n))
         case "VISIT":

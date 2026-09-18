@@ -139,7 +139,7 @@ final public class SpriteLibrary {
     func guestFrame(_ name: String, theme: String) -> PetFrame? { guestLib(theme)?.frames[name] }
     func guestSequence(_ state: String, theme: String) -> [String]? { guestLib(theme)?.sequences[state] }
     private func guestLib(_ theme: String) -> (frames: [String: PetFrame], sequences: [String: [String]])? {
-        guard !theme.isEmpty, SpriteLibrary.themes.contains(where: { $0.id == theme }) else { return nil }
+        guard LanBirds.guestThemeValid(theme) else { return nil }
         if let cached = guestLibs[theme] { return cached }
         guard let url = resourceURL("sprites", ext: "json", theme: theme),
               let data = try? Data(contentsOf: url),

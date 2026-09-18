@@ -101,3 +101,25 @@ export function qwIsNewAPI(host) {
 /// 天气刷新周期:成功 30 分钟,失败 5 分钟(v1.7.13 提交说明承诺过"失败 5 分钟重试"
 /// 但从未实现——固定 30 分钟。纯函数锁契约,weathersvc 消费,tests 直测)
 export function nextWeatherIntervalMs(succeeded) { return succeeded ? 30 * 60 * 1000 : 5 * 60 * 1000; }
+
+/// 串门冷却剩余分钟(v1.7.25+ 冷却标注到鸟上;ms 注入可测):未串过=0,剩不足 1 分钟按 1 计
+export function lanVisitCdMin(nowMs, lastVisitMs) {
+  if (lastVisitMs == null || !Number.isFinite(lastVisitMs) || lastVisitMs <= 0) return 0;
+  const remainMs = lastVisitMs + LAN_VISIT_COOLDOWN_MS - nowMs;
+  if (remainMs <= 0) return 0;   // 过期必须归零:曾用 max(1,…) 永远 ≥1,过期后菜单永远挂着「冷却 1 分」
+  return Math.max(1, Math.ceil(remainMs / 60000));
+}
+
+/// 对唱应答冷却判定(安全批:每邻居 10s,恶意刷叫防线的轻量修法;ms 注入可测)
+export const LAN_ANSWER_COOLDOWN_MS = 10_000;
+export function lanAnswerCdOk(nowMs, lastAnswerMs) {
+  if (lastAnswerMs == null) return true;
+  return nowMs - lastAnswerMs >= LAN_ANSWER_COOLDOWN_MS;
+}
+
+/// 访客皮肤回退(老板令:别的小鸟带自己的皮肤来串门):仅认六主题 id,
+/// 未知/恶意值回退本机主题(与 macOS SpriteLibrary.guestThemeValid 同口径)
+export const LAN_THEMES = ["flat", "clay", "pixel", "neon", "ink", "watercolor"];
+export function lanVisitorTheme(candidate, localTheme) {
+  return LAN_THEMES.includes(String(candidate || "")) ? String(candidate) : localTheme;
+}

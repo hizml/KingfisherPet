@@ -25,6 +25,7 @@ window.addEventListener("error", (e) => {
 </script>
 <script type="module">
 import { listen, emit } from "@tauri-apps/api/event";
+import { lanVisitorTheme } from "./src/shared.mjs";
 localStorage.setItem("kf_poop_probe", "module-import-ok " + Date.now());
 // 物理→CSS 换算(之前整个文件没声明,所有内容处理器首事件即崩)。
 // let+resize 刷新:切显示缩放后旧快照会让全部内容物错位(评审 M24)
@@ -259,7 +260,7 @@ listen("fx", (e) => {
     // CSS 逻辑尺寸(勿 /DPR:/DPR=物理钉死 160,125% 缩放下比主鸟窗口=160×DPR 小一截——老板实锤二连)
     const sz = isChild ? 96 : 160;   // 0.6× 小鸟 / 1.0× 访客(与主鸟同身量)
     // 访客穿自己的皮肤(老板令:别的小鸟带着自己的皮肤来串门);未知主题回退本机
-    const vTheme = ["flat", "clay", "pixel", "neon", "ink", "watercolor"].includes(String(fxTheme)) ? String(fxTheme) : theme;
+    const vTheme = lanVisitorTheme(fxTheme, theme);
     const img = imgEl("visitor_fly_2", sz, sz);
     img.src = `${import.meta.env.BASE_URL}Sprites/${vTheme}/visitor_fly_2.png`;   // 首帧就穿对皮肤(imgEl 默认本机主题)
     img.style.position = "absolute"; img.style.willChange = "left,top";

@@ -46,17 +46,48 @@ final public class UpdateService {
         }
     }
 
-    /// 自动检查(静默):有新版只在菜单项上标注(不弹窗,用户点开才出详情);
-    /// 无新版/失败 → 清标注或不动,一声不吭
+    /// 自动检查(静默):v1.7.27 起发现新版直接自动更新(老板令:不等用户点);
+    /// 无新版/失败 → 清标注一声不吭。自动更新不可用(非 .app 形态)时退回只标菜单老行为。
     private func autoCheck() {
-        fetchLatest { [weak self] latest, _ in
+        fetchLatest { [weak self] latest, digest in
             let cur = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "dev"
             let has = latest.map { Self.isNewer($0, than: cur) } ?? false
             self?.foundVersion = has ? latest : nil
             self?.menuItem?.title = has
                 ? Language.t("update.found")
                 : Language.t("menu.checkUpdate")
-            if has { kfLog("update: 自动检查发现新版 \(latest!),菜单已标注") }
+            if has {
+                kfLog("update: 自动检查发现新版 \(latest!),自动更新启动")
+                self?.autoInstall(latest: latest!, digest: digest)
+            }
+        }
+    }
+
+    /// 自动更新:进度窗即通知(权限明示),关窗=取消本次(不再"关了窗还偷偷下完强制重启",M20 同款);
+    /// 失败弹结果+前往下载兜底(A13 同款);成功路径 installUpdate 内自带重启。
+    private var autoInstalling = false
+    private func autoInstall(latest: String, digest: String?) {
+        guard Bundle.main.bundleURL.pathExtension == "app" else { return }   // 裸二进制/开发跑不热替换
+        guard !autoInstalling else { return }   // 24h 周期与唤醒补查撞车只跑一份
+        autoInstalling = true
+        let dlg = KFDialog.show(title: Language.t("update.found") + " \(latest)",
+                                message: Language.t("update.autoBody"),
+                                buttons: []) { _ in }
+        dlg.enterProgress(title: Language.t("update.downloading"))
+        dlg.onAction = { [weak self] idx in
+            if idx == -1 {   // 进度态关闭钮/Esc = 取消下载
+                Self.cancelInstall()
+                self?.autoInstalling = false
+            }
+        }
+        Self.installUpdate(tag: latest, expectedSHA256: digest, progress: { pct in
+            dlg.updateProgress(pct)
+        }) { [weak self] ok, why in
+            guard !ok else { return }   // ok 路径进程已重启,回调只在失败时被感知
+            kfLog("update: 自动更新失败(\(why))")
+            dlg.close()
+            self?.reportInstallFailure(why)
+            self?.autoInstalling = false
         }
     }
 

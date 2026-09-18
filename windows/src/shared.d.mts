@@ -16,3 +16,8 @@ export declare function lanVisitAllowed(nowMs: number, lastVisitMs: number | nul
 export declare function qwIsNewAPI(host: string): boolean;
 /// 天气刷新周期:成功 30 分钟,失败 5 分钟(毫秒;契约见 shared.mjs 同名实现)
 export declare function nextWeatherIntervalMs(succeeded: boolean): number;
+export declare function lanVisitCdMin(nowMs: number, lastVisitMs: number | null): number;
+export declare const LAN_ANSWER_COOLDOWN_MS: number;
+export declare function lanAnswerCdOk(nowMs: number, lastAnswerMs: number | null): boolean;
+export declare const LAN_THEMES: string[];
+export declare function lanVisitorTheme(candidate: unknown, localTheme: string): string;

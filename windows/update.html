@@ -57,6 +57,8 @@
       foundT2: zh ? "发现新版本" : "New Version",
       installM: (lat, cu) => zh ? `新版本 ${lat} 已就绪(当前 v${cu})。\n下载完成后会自动安装并重启,不用去网页。`
                                 : `Version ${lat} is ready (current v${cu}).\nDownload, install and restart — no browser needed.`,
+      autoM: (lat, cu) => zh ? `检测到新版本 ${lat}(当前 v${cu}),正在自动更新…\n下载完成后会自动安装并重启,不用操作。`
+                             : `New version ${lat} detected (current v${cu}); updating automatically…\nIt will install and restart on its own — nothing to do.`,
       openSet: zh ? "打开任务栏设置" : "Open Taskbar Settings",
       openRel: zh ? "打开 Releases 页" : "Open Releases", closeB: zh ? "关闭" : "Close",
     };
@@ -67,7 +69,10 @@
     const REL = "https://github.com/hizml/KingfisherPet/releases/latest";
     if (t === "install") {
       // v1.6.0 应用内更新:下载→验签→安装→自动重启;主窗 do-update 执行,这里显示进度
-      elT.textContent = L.foundT2; elM.textContent = L.installM(latest, cur);
+      // auto=1(v1.7.27 自动更新,老板令):静默检查发现新版直接开装,不等点击;无按钮,
+      // 下载完安装器接管重启;失败走下方 update-fail 恢复按钮(重试+前往下载)
+      const auto = q.get("auto") === "1";
+      elT.textContent = L.foundT2; elM.textContent = auto ? L.autoM(latest, cur) : L.installM(latest, cur);
       const prog = document.createElement("div");
       prog.style.cssText = "height:6px;border-radius:3px;background:#e3e8ea;overflow:hidden;margin-top:12px;display:none;";
       const bar = document.createElement("div");
@@ -75,13 +80,19 @@
       prog.appendChild(bar); elM.after(prog);
       const st = document.createElement("div");
       st.textContent = L.installing; st.style.cssText = "color:#777;font-size:12px;";
-      btn(L.installB, true, () => {
+      if (auto) {
         emit("do-update", null).catch(() => {});
-        elB.textContent = "";
         elB.appendChild(st);
         prog.style.display = "block";
-      });
-      btn(L.later, false, close);
+      } else {
+        btn(L.installB, true, () => {
+          emit("do-update", null).catch(() => {});
+          elB.textContent = "";
+          elB.appendChild(st);
+          prog.style.display = "block";
+        });
+        btn(L.later, false, close);
+      }
       // 进度:pct>=0 百分比;无 contentLength 时主窗发 pct:-1+已收字节 → 不定态动画+MB 数
       // (评审 🟢:此前 total 缺失时进度条全程 0%、完成瞬间跳 100%。html 内联脚本是纯 JS,禁 TS 语法)
       listen("update-progress", (e) => {

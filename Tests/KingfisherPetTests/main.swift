@@ -322,6 +322,29 @@ enum TestMain {
                    && Set(names).count > 1)
             expect("全部消息类型在白名单(v1.7.20 含 PAIR/UNPAIR)", LanBirds.Lan.types.count == 10
                    && LanBirds.Lan.types.contains("PAIR") && LanBirds.Lan.types.contains("UNPAIR"))
+            // v1.7.26 串门体验批:协议携带皮肤(访客穿对方皮肤——老板令)
+            expect("decode 携带 theme 解析", LanBirds.Lan.decode("{\"t\":\"HELLO\",\"v\":1,\"theme\":\"ink\"}")?.theme == "ink")
+            expect("decode 缺 theme 容忍(空串)", LanBirds.Lan.decode("{\"t\":\"HELLO\",\"v\":1}")?.theme == "")
+        }
+
+        // MARK: - 局域网语义(v1.7.26 测试补全批;Win shared.mjs 同口径)
+        print("[局域网语义]")
+        do {
+            // 串门冷却剩余分钟(真 bug 回归:曾 max(1,…) 过期后永远显示「冷却 1 分」)
+            expect("冷却:刚串=30 分", LanBirds.visitCdMinutes(elapsed: 0) == 30)
+            expect("冷却:剩不足 1 分按 1 计", LanBirds.visitCdMinutes(elapsed: 29 * 60 + 1) == 1)
+            expect("冷却:整点边界归零", LanBirds.visitCdMinutes(elapsed: 30 * 60) == 0)
+            expect("冷却:过期归零(不挂死 1 分)", LanBirds.visitCdMinutes(elapsed: 31 * 60) == 0)
+            expect("冷却:从未串过(distantPast)归零", LanBirds.visitCdMinutes(elapsed: 6.4e9) == 0)
+            // 对唱应答冷却(每邻居 10s)
+            expect("应答:首见放行", LanBirds.answerCdOk(last: nil, now: 100))
+            expect("应答:9.9s 内不答", LanBirds.answerCdOk(last: 100, now: 109.9) == false)
+            expect("应答:整 10s 放行", LanBirds.answerCdOk(last: 100, now: 110))
+            // 访客皮肤白名单(与 Win LAN_THEMES 同口径)
+            expect("皮肤:六主题全放行", ["flat", "clay", "pixel", "neon", "ink", "watercolor"].allSatisfy(LanBirds.guestThemeValid))
+            expect("皮肤:空串拒绝", LanBirds.guestThemeValid("") == false)
+            expect("皮肤:垃圾值拒绝(路径注入)", LanBirds.guestThemeValid("../../etc") == false)
+            expect("皮肤:大小写敏感不认", LanBirds.guestThemeValid("FLAT") == false)
         }
 
         // MARK: - 和风新版 API 判定(2025+ 专属 *.qweatherapi.com;Win shared.mjs 同口径)

@@ -1184,27 +1184,8 @@ export async function lanVisitDepart() {
   if (dndActive || !onScreen) return;
   beginAction();
   enter("fly");
-  try {
-    const a = await area();
-    const o = await getOrigin();
-    const fromLeft = Math.random() < 0.5;
-    const target = { x: fromLeft ? a.minX - SIZE_P() - 8 : a.maxX + 8, y: o.y };
-    setFacing(target.x > o.x);   // 朝出口飞(macOS 同款;曾倒飞)
-    branch.hideBranch();
-    // 真飞出去:animateFlight 是 gen 门控(被打断 done 永不来),必须带超时兜底否则卡死离家流程
-    await new Promise<void>((res) => {
-      animateFlight(target, 0.6, () => res());
-      setTimeout(res, 1200);
-    });
-    onScreen = false;   // 离家期间="不在家":菜单/动作守卫自然生效(勿扰也不受影响)
-    await setMainVisible(false, "串门离家");
-  } catch {
-    onScreen = false;
-    try { await setMainVisible(false, "串门离家(直隐兜底)"); } catch { /* */ }
-  }
-  emit("log", "lan: 串门离家(4s 后回来)");
+  // 回家:若期间进了勿扰/被隐藏,交给勿扰退出/显示开关,不硬闯
   const back = async () => {
-    // 回家:若期间进了勿扰/被隐藏,交给勿扰退出/显示开关,不硬闯
     if (dndActive || onScreen) return;
     try {
       const a = await area();
@@ -1215,7 +1196,27 @@ export async function lanVisitDepart() {
       await callOver();   // 回来直接飞到你身边(串门回来了!)
     } catch (e) { emit("log", "lan: 串门回家失败 " + String(e)); onScreen = true; }
   };
-  setTimeout(() => { void back(); }, 4000);
+  const gone = async () => {
+    onScreen = false;   // 离家期间="不在家":菜单/动作守卫自然生效(勿扰也不受影响)
+    try { await setMainVisible(false, "串门离家"); } catch { /* */ }
+    emit("log", "lan: 串门离家(4s 后回来)");
+    setTimeout(() => { void back(); }, 4000);
+  };
+  try {
+    const a = await area();
+    const o = await getOrigin();
+    const fromLeft = Math.random() < 0.5;
+    const target = { x: fromLeft ? a.minX - SIZE_P() - 8 : a.maxX + 8, y: o.y };
+    setFacing(target.x > o.x);   // 朝出口飞(macOS 同款;曾倒飞)
+    branch.hideBranch();
+    // macOS 同款语义(老板令):一切"离家"步骤都写在完成回调里——
+    // animateFlight 是 gen 门控,出发途中被打断(用户恰好点了鸟)=这次串门作废,鸟留下,不卡死不硬闯
+    const g = gen;
+    animateFlight(target, 0.6, () => {
+      if (dndActive || gen !== g) return;
+      void gone();
+    });
+  } catch { void gone(); }   // 坐标查询失败等极端兜底:仍按离家处理,流程不死
 }
 
 /// 邻居来串门:访客演出带名牌(poop 舞台 tag 参数)+ 穿对方自己的皮肤(老板令)

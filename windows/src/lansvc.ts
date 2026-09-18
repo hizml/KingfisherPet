@@ -2,7 +2,7 @@
 // 托盘行/事件接行为机。网络层在 Rust lan.rs(mdns-sd+TCP),协议纯函数在 shared.mjs。
 import { invoke } from "@tauri-apps/api/core";
 import { listen, emit } from "@tauri-apps/api/event";
-import { lanCodename, lanVisitAllowed } from "./shared.mjs";
+import { lanCodename, lanVisitAllowed, lanAnswerCdOk, lanVisitCdMin } from "./shared.mjs";
 
 type LanCfgT = { on: boolean; name: string; allowed: string[]; denied: string[]; inbound: string[] };
 
@@ -137,8 +137,7 @@ export const lan = {
   /// 串门冷却剩余分钟(0=可串)
   visitRemainingMin(n: string): number {
     const last = Number(localStorage.getItem(lan.lastVisitKey(n)));
-    if (!Number.isFinite(last) || last <= 0) return 0;
-    return Math.max(1, Math.ceil((last + 30 * 60_000 - Date.now()) / 60_000));
+    return lanVisitCdMin(Date.now(), Number.isFinite(last) ? last : null);
   },
 };
 
@@ -163,7 +162,7 @@ export function setupLan() {
     if (type === "peep") {
       if (lan.denied.includes(name)) return;
       const now = Date.now();
-      if (peepAnswerAt[name] && now - peepAnswerAt[name] < 10_000) return;   // 冷却中的对唱不答(防刷)
+      if (!lanAnswerCdOk(now, peepAnswerAt[name] ?? null)) return;   // 冷却中的对唱不答(防刷;判定入 shared.mjs 可测)
       peepAnswerAt[name] = now;
       emit("log", `lan: 邻居对唱 ${name}`);
       emit("lan-behavior", { act: "peep", name }).catch(() => {});

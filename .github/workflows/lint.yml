@@ -60,6 +60,12 @@ jobs:
       - name: 前端类型检查 + 构建(tsc --noEmit,不再产出会遮蔽 .ts 的 .js)
         working-directory: windows
         run: npm run build
+      - name: html 渲染冒烟(headless 真渲染;v1.7.4~24 关于窗无按钮潜伏 8 版的机器防线——grep/build 只证代码在,这里证页面活)
+        shell: bash
+        run: bash tools/render_smoke.sh
+      - name: Rust 单测(lan.rs 纯函数:hostname 派生/令牌判定/虚拟网卡判据/主题消毒)
+        working-directory: windows/src-tauri
+        run: cargo test
       - name: 版本号三处一致性(tauri.conf / package.json / Cargo.toml;版本比较 bug 同类:漂移在正常流里隐形)
         shell: bash
         run: |

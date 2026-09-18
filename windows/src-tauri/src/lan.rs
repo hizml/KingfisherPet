@@ -172,22 +172,18 @@ fn handle_line(app: &AppHandle, line: &str, stream: &Arc<Mutex<TcpStream>>, peer
             emit_event(app, "pair", &pname, None);
         }
         "UNPAIR" => {
-            if let Some(stored) = crate::lan_token_of(&pname) {
-                if stored != token {
-                    crate::kflog::kflog(&format!("lan: UNPAIR 令牌不符({pname}),疑似假冒,已丢弃"));
-                    return;
-                }
+            if !lan_token_ok(crate::lan_token_of(&pname).as_deref(), &token) {
+                crate::kflog::kflog(&format!("lan: UNPAIR 令牌不符({pname}),疑似假冒,已丢弃"));
+                return;
             }
             crate::lan_pair_update(&pname, false);
             emit_event(app, "pair", &pname, None);
         }
         "PEEP" | "VISIT" | "FISH" | "BYE" => {
             // 身份校验:已配对邻居必须带对令牌,否则视作假冒丢弃(代号本身不是身份)
-            if let Some(stored) = crate::lan_token_of(&pname) {
-                if stored != token {
-                    crate::kflog::kflog(&format!("lan: {} 令牌不符({pname}),疑似假冒,已丢弃", t));
-                    return;
-                }
+            if !lan_token_ok(crate::lan_token_of(&pname).as_deref(), &token) {
+                crate::kflog::kflog(&format!("lan: {} 令牌不符({pname}),疑似假冒,已丢弃", t));
+                return;
             }
             // VISIT 附带对方皮肤主题:接收端访客演出穿对方皮肤(老板令)
             let vtheme = if t == "VISIT" {
@@ -260,7 +256,7 @@ pub fn lan_start(app: AppHandle, name: String, theme: String) -> Result<(), Stri
     if name.is_empty() || name.len() > 64 || name.chars().any(|c| c.is_control()) {
         return Err(format!("lan: 非法代号(len={})", name.len()));
     }
-    let theme = theme.trim().chars().take(32).collect::<String>();
+    let theme = clean_lan_theme(&theme);
     {
         let g = STATE.lock().map_err(|e| e.to_string())?;
         if g.as_ref().map(|s| s.running).unwrap_or(false) { return Ok(()); }
@@ -493,7 +489,39 @@ pub fn lan_peers() -> Vec<String> {
 /// 「服务启动」日志,= Win 端 mDNS 服务从未注册成功过(v1.7.18 的错误留痕首次照出)。
 /// 隐私红线(广播不含主机名):用机器指纹哈希派生,不泄漏 COMPUTERNAME。
 fn lan_hostname() -> String {
-    format!("kf-{}.local.", &machine_id()[..8])
+    hostname_from_mid(&machine_id())
+}
+
+/// mDNS 主机名派生(纯函数):kf-<指纹前 8 位>.local. —— mdns-sd register 强制 .local. 后缀
+/// (v1.7.19 真凶),指纹过短也不能 panic(切片会越界,chars().take 任意输入安全)
+fn hostname_from_mid(mid: &str) -> String {
+    format!("kf-{}.local.", mid.chars().take(8).collect::<String>())
+}
+
+/// 令牌判定(纯函数):未落账=首见放行(调用方随 PAIR first-wins 落账);已落账必须严格相等。
+/// 空串对已落账邻居=冒名,拒绝(代号本身不是身份)
+fn lan_token_ok(stored: Option<&str>, received: &str) -> bool {
+    match stored {
+        None => true,
+        Some(s) => s == received,
+    }
+}
+
+/// 虚拟网卡判据(纯函数,cfg 无关):IfType 环回/伪虚拟/隧道(RFC 2863:24/53/131),
+/// 或友好名含已知虚拟标识(大小写不敏感)。WSL vSwitch 组播源选错(v1.7.18 真机实锤)靠它排除
+fn adapter_is_virtual(if_type: u32, friendly_name: &str) -> bool {
+    const BAD_TYPES: [u32; 3] = [24, 53, 131];
+    const MARKERS: [&str; 13] = [
+        "wsl", "default switch", "内部", "internal", "zerotier", "tailscale",
+        "openvpn", "tap-", "tun ", "loopback", "vmware", "vbox", "bluestacks",
+    ];
+    let lf = friendly_name.to_lowercase();
+    BAD_TYPES.contains(&if_type) || MARKERS.iter().any(|m| lf.contains(m))
+}
+
+/// 皮肤主题消毒(纯函数):去首尾空白+限 32 字符(IPC 面不信任前端载荷,与代号校验同纪律)
+fn clean_lan_theme(theme: &str) -> String {
+    theme.trim().chars().take(32).collect()
 }
 
 /// 机器指纹:机器名 FNV 哈希 16 位十六进制(稳定/不可逆,不广播原名)。
@@ -527,13 +555,6 @@ fn virtual_adapter_ipv4s() -> Vec<Ipv4Addr> {
     };
     const AF_INET: u32 = 2;
     const IF_OPER_STATUS_UP: i32 = 1;
-    // IfType(IFTYPE, RFC 2863):24=softwareLoopback 53=propVirtual 131=tunnel
-    const BAD_TYPES: [u32; 3] = [24, 53, 131];
-    const MARKERS: [&str; 13] = [
-        "wsl", "default switch", "内部", "internal", "zerotier", "tailscale",
-        "openvpn", "tap-", "tun ", "loopback", "vmware", "vbox", "bluestacks",
-    ];
-
     let flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER;
     let mut buf: Vec<u8> = vec![0; 16 * 1024];
     let mut size: u32 = buf.len() as u32;
@@ -560,8 +581,7 @@ fn virtual_adapter_ipv4s() -> Vec<Ipv4Addr> {
                 } else {
                     String::from_utf16_lossy(a.FriendlyName.as_wide())
                 };
-                let lf = fname.to_lowercase();
-                if BAD_TYPES.contains(&a.IfType) || MARKERS.iter().any(|m| lf.contains(m)) {
+                if adapter_is_virtual(a.IfType, &fname) {
                     let mut ua = a.FirstUnicastAddress;
                     while !ua.is_null() {
                         let u = &*ua;
@@ -583,3 +603,72 @@ fn virtual_adapter_ipv4s() -> Vec<Ipv4Addr> {
 
 #[cfg(not(windows))]
 fn virtual_adapter_ipv4s() -> Vec<Ipv4Addr> { vec![] }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── hostname 派生(v1.7.19 真凶回归:mdns-sd 强制 .local. 后缀)──
+    #[test]
+    fn hostname_format() {
+        assert_eq!(hostname_from_mid("abcdef0123456789"), "kf-abcdef01.local.");
+    }
+    #[test]
+    fn hostname_short_mid_no_panic() {
+        // 曾用 &mid[..8] 切片:指纹过短会越界 panic;chars().take 任意输入安全
+        assert_eq!(hostname_from_mid("ab"), "kf-ab.local.");
+        assert_eq!(hostname_from_mid(""), "kf-.local.");
+    }
+
+    // ── 令牌判定(安全批:代号不是身份)──
+    #[test]
+    fn token_first_contact_passes() {
+        assert!(lan_token_ok(None, "anything"));
+    }
+    #[test]
+    fn token_match_passes() {
+        assert!(lan_token_ok(Some("deadbeef"), "deadbeef"));
+    }
+    #[test]
+    fn token_mismatch_rejected() {
+        assert!(!lan_token_ok(Some("deadbeef"), "baadf00d"));
+    }
+    #[test]
+    fn token_empty_spoof_rejected() {
+        assert!(!lan_token_ok(Some("deadbeef"), ""));
+    }
+
+    // ── 虚拟网卡判据(v1.7.18 WSL 组播源真凶回归)──
+    #[test]
+    fn adapter_by_if_type() {
+        assert!(adapter_is_virtual(24, "任意名"));   // softwareLoopback
+        assert!(adapter_is_virtual(53, "任意名"));   // propVirtual
+        assert!(adapter_is_virtual(131, "任意名"));  // tunnel
+        assert!(!adapter_is_virtual(6, "以太网"));    // ethernetCsmacd=物理
+    }
+    #[test]
+    fn adapter_by_markers() {
+        for name in ["WSL", "Default Switch", "内部", "ZeroTier", "Tailscale",
+                     "OpenVPN TAP", "TAP-Windows Adapter", "TUN Device", "Loopback",
+                     "VMware Adapter", "VBox NIC", "BlueStacks"] {
+            assert!(adapter_is_virtual(6, name), "应判虚拟: {name}");
+        }
+    }
+    #[test]
+    fn adapter_case_insensitive() {
+        assert!(adapter_is_virtual(6, "vMwArE NeTwOrK"));
+    }
+    #[test]
+    fn adapter_physical_names_pass() {
+        assert!(!adapter_is_virtual(6, "Realtek PCIe GbE Family Controller"));
+        assert!(!adapter_is_virtual(71, "Intel(R) Wi-Fi 6 AX201 160MHz"));   // 71=IEEE80211
+    }
+
+    // ── 主题消毒(IPC 面不信任前端载荷)──
+    #[test]
+    fn theme_trims_and_caps() {
+        assert_eq!(clean_lan_theme("  neon "), "neon");
+        assert_eq!(clean_lan_theme(&"x".repeat(40)).chars().count(), 32);
+        assert_eq!(clean_lan_theme(""), "");
+    }
+}
