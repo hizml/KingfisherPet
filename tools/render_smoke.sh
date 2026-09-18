@@ -48,10 +48,19 @@ chk "update about"  "$(nbtn 'update.html?t=about&cur=1.0.0')" 3
 dump 'update.html?t=checking' | grep -q 'id="t">[^<]' || { echo "::error::渲染冒烟:checking 状态未渲染(脚本死了?)"; fail=1; }
 dump 'update.html?t=about&cur=1.7.27' | grep -q '1\.7\.27' || { echo "::error::渲染冒烟:关于窗无版本行(老板令:关于类 UI 必带版本号)"; fail=1; }
 
+# 更新流(v1.7.27 自动更新):手动 install=2 按钮;auto=0 按钮+文案+进度条必须显示——
+# auto 页脚本崩=自动更新静默失效(用户永远停在旧版),关于窗按钮潜伏 8 版的同款死法,必须机器拦
+chk "update install(手动)" "$(nbtn 'update.html?t=install&latest=9.9.9&cur=1.0.0')" 2
+chk "update install auto(自动)" "$(nbtn 'update.html?t=install&auto=1&latest=9.9.9&cur=1.0.0')" 0
+dump 'update.html?t=install&auto=1&latest=9.9.9&cur=1.0.0' | grep -q '正在自动更新\|updating automatically' \
+  || { echo "::error::渲染冒烟:自动更新窗文案未渲染(脚本死了?)"; fail=1; }
+dump 'update.html?t=install&auto=1&latest=9.9.9&cur=1.0.0' | grep -q 'display: block' \
+  || { echo "::error::渲染冒烟:自动更新窗进度条未显示"; fail=1; }
+
 # settings.html 关键控件存在(TDZ/脚本死=全失踪)
 sdom=$(dump 'settings.html')
 for id in lanOn lanDuet wxKeyTest themes langs; do
   echo "$sdom" | grep -q "id=\"$id\"" || { echo "::error::渲染冒烟:settings.html 缺 #$id"; fail=1; }
 done
-[ $fail -eq 0 ] && echo "渲染冒烟全过(update 六状态 + settings 五控件)"
+[ $fail -eq 0 ] && echo "渲染冒烟全过(update 六状态+更新流手动/自动 + settings 五控件)"
 exit $fail
