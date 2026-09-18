@@ -38,6 +38,11 @@ final public class Settings {
         get { Defaults.bool(forKey: K.lanBirds, default: false) }
         set { set(K.lanBirds, newValue) }
     }
+    /// 参与对唱(v1.7.23 老板令;默认开):关=不应答邻居+自己的鸣唱不广播(点鸟/本地唱不受影响)
+    var lanDuet: Bool {
+        get { Defaults.bool(forKey: K.lanDuet, default: true) }
+        set { set(K.lanDuet, newValue) }
+    }
     /// 主题 id(对应 SpriteLibrary.themes)
     var theme: String {
         get { Defaults.string(forKey: K.theme, default: "flat") }
@@ -108,6 +113,7 @@ final public class Settings {
         static let soundOn  = "kingfisher.settings.soundOn"
         static let peckScreen = "kingfisher.settings.peckScreen"
         static let lanBirds = "kingfisher.settings.lanBirds"
+        static let lanDuet = "kingfisher.settings.lanDuet"
         static let theme    = "kingfisher.settings.theme"
         static let weatherEnabled = "kingfisher.settings.weatherEnabled"
         static let weatherCity    = "kingfisher.settings.weatherCity"
@@ -437,6 +443,14 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
         lanBtn.autoresizingMask = [.width]
         root.addSubview(lanBtn)
         lanButton = lanBtn
+        // 对唱开关(v1.7.23 老板令):关=不应答邻居+自己的鸣唱不广播
+        y -= 24
+        let duetBtn = NSButton(checkboxWithTitle: Language.t("settings.lan.duet"),
+                               target: self, action: #selector(duetToggled(_:)))
+        duetBtn.state = s.lanDuet ? .on : .off
+        duetBtn.frame = NSRect(x: margin, y: y, width: root.bounds.width - margin * 2, height: 22)
+        duetBtn.autoresizingMask = [.width]
+        root.addSubview(duetBtn)
         // 说明两行:昵称(随机代号,广播内容仅此+主题名)+ AP 隔离提示(老板拍板:设置里提示一句)
         y -= 34
         let lanNote = NSTextField(wrappingLabelWithString:
@@ -642,6 +656,10 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
                 }
             }
         }.resume()
+    }
+
+    @objc private func duetToggled(_ b: NSButton) {
+        Settings.shared.lanDuet = (b.state == .on)   // 门控读实时值,无需重启
     }
 
     @objc private func lanToggled(_ b: NSButton) {

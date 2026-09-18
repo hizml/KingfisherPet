@@ -293,7 +293,7 @@ listen("fx", (e) => {
     let sang = false;
     let lastX = null;   // 朝向跟随(macOS 同款)
     const step = (now) => {
-      try { stepInner(now); } catch (e) { img.remove(); try { emit("log", "fx visitor/child 异常自清:" + e); } catch { /* */ } }
+      try { stepInner(now); } catch (e) { img.remove(); try { emit("log", "fx visitor/child 异常自清:" + (e && e.stack ? e.stack : e)); } catch { /* */ } }   // 带堆栈:下次崩=精确行号
     };
     const stepInner = (now) => {
       const t = (now - t0) / 1000 / (1 / fxSpd);   // 受全局动画速度
@@ -314,7 +314,7 @@ listen("fx", (e) => {
         px = pts[1][0]; py = pts[1][1];   // 停留点
       } else {
         const tt = (pauseStart >= 0 && t >= pauseStart + pauseDur) ? t - pauseDur : t;
-        const prog = Math.min(1, tt / flyDur);
+        const prog = Math.max(0, Math.min(1, tt / flyDur));   // 双向钳制:负值=负索引=pts[undefined] 崩(老板实锤"没鸟飞过来"的同款自清)
         const f = prog * (pts.length - 1);
         const i = Math.min(pts.length - 2, Math.floor(f));
         const seg = f - i;
@@ -331,6 +331,14 @@ listen("fx", (e) => {
       requestAnimationFrame(step);
     };
     requestAnimationFrame(step);
+  } else if (kind === "toast") {
+    // LAN 事件气泡(收到鱼/串门):鸟旁浮动通知,3s 淡出——托盘行只在开菜单时可见,等于没通知
+    const el = document.createElement("div");
+    el.textContent = String(tag || "");
+    el.style.cssText = `position:fixed;left:${Math.min(Math.max(x - 90, 12), innerWidth - 220)}px;top:${Math.max(y - 120, 12)}px;padding:6px 12px;border-radius:10px;background:rgba(38,38,40,.88);color:#fff;font-size:12.5px;font-weight:500;pointer-events:none;z-index:9;transition:opacity .6s;white-space:nowrap;`;
+    document.body.appendChild(el);
+    setTimeout(() => { el.style.opacity = "0"; }, 2400);
+    setTimeout(() => el.remove(), 3200);
   } else if (kind === "egg") {
     // 蛋摇摆(孵化彩蛋;macOS eggWobble 同款节奏):egg_1/2 交替,每四拍回 0,2.4s
     const img = imgEl("egg_0", 140 / DPR, 140 / DPR);

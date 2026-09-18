@@ -735,7 +735,7 @@ final class Behavior: PetViewDelegate {
         let y = w.maxY - 34
         Effects.notes(at: CGPoint(x: x, y: y), on: screen)
         SpriteLibrary.shared.playPeep()
-        if LanBirds.shared.isEnabled { LanBirds.shared.sendPeep() }   // v1.7.0:鸣唱广播给邻居(对唱)
+        if LanBirds.shared.isEnabled, Settings.shared.lanDuet { LanBirds.shared.sendPeep() }   // 对唱广播(开关门控)
         hold(Double.random(in: 1.2...1.6)) { [weak self] in self?.finish() }
     }
 
@@ -1317,6 +1317,7 @@ final class Behavior: PetViewDelegate {
     func lanVisit(from name: String) {
         guard onScreen, !dndActive, let w = window else { return }
         kfLog("lan: 邻居串门 \(name)")
+        Effects.toast("🐦 \(name) 来串门了", at: CGPoint(x: w.frame.midX, y: w.frame.maxY), on: screen)
         VisitorService.shared.visitorPass(near: w.frame, on: screen, birdSings: { [weak self] in
             self?.lanAnswerPeep()
         }, nameTag: name)
@@ -1326,6 +1327,9 @@ final class Behavior: PetViewDelegate {
     func lanFishGift(from name: String) {
         guard onScreen, !dndActive else { return }
         kfLog("lan: 收到 \(name) 送的鱼")
+        if let w = window {
+            Effects.toast("🐟 收到 \(name) 送的鱼(亲密度+2)", at: CGPoint(x: w.frame.midX, y: w.frame.maxY), on: screen)
+        }
         Growth.shared.add(2)
         beginAction()
         enter("eat")

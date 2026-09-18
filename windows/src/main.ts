@@ -95,6 +95,7 @@ async function main() {
       if (v.startsWith("sound:")) { const on = v.split(":")[1] === "true"; setSound(on); setSoundOn(on); }
       else if (v.startsWith("peck:")) { setPeckScreen(v.split(":")[1] === "true"); }
       else if (v.startsWith("lan:")) { void import("./lansvc").then(({ lan }) => { lan.enabled = v.split(":")[1] === "true"; }); }   // 设置窗开关 → 服务启停
+      else if (v.startsWith("lan_duet:")) { localStorage.setItem("kf_lan_duet", v.split(":")[1] === "true" ? "1" : "0"); }   // 对唱开关(主窗权威存储)
       else if (v.startsWith("activity:")) {   // 畸形载荷(NaN)直接丢弃,不污染行为链
         const n = Number(v.split(":")[1]);
         if (Number.isFinite(n)) setActivity(Math.min(1, Math.max(0, n)));
@@ -125,7 +126,8 @@ async function main() {
     function syncSettingsOutlets() {
       const snap = { theme: localStorage.getItem("kf_theme") || "flat",
                      activity: settings.activity, speed: settings.speed, sound: settings.soundOn, peck: settings.peckScreen,
-                     lang: localStorage.getItem("kf_lang") || "system" };
+                     lang: localStorage.getItem("kf_lang") || "system",
+                     lanDuet: localStorage.getItem("kf_lan_duet") !== "0" };
       emit("ui-state", snap);
       emit("settings-sync", snap);   // 带 lang:设置窗重开时语言按钮高亮真实值(此前永远"跟随系统")
     }

@@ -559,7 +559,7 @@ async function perchBranchHere() {   // 用户触发的静态动作补枝规则(
   } catch { /* */ }
 }
 function startSing() {
-  void import("./lansvc").then(({ lan }) => { if (lan.enabled) void lan.send("peep"); });   // v1.7.0:鸣唱广播给邻居(对唱,macOS 同款)
+  void import("./lansvc").then(({ lan }) => { if (lan.enabled && duetOn()) void lan.send("peep"); });   // 对唱广播(开关门控,macOS 同款)
   beginAction(); perchBranchHere(); enter("sing"); playPeep();
   effects.notes(facingRight ? 110 : 50, 34);   // 音符从头上方出(macOS 同款:距顶 34)
   hold(1.2 + Math.random() * 0.4, () => finish());
@@ -1167,6 +1167,9 @@ void _lanListen<{ act: string; name: string }>("lan-behavior", (e) => {
   else if (act === "fish") lanFishGift(name);
 });
 
+/// 对唱总开关(默认开;设置窗「参与对唱」)——关=不应答邻居+自己的鸣唱不广播(点鸟/菜单唱仍是本地)
+export function duetOn(): boolean { return localStorage.getItem("kf_lan_duet") !== "0"; }
+
 /// 对唱应答:回一声+音符(轻量,不打断进行中的动作;macOS 同款)
 export function lanAnswerPeep() {
   playPeep();
@@ -1200,16 +1203,19 @@ export async function lanVisitDepart() {
 
 /// 邻居来串门:访客演出带名牌(poop 舞台 tag 参数)
 export function lanVisit(name: string) {
-  emit("log", `lan: 邻居串门 ${name}`);
+  emit("log", `lan: 邻居串门 ${name}(访客鸟+名牌)`);
   const zx = facingRight ? 110 : 50;
-  effects.visitorTag(zx, 34, name);
-  setTimeout(() => lanAnswerPeep(), 3400);   // 访客落定开唱时本鸟应答(时序对齐演出)
+  // v1.7.23 修复:此前只画名牌气泡、从不画访客鸟本体(=老板"没有鸟飞过来"的 Win 侧真凶)
+  effects.visitorPass(zx, 34, null, name);
+  void effects.toast(`🐦 ${name} 来串门了`);
+  if (duetOn()) setTimeout(() => lanAnswerPeep(), 3400);   // 访客落定开唱时本鸟应答(对唱开关门控)
 }
 
 /// 收到邻居送的鱼:喂鱼演出 + 亲密度 +2(每日上限内)
 export function lanFishGift(name: string) {
   emit("log", `lan: 收到 ${name} 送的鱼`);
   growth.add(2);
+  void effects.toast(`🐟 收到 ${name} 送的鱼(亲密度+2)`);
   feedFish();
 }
 

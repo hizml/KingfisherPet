@@ -611,6 +611,7 @@ final public class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
             refreshLanMenu()
             promptPairingForUnknownPeers()
         case .peepReceived:
+            guard Settings.shared.lanDuet else { return }   // 对唱开关:关=听不见(不答)
             petController?.behavior.lanAnswerPeep()   // 对唱=环境音,不刷屏
         case .visitRequest(let name):
             petController?.behavior.lanVisit(from: name)

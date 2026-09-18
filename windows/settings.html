@@ -56,6 +56,7 @@
   <div class="wx">
     <div class="wxh">🐦 局域网小鸟 LAN Birds</div>
     <label class="chk"><input id="lanOn" type="checkbox" /><span id="lanOnL">发现同一网络里的翡(对唱/串门/送鱼)</span></label>
+    <label class="chk"><input id="lanDuet" type="checkbox" /><span id="lanDuetL">参与对唱(听见邻居唱就应和;关=只唱给自己听)</span></label>
     <div class="wxstat" id="lanName"></div>
     <div class="wxstat" id="lanNote"></div>
     <div class="wxstat" id="lanPeers">邻居:—</div>
@@ -274,6 +275,11 @@
       }
     };
     lanOn.onchange = () => { if (lanSvc) lanSvc.enabled = lanOn.checked; emit("setting", "lan:" + lanOn.checked); renderPeers(); };
+    // 对唱开关(v1.7.23 老板令):关=不应答邻居对唱+自己的鸣唱不广播;点鸟/本地唱不受影响
+    const lanDuet = document.getElementById("lanDuet");
+    lanDuet.checked = localStorage.getItem("kf_lan_duet") !== "0";   // 隔离存储只作初值,真值以 settings-sync 回填为准
+    lanDuet.onchange = () => emit("setting", "lan_duet:" + lanDuet.checked);
+    const applyLanDuet = (v) => { if (typeof v === "boolean") lanDuet.checked = v; };
     renderPeers();
     import("@tauri-apps/api/event").then(({ listen: _lsn }) => _lsn("lan-peers-changed", () => renderPeers()));
     wxProv.onchange = () => { paintQW(); emit("setting", "weather_provider:" + wxProv.value); };
@@ -298,6 +304,7 @@
       if (v.peck !== undefined) peck.checked = v.peck;
       curTheme = v.theme; paintTheme();
       if (v.lang !== undefined) { curLang = v.lang; paintLang(); }
+      if (v.lanDuet !== undefined) applyLanDuet(v.lanDuet);
     });
   </script>
 </body>

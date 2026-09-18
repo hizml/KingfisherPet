@@ -46,7 +46,7 @@ export function sun(x: number, y: number, duration: number) { fx("sun", x, y, du
 /// 抖水水珠(雨停/预警解除,shake 序列配套)
 export function droplets(x: number, y: number) { fx("droplets", x, y); }
 /// 访客飞过(v1.5.x 成长):x/y=本鸟中心(屏幕物理);舞台侧算进出路径与对唱停留
-export function visitorPass(x: number, y: number, onArrive: () => void) { fx2("visitor", x, y, onArrive); }
+export function visitorPass(x: number, y: number, onArrive: (() => void) | null, tag?: string) { fx2("visitor", x, y, onArrive, tag); }
 /// 局域网串门:访客演出 + 头顶名牌(邻居代号)
 export async function visitorTag(x: number, y: number, tag: string) {
   try {
@@ -56,6 +56,16 @@ export async function visitorTag(x: number, y: number, tag: string) {
     await emit("fx", { kind: "visitor", tag, x: p.x + x * sc, y: p.y + y * sc, dur: 0, spd: settings.speed });
   } catch { /* */ }
 }
+/// LAN 事件气泡:鸟旁浮动文字(收到鱼/来串门),3s 淡出
+export async function toast(text: string) {
+  try {
+    await ensurePoopStage();
+    const p = await petWin.outerPosition();
+    const sc = await petWin.scaleFactor();
+    await emit("fx", { kind: "toast", tag: text, x: p.x + 80 * sc, y: p.y + 60 * sc, spd: settings.speed });
+  } catch { /* */ }
+}
+
 /// 蛋摇摆(孵化彩蛋):x/y=蛋位(屏幕物理)
 export function eggWobble(x: number, y: number) { fx2("egg", x, y, null); }
 /// 小鸟跟班绕飞(孵化彩蛋):x/y=本鸟中心(屏幕物理)
@@ -71,10 +81,10 @@ export async function childFlight2(x: number, y: number, ex: number, ey: number)
   } catch { /* */ }
 }
 /// 屏幕物理坐标直发版(成长演出拿到的已是屏幕坐标,不再做本地→屏幕换算)
-async function fx2(kind: string, px: number, py: number, cb: (() => void) | null) {
+async function fx2(kind: string, px: number, py: number, cb: (() => void) | null, tag?: string) {
   try {
     await ensurePoopStage();
-    await emit("fx", { kind, x: px, y: py, dur: 0, spd: settings.speed });
+    await emit("fx", { kind, x: px, y: py, dur: 0, spd: settings.speed, tag });
     if (cb) setTimeout(cb, 3400);   // 访客落定开唱的大致时刻(路径前段 42%×8s≈3.4s,Mac 同款参数)
   } catch { /* */ }
 }

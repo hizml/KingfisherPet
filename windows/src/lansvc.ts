@@ -157,6 +157,7 @@ export function setupLan() {
     if (!lan.enabled) return;
     if (type === "peep") {
       if (lan.denied.includes(name)) return;
+      emit("log", `lan: 邻居对唱 ${name}`);
       emit("lan-behavior", { act: "peep", name }).catch(() => {});
     } else if (type === "visit") {
       // 冷却只由发送端守(每对一个钟,发送方记);接收端曾双重拦截=老板实锤"没鸟飞过去"

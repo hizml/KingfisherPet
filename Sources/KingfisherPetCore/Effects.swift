@@ -207,6 +207,24 @@ enum Effects {
         // active 登记 init 已做(评审 M9:双重 append 计数虚高一倍)
     }
 
+    /// LAN 事件气泡(收到鱼/来串门):鸟旁浮动文字 3s——托盘行只在开菜单时可见,等于没通知
+    static func toast(_ text: String, at point: CGPoint, on screen: NSScreen?) {
+        let font = NSFont.systemFont(ofSize: 12.5, weight: .medium)
+        let tw = (text as NSString).size(withAttributes: [.font: font]).width + 24
+        let e = Effect(centeredAt: CGPoint(x: point.x, y: point.y + 26), size: CGSize(width: tw, height: 36), on: screen) { v in
+            v.layer?.cornerRadius = 10
+            v.layer?.backgroundColor = NSColor(calibratedWhite: 0.15, alpha: 0.88).cgColor
+            let label = NSTextField(labelWithString: text)
+            label.font = font
+            label.textColor = .white
+            label.sizeToFit()
+            label.frame.origin = CGPoint(x: (v.bounds.width - label.frame.width) / 2,
+                                         y: (v.bounds.height - label.frame.height) / 2)
+            v.addSubview(label)
+        }
+        e.close(after: 3.0)   // 实例引用收尾(不猜 active 末位,避免误关并发特效)
+    }
+
     static func notes(at point: CGPoint, on screen: NSScreen?) {
         let size = CGSize(width: 120, height: 120)
         let e = Effect(centeredAt: point, size: size, on: screen, level: .statusBar) { v in
