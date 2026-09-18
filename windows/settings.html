@@ -190,22 +190,48 @@
     const lanOn = document.getElementById("lanOn"),
           lanName = document.getElementById("lanName"),
           lanPeers = document.getElementById("lanPeers");
+    /// 名单管理(v1.7.20,老板令):在线邻居 + 已允许/已拒绝(含离线的)统一列出;
+    /// 状态=我允许?(✅) 对方允许我?(🤝) 已拒绝(⛔);动作=允许/拒绝/移除
     const renderPeers = async () => {
-      // 代号以 Rust 权威 cfg 为准(v1.7.18 前这里引用了从未 import 的裸标识符 lan,
-      // 每次调用 ReferenceError ——「我的代号」与邻居列表自 v1.7.0 起从未工作过)
+      const zh = zhUI();
+      if (lanSvc) { try { await lanSvc.loadCfg(); } catch { /* */ } }   // 权威名单(点完按钮立即回真值)
       const myName = (lanSvc && lanSvc.cfg && lanSvc.cfg.name) || "";
-      if (lanName) lanName.textContent = myName ? ("我的代号:" + myName) : "我的代号:…";
+      if (lanName) lanName.textContent = myName ? ((zh ? "我的代号:" : "My name: ") + myName) : (zh ? "我的代号:…" : "My name: …");
       let peers = [];
-      try { peers = await invoke("lan_peers"); } catch { peers = []; }
-      if (!peers.length) { lanPeers.textContent = zhUI() ? "邻居:暂无" : "Neighbors: none"; return; }
+      try { peers = await invoke("lan_peers"); } catch { peers = []; }   // html 内联脚本纯 JS:禁 TS 泛型
+      const allowed = (lanSvc && lanSvc.allowed) || [];
+      const denied = (lanSvc && lanSvc.denied) || [];
+      const inbound = (lanSvc && lanSvc.inbound) || [];
+      const roster = [...new Set([...peers, ...allowed, ...denied])];
       lanPeers.innerHTML = "";
-      for (const n of peers) {
-        const b = document.createElement("button");
-        b.style.cssText = "margin:2px 6px 2px 0;padding:1px 8px;border-radius:6px;border:1px solid #999;background:#fff;cursor:pointer;font-size:11px;";
-        const st = (lanSvc && lanSvc.allowed.includes(n)) ? "✅ " : ((lanSvc && lanSvc.denied.includes(n)) ? "🚫 " : "❓ ");
-        b.textContent = st + n + (st === "❓ " ? (zhUI() ? "(允许)" : " (allow)") : "");
-        b.onclick = () => { if (lanSvc) lanSvc.allowPeer(n); renderPeers(); };
-        lanPeers.appendChild(b);
+      if (!roster.length) { lanPeers.textContent = zh ? "邻居:暂无(开着会自动发现同一网络里的翡)" : "Neighbors: none (auto-discovered on this LAN)"; return; }
+      for (const n of roster) {
+        const row = document.createElement("div");
+        row.style.cssText = "display:flex;align-items:center;gap:6px;margin:3px 0;flex-wrap:wrap;";
+        const isOn = peers.includes(n);
+        const iAllowed = allowed.includes(n), iDenied = denied.includes(n), theyAllowed = inbound.includes(n);
+        const tag = document.createElement("span");
+        tag.textContent = n + (isOn ? "" : (zh ? "(离线)" : " (offline)"));
+        tag.style.cssText = "font-size:12px;min-width:90px;";
+        row.appendChild(tag);
+        const chip = (txt, color) => { const c = document.createElement("span"); c.textContent = txt; c.style.cssText = `font-size:11px;color:${color};`; row.appendChild(c); };
+        if (iDenied) chip(zh ? "⛔已拒绝" : "denied", "#b33");
+        else if (iAllowed && theyAllowed) chip(zh ? "🤝双向已配对" : "mutual", "#0e7c86");
+        else if (iAllowed) chip(zh ? "✅已允许·等对方确认" : "allowed·awaiting", "#996b00");
+        else if (theyAllowed) chip(zh ? "🤝对方已允许你" : "they allowed you", "#996b00");
+        else chip(zh ? "❓未配对" : "unknown", "#777");
+        const mkBtn = (txt, primary, fn) => {
+          const b = document.createElement("button");
+          b.textContent = txt;
+          b.style.cssText = "margin-left:auto;padding:1px 8px;border-radius:6px;border:1px solid " + (primary ? "#0e7c86" : "#999") + ";background:#fff;cursor:pointer;font-size:11px;color:" + (primary ? "#0e7c86" : "#555") + ";";
+          b.onclick = () => { fn(); renderPeers(); };
+          row.appendChild(b);
+        };
+        if (!iAllowed && !iDenied) mkBtn(zh ? "允许" : "Allow", true, () => lanSvc && lanSvc.allowPeer(n));
+        else if (iDenied) mkBtn(zh ? "解除拒绝" : "Undeny", false, () => lanSvc && lanSvc.removePeer(n));
+        else mkBtn(zh ? "移除" : "Remove", false, () => lanSvc && lanSvc.removePeer(n));
+        if (!iDenied) mkBtn(zh ? "拒绝" : "Deny", false, () => lanSvc && lanSvc.denyPeer(n));
+        lanPeers.appendChild(row);
       }
     };
     let lanSvc = null;   // lansvc 动态加载(es2021 无顶层 await)

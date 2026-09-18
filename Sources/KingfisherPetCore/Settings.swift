@@ -172,6 +172,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
     // 天气区(v1.5.0)
     private weak var weatherButton: NSButton?
     private weak var lanButton: NSButton?
+    private var lanRosterNames: [String] = []   // 设置窗名单行与按钮 tag 的映射
     private weak var weatherStatusLabel: NSTextField?
 
     func show() {
@@ -447,6 +448,60 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
         lanNote.frame = NSRect(x: margin, y: y - 14, width: root.bounds.width - margin * 2, height: 44)
         root.addSubview(lanNote)
 
+        // ── 邻居名单管理(v1.7.20,老板令):在线+已允许/已拒绝(含离线)统一列出,
+        //    每行 状态+允许/拒绝/移除;此前 Mac 只有首次弹窗一次机会,事后无入口
+        if s.lanBirds {
+            y -= 30
+            let rosterTitle = label(Language.t("lan.manage"))
+            rosterTitle.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+            rosterTitle.sizeToFit()
+            rosterTitle.frame.origin = NSPoint(x: margin, y: y)
+            root.addSubview(rosterTitle)
+            let lan = LanBirds.shared
+            let online = Set(lan.onlineNames)
+            let rosterNames = Array(Set(lan.allowed + lan.denied + lan.onlineNames)).sorted()
+            lanRosterNames = rosterNames   // 行按钮 tag → 名字(重建即重灌)
+            let roster = rosterNames.prefix(8)
+            if roster.isEmpty {
+                y -= 20
+                let noneL = label(Language.t("lan.none"))
+                noneL.font = NSFont.systemFont(ofSize: 11)
+                noneL.textColor = .secondaryLabelColor
+                noneL.sizeToFit()
+                noneL.frame.origin = NSPoint(x: margin, y: y)
+                root.addSubview(noneL)
+            }
+            for (nameIdx, name) in roster.enumerated() {
+                y -= 24
+                let iA = lan.allowed.contains(name), iD = lan.denied.contains(name), iB = lan.inbound.contains(name)
+                let state = iD ? Language.t("lan.stateDenied")
+                    : (iA && iB ? Language.t("lan.stateDual")
+                    : (iA ? Language.t("lan.stateHalf")
+                    : (iB ? Language.t("lan.stateInbound") : Language.t("lan.stateUnknown"))))
+                let rowL = label(name + (online.contains(name) ? "" : Language.t("lan.offline")) + " · " + state)
+                rowL.font = NSFont.systemFont(ofSize: 11)
+                rowL.sizeToFit()
+                rowL.frame.origin = NSPoint(x: margin, y: y)
+                root.addSubview(rowL)
+                var bx = root.bounds.width - margin
+                let mkBtn: (String, String) -> Void = { title, kind in
+                    let b = NSButton(title: title, target: self, action: #selector(self.lanRowAction(_:)))
+                    b.font = NSFont.systemFont(ofSize: 10)
+                    b.bezelStyle = .rounded
+                    b.identifier = NSUserInterfaceItemIdentifier(kind)
+                    b.tag = nameIdx   // NSButton 无 representedObject:索引进名单数组
+                    b.sizeToFit()
+                    b.frame.size.width += 10; b.frame.size.height = 18
+                    bx -= b.frame.width + 4
+                    b.frame.origin = NSPoint(x: bx, y: y - 1)
+                    root.addSubview(b)
+                }
+                if iA || iD { mkBtn(Language.t("lan.remove"), "remove") }   // 移除=清允许+解除拒绝
+                if !iA && !iD { mkBtn(Language.t("lan.allow"), "allow") }
+                if !iD { mkBtn(Language.t("lan.denyBtn"), "deny") } else { mkBtn(Language.t("lan.undeny"), "remove") }
+            }
+        }
+
         // Y 轴滚动(几何全部钉常量,不从 contentView.bounds 取值——它实测返回过
         // 640×560 的 2× 假值,前两轮滚动全毁在它手里):
         // ①内容高度按真实布局收口;②frame 变高后平移全部子视图(坐标系不会自动重映射);
@@ -591,6 +646,25 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSTextFieldDel
 
     @objc private func lanToggled(_ b: NSButton) {
         Settings.shared.lanBirds = (b.state == .on)
+        // 开关变化 → 名单区显隐,重建窗口换布局(weatherProviderChanged 同款)
+        closeWindow()
+        self.window = nil
+        show()
+    }
+
+    /// 名单行动作:允许/拒绝/移除(移除=清允许+解除拒绝;双向通知对端由 LanBirds 发 PAIR/UNPAIR)
+    @objc private func lanRowAction(_ b: NSButton) {
+        guard lanRosterNames.indices.contains(b.tag) else { return }
+        let name = lanRosterNames[b.tag]
+        let lan = LanBirds.shared
+        switch b.identifier?.rawValue {
+        case "allow": lan.allowPeer(name)
+        case "deny": lan.denyPeer(name)
+        default: lan.removePeer(name)
+        }
+        closeWindow()   // 重建刷新名单显示
+        self.window = nil
+        show()
     }
     @objc private func weatherProviderChanged(_ p: NSPopUpButton) {
         guard let id = p.selectedItem?.representedObject as? String else { return }

@@ -83,8 +83,8 @@ async function main() {
       else if (id === "show") { behavior.isVisible() ? behavior.fallAway() : behavior.hatchIn(); }   // 显示/隐藏 toggle
       else if (id === "recall") { behavior.dragResetCache(); emit("log", "recall: Rust 出屏找回完成,拖拽缓存已重置"); }   // Rust 看门狗找回后的状态同步
       else if (id === "repair") { clearCracks(); }   // 托盘"修复屏幕"
-      else if (id === "lanvisit") { void import("./lansvc").then(({ lan }) => { void lan.send("visit").then((ok) => { if (!ok) emit("log", "lan: 串门未发出(无在线已配对邻居或冷却中)"); }); }); }
-      else if (id === "lanfish") { void import("./lansvc").then(({ lan }) => { void lan.send("fish").then((ok) => { if (ok) emit("log", "lan: 已送鱼"); }); }); }
+      else if (id === "lanvisit") { void import("./lansvc").then(({ lan }) => { void lan.act("visit"); }); }   // v1.7.20:双向门控+托盘反馈(老板实锤"点了没反应")
+      else if (id === "lanfish") { void import("./lansvc").then(({ lan }) => { void lan.act("fish"); }); }
       else if (id.startsWith("dev:")) { void import("./behavior").then((b) => b.devTrigger(id.slice(4))); }   // 🧪 测试菜单
     });
     listen<string>("theme", (e) => {   // 主题切换(托盘/设置窗)→ 原地换装 + 回推勾选状态

@@ -320,7 +320,8 @@ enum TestMain {
             expect("随机代号格式 翠鸟-XXXX(4 位大写十六进制)且随机",
                    names.allSatisfy { $0.range(of: "^翠鸟-[0-9A-F]{4}$", options: .regularExpression) != nil }
                    && Set(names).count > 1)
-            expect("全部消息类型在白名单", LanBirds.Lan.types.count == 8)
+            expect("全部消息类型在白名单(v1.7.20 含 PAIR/UNPAIR)", LanBirds.Lan.types.count == 10
+                   && LanBirds.Lan.types.contains("PAIR") && LanBirds.Lan.types.contains("UNPAIR"))
         }
 
         // MARK: - 和风新版 API 判定(2025+ 专属 *.qweatherapi.com;Win shared.mjs 同口径)

@@ -254,20 +254,55 @@ static LAN_READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool:
 /// LAN 配置唯一权威(v1.7.5 老板实锤:localStorage 随设置窗关闭丢失,勾不保)。
 /// on/name/allowed/denied 全存 Rust prefs;开关即启停服务(前端不再自存状态)。
 #[derive(serde::Serialize, serde::Deserialize, Clone, Default)]
-struct LanCfg { on: bool, name: String, allowed: Vec<String>, denied: Vec<String> }
+struct LanCfg {
+    on: bool, name: String, allowed: Vec<String>, denied: Vec<String>,
+    /// 对方端已把我加入 allowed(PAIR 消息同步;双向配对判定=allowed+inbound 同时命中)
+    #[serde(default)]
+    inbound: Vec<String>,
+}
 
-fn lan_cfg_load() -> LanCfg {
+pub(crate) fn lan_cfg_load() -> LanCfg {
     prefs_get("lan_cfg").and_then(|v| serde_json::from_str::<LanCfg>(&v).ok()).unwrap_or_default()
 }
 fn lan_cfg_save(c: &LanCfg) { prefs_set("lan_cfg", &serde_json::to_string(c).unwrap_or_default()); }
 
+/// lan.rs 回调:PAIR/UNPAIR 到达 → 更新 inbound 持久化(名单管理/双向判定共用)
+pub(crate) fn lan_pair_update(name: &str, paired: bool) {
+    let mut c = lan_cfg_load();
+    if paired {
+        if !c.inbound.contains(&name.to_string()) { c.inbound.push(name.to_string()); }
+    } else {
+        c.inbound.retain(|n| n != name);
+    }
+    lan_cfg_save(&c);
+}
+
+/// lan.rs 回调:本端是否已允许该邻居(HELLO 握手后自动回发 PAIR 用)
+pub(crate) fn lan_allowed(name: &str) -> bool {
+    lan_cfg_load().allowed.iter().any(|n| n == name)
+}
+
 #[tauri::command]
-fn lan_config(app: tauri::AppHandle, on: Option<bool>, allow: Option<String>, deny: Option<String>) -> LanCfg {
+fn lan_config(app: tauri::AppHandle, on: Option<bool>, allow: Option<String>, deny: Option<String>,
+              unallow: Option<String>, undeny: Option<String>) -> LanCfg {
     let mut c = lan_cfg_load();
     let mut menu_dirty = false;
     if let Some(v) = on { if c.on != v { c.on = v; menu_dirty = true; } }
-    if let Some(n) = allow { if !c.allowed.contains(&n) { c.allowed.push(n); menu_dirty = true; } }
-    if let Some(n) = deny { if !c.denied.contains(&n) { c.denied.push(n); } }
+    if let Some(n) = allow {
+        if !c.allowed.contains(&n) { c.allowed.push(n.clone()); }
+        c.denied.retain(|x| x != &n);   // 允许即解除拒绝
+        crate::lan::lan_notify_pair(&n, true, &app);   // 通知对端「我允许了你」(双向配对同步)
+    }
+    if let Some(n) = deny {
+        if !c.denied.contains(&n) { c.denied.push(n.clone()); }
+        c.allowed.retain(|x| x != &n);
+        crate::lan::lan_notify_pair(&n, false, &app);
+    }
+    if let Some(n) = unallow {   // 名单管理:移除允许(对端失去"我允许了你"状态)
+        c.allowed.retain(|x| x != &n);
+        crate::lan::lan_notify_pair(&n, false, &app);
+    }
+    if let Some(n) = undeny { c.denied.retain(|x| x != &n); }
     lan_cfg_save(&c);
     // 开关即启停(name 首次自动生成;theme 取当前 UI)。启动失败必须留痕
     // (此前 `let _ =` 吞错,假启动无任何现象——评审 R3 配套)

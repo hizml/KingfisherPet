@@ -654,29 +654,60 @@ final public class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         NSApp.mainMenu = main
     }
 
-    private func refreshLanMenu() {
-        guard let status = lanStatusItem else { return }
-        let names = lan.onlineNames.filter { lan.allowed.contains($0) }
-        status.isHidden = !Settings.shared.lanBirds
-        if names.isEmpty {
-            status.title = "🐦 " + Language.t("lan.none")
-            lanVisitItem?.isEnabled = false
-            lanFishItem?.isEnabled = false
-        } else {
-            status.title = "🐦 " + String(format: Language.t("lan.online"), names.joined(separator: "、"))
-            lanVisitItem?.isEnabled = true
-            lanFishItem?.isEnabled = true
+    /// 动作反馈文案(非 nil 时状态行临时显示它;5s 恢复——"点了没反应"的解药)
+    private var lanStatusFlash: String?
+    private var lanFlashTimer: Timer?
+    private func flashLanStatus(_ text: String) {
+        lanStatusFlash = text
+        refreshLanMenu()
+        lanFlashTimer?.invalidate()
+        lanFlashTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: false) { [weak self] _ in
+            self?.lanStatusFlash = nil
+            self?.refreshLanMenu()
         }
     }
 
+    private func refreshLanMenu() {
+        guard let status = lanStatusItem else { return }
+        let online = lan.onlineNames
+        let dual = online.filter { lan.isDualPaired($0) }
+        let half = online.filter { lan.allowed.contains($0) && !lan.isDualPaired($0) }
+        let pending = online.filter { !lan.allowed.contains($0) && !lan.denied.contains($0) }
+        status.isHidden = !Settings.shared.lanBirds
+        if let flash = lanStatusFlash {
+            status.title = "🐦 " + flash
+        } else if !dual.isEmpty {
+            status.title = "🐦 " + String(format: Language.t("lan.dual"), dual.joined(separator: "、"))
+        } else if !half.isEmpty {
+            status.title = "🐦 " + String(format: Language.t("lan.half"), half.joined(separator: "、"))
+        } else if !pending.isEmpty {
+            status.title = "🐦 " + String(format: Language.t("lan.found"), pending.joined(separator: "、"))
+        } else {
+            status.title = "🐦 " + Language.t("lan.none")
+        }
+        // 串门/送鱼按【双向配对】放行(老板令全双向;单向连菜单都是灰的,不再"点了没反应")
+        lanVisitItem?.isEnabled = !dual.isEmpty
+        lanFishItem?.isEnabled = !dual.isEmpty
+    }
+
     @objc private func lanVisitAction() {
-        if !lan.requestVisit() {
-            kfLog("lan: 串门未发出(无已配对在线邻居或冷却中)")
+        if let why = lan.requestVisit() {
+            let key = why == "visitCooldown" ? "lan.visitCooldown"
+                : (why == "visitNeedDual" ? "lan.needDual" : "lan.noPeer")
+            kfLog("lan: 串门未发出(\(why))")
+            flashLanStatus(Language.t(key))
+        } else if let target = lan.onlineNames.first(where: lan.isDualPaired) {
+            flashLanStatus(String(format: Language.t("lan.visitSent"), target))
         }
     }
     @objc private func lanFishAction() {
-        if lan.sendFish() {
+        if let why = lan.sendFish() {
+            let key = why == "fishNoPeer" ? "lan.needDual" : "lan.noPeer"
+            kfLog("lan: 送鱼未发出(\(why))")
+            flashLanStatus(Language.t(key))
+        } else if let target = lan.onlineNames.first(where: lan.isDualPaired) {
             petController?.behavior.startSing()   // 送出时本鸟开心唱一声
+            flashLanStatus(String(format: Language.t("lan.fishSent"), target))
         }
     }
 

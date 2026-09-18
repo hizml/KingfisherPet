@@ -127,6 +127,9 @@ fn handle_line(app: &AppHandle, line: &str, stream: &Arc<Mutex<TcpStream>>, peer
         }
         *peer_of_conn = Some(name.clone());
         send_line(stream, "HELLO", &id);   // 回敬 HELLO(入向连接对方不知道我是谁)——锁外发送
+        if crate::lan_allowed(&name) {
+            send_line(stream, "PAIR", &id);   // 双向配对状态同步:重连即补报「我允许了你」
+        }
         if is_new {
             crate::kflog::kflog(&format!("lan: 邻居上线 {}", name));
             emit_event(app, "peersChanged", &name);
@@ -144,6 +147,15 @@ fn handle_line(app: &AppHandle, line: &str, stream: &Arc<Mutex<TcpStream>>, peer
     match t.as_str() {
         "PING" => send_line(stream, "PONG", &id),
         "PONG" => {}
+        // 双向配对状态同步:「对方端已允许了我」。持久化进 lan_cfg.inbound 并广播给前端
+        "PAIR" => {
+            crate::lan_pair_update(&pname, true);
+            emit_event(app, "pair", &pname);
+        }
+        "UNPAIR" => {
+            crate::lan_pair_update(&pname, false);
+            emit_event(app, "pair", &pname);
+        }
         "PEEP" | "VISIT" | "FISH" | "BYE" => emit_event(app, &t.to_lowercase(), &pname),
         _ => {}
     }
@@ -158,6 +170,9 @@ fn reader_loop(app: AppHandle, stream: TcpStream, mark_name: Option<String>, id:
     // 主动方又因收不到 PONG 被 10s 超时踢除 → 永远配不上对)
     if peer.is_some() {
         send_line(&stream, "HELLO", &id);
+        if let Some(n) = &peer {
+            if crate::lan_allowed(n) { send_line(&stream, "PAIR", &id); }   // 双向状态随握手同步
+        }
     }
     // 名字大者主动连的场景,连接前已知对方名(先登记,HELLO 再刷新)
     if let Some(n) = &peer {
@@ -374,6 +389,20 @@ pub fn lan_send(kind: String) -> Result<bool, String> {
     let mut sent = false;
     for s in &targets { send_line(s, t, &id); sent = true; }
     Ok(sent)
+}
+
+/// 本端配对决定 → 通知对端(不在线则忽略:重连握手时 HELLO 后会自动补发 PAIR)
+pub fn lan_notify_pair(name: &str, paired: bool, app: &AppHandle) {
+    let (target, id) = {
+        let g = STATE.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(st) = g.as_ref() else { return };
+        match st.peers.get(name) {
+            Some((s, _)) => (s.clone(), Ident { name: st.my_name.clone(), mid: st.my_mid.clone(), theme: st.theme.clone() }),
+            None => return,
+        }
+    };
+    send_line(&target, if paired { "PAIR" } else { "UNPAIR" }, &id);
+    let _ = app;
 }
 
 /// 在线邻居名单(托盘状态行用)

@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, emit } from "@tauri-apps/api/event";
 import { lanCodename, lanVisitAllowed } from "./shared.mjs";
 
-type LanCfgT = { on: boolean; name: string; allowed: string[]; denied: string[] };
+type LanCfgT = { on: boolean; name: string; allowed: string[]; denied: string[]; inbound: string[] };
 
 export const lan = {
   /// v1.7.5:状态唯一权威=Rust prefs lan_cfg(老板实锤 localStorage 随设置窗关闭丢勾);
@@ -12,7 +12,7 @@ export const lan = {
   cfg: null as LanCfgT | null,
   get enabled(): boolean { return lan.cfg?.on ?? localStorage.getItem("kf_lan_on") === "1"; },
   set enabled(v: boolean) {
-    void invoke("lan_config", { on: v, allow: null, deny: null }).then((c) => { lan.cfg = c as never; }).catch(() => {});
+    void invoke("lan_config", { on: v, allow: null, deny: null, unallow: null, undeny: null }).then((c) => { lan.cfg = c as never; }).catch(() => {});
     localStorage.setItem("kf_lan_on", v ? "1" : "0");   // 兼容缓存
     if (!v) { invoke("lan_stop").catch(() => {}); }
     lan.syncTray();
@@ -27,19 +27,31 @@ export const lan = {
   },
   get allowed(): string[] { return lan.cfg?.allowed ?? JSON.parse(localStorage.getItem("kf_lan_allowed") ?? "[]"); },
   get denied(): string[] { return lan.cfg?.denied ?? JSON.parse(localStorage.getItem("kf_lan_denied") ?? "[]"); },
+  /// 对方端已允许了我(PAIR 消息同步,Rust 持久化)
+  get inbound(): string[] { return lan.cfg?.inbound ?? []; },
   allowPeer(n: string) {
-    void invoke("lan_config", { on: null, allow: n, deny: null }).then((c) => { lan.cfg = c as never; }).catch(() => {});
+    void invoke("lan_config", { on: null, allow: n, deny: null, unallow: null, undeny: null }).then((c) => { lan.cfg = c as never; }).catch(() => {});
     if (!lan.allowed.includes(n)) localStorage.setItem("kf_lan_allowed", JSON.stringify([...lan.allowed, n]));
     lan.syncTray();
   },
   denyPeer(n: string) {
-    void invoke("lan_config", { on: null, allow: null, deny: n }).then((c) => { lan.cfg = c as never; }).catch(() => {});
+    void invoke("lan_config", { on: null, allow: null, deny: n, unallow: null, undeny: null }).then((c) => { lan.cfg = c as never; }).catch(() => {});
     if (!lan.denied.includes(n)) localStorage.setItem("kf_lan_denied", JSON.stringify([...lan.denied, n]));
     lan.syncTray();
   },
+  /// 名单管理:移除「我已允许」(不再通知拒绝,只是取消授权;对端会收到 UNPAIR)
+  removePeer(n: string) {
+    void invoke("lan_config", { on: null, allow: null, deny: null, unallow: n, undeny: null }).then((c) => { lan.cfg = c as never; }).catch(() => {});
+    lan.syncTray();
+  },
+  /// 双向已配对(我允许了对方 && 对方允许了我)——串门/送鱼的放行条件
+  pairReady(peers?: string[]): boolean {
+    const online = peers ?? [];
+    return online.some((n) => lan.allowed.includes(n) && lan.inbound.includes(n));
+  },
   /// 打开设置窗时拉权威配置(勾选/代号/配对名单的唯一真相)
   async loadCfg() {
-    try { lan.cfg = await invoke("lan_config", { on: null, allow: null, deny: null }) as never; } catch { /* */ }
+    try { lan.cfg = await invoke("lan_config", { on: null, allow: null, deny: null, unallow: null, undeny: null }) as never; } catch { /* */ }
     return lan.cfg;
   },
   lastVisitKey(n: string) { return `kf_lan_visit_${n}`; },
@@ -61,16 +73,55 @@ export const lan = {
     const zh = (localStorage.getItem("kf_lang") || "system") === "zh"
       || ((localStorage.getItem("kf_lang") || "system") === "system"
           && (navigator.language || "en").toLowerCase().startsWith("zh"));
-    if (!lan.enabled) { await invoke("set_lan_status", { title: null }).catch(() => {}); return; }
+    if (!lan.enabled) {
+      await invoke("set_lan_status", { title: null }).catch(() => {});
+      await invoke("set_lan_menu", { on: false, ready: false }).catch(() => {});
+      return;
+    }
     let peers: string[] = [];
     try { peers = await invoke<string[]>("lan_peers"); } catch { /* */ }
-    const ok = peers.filter((n) => lan.allowed.includes(n));
+    // v1.7.20 修复:此前没有任何前端调用 set_lan_menu → LAN_READY 恒 false → 串门/送鱼永远灰
+    await invoke("set_lan_menu", { on: true, ready: lan.pairReady(peers) }).catch(() => {});
+    const dual = peers.filter((n) => lan.allowed.includes(n) && lan.inbound.includes(n));
+    const half = peers.filter((n) => lan.allowed.includes(n) && !lan.inbound.includes(n));
     const pending = peers.filter((n) => !lan.allowed.includes(n) && !lan.denied.includes(n));
     let title: string;
-    if (ok.length) title = zh ? `🐦 邻居:${ok.join("、")}(在线)` : `🐦 Neighbors: ${ok.join(", ")} (online)`;
+    if (dual.length) title = zh ? `🐦 邻居:${dual.join("、")}(🤝双向已配对)` : `🐦 Neighbors: ${dual.join(", ")} (paired)`;
+    else if (half.length) title = zh ? `🐦 邻居:${half.join("、")}(已允许,等对方确认)` : `🐦 Neighbors: ${half.join(", ")} (awaiting their confirm)`;
     else if (pending.length) title = zh ? `🐦 发现邻居:${pending.join("、")}(设置里配对)` : `🐦 Neighbor found: ${pending.join(", ")}`;
     else title = zh ? "🐦 邻居:暂无(局域网)" : "🐦 Neighbors: none (LAN)";
     await invoke("set_lan_status", { title }).catch(() => {});
+  },
+  /// 动作反馈(状态可见纪律):托盘状态行临时换成结果文案,5s 后恢复真值
+  async flashStatus(text: string) {
+    await invoke("set_lan_status", { title: text }).catch(() => {});
+    setTimeout(() => { void lan.syncTray(); }, 5000);
+  },
+  /// 带反馈的动作:先判双向与冷却,再发送;每一步都给托盘文案(老板实锤"点了没反应")
+  async act(kind: "visit" | "fish"): Promise<void> {
+    const zh = (localStorage.getItem("kf_lang") || "system") === "zh"
+      || ((localStorage.getItem("kf_lang") || "system") === "system"
+          && (navigator.language || "en").toLowerCase().startsWith("zh"));
+    let peers: string[] = [];
+    try { peers = await invoke<string[]>("lan_peers"); } catch { /* */ }
+    const dual = peers.filter((n) => lan.allowed.includes(n) && lan.inbound.includes(n));
+    if (!dual.length) {
+      const half = peers.filter((n) => lan.allowed.includes(n));
+      await lan.flashStatus(zh ? (half.length ? "🐦 串门/送鱼需对方也确认配对(现在是单向)" : "🐦 没有已配对的在线邻居(设置里配对)") : "🐦 Need mutual pairing first");
+      return;
+    }
+    if (kind === "visit") {
+      const target = dual[0];
+      if (!lan.visitAllowed(target)) {
+        await lan.flashStatus(zh ? "🐦 串门冷却中(每对邻居 30 分钟一次)" : "🐦 Visit cooldown (30 min per pair)");
+        return;
+      }
+      lan.markVisit(target);
+    }
+    const sent = await lan.send(kind);
+    await lan.flashStatus(sent
+      ? (zh ? (kind === "visit" ? `🐦 已去 ${dual[0]} 家串门(对方屏幕见)` : `🐦 已给 ${dual[0]} 送鱼(对方+亲密度)`) : "🐦 Sent")
+      : (zh ? "🐦 发送失败(连接断开?)" : "🐦 Send failed"));
   },
   /// 行为机入口(main.ts 事件路由调用)
   async send(kind: "peep" | "visit" | "fish"): Promise<boolean> {
@@ -88,7 +139,8 @@ export function setupLan() {
   });
   listen<{ type: string; name: string }>("lan-event", (e) => {
     const { type, name } = e.payload;
-    if (type === "peersChanged") { lan.syncTray(); emit("lan-peers-changed", {}).catch(() => {}); return; }
+    if (type === "peersChanged") { void lan.loadCfg().then(() => lan.syncTray()); emit("lan-peers-changed", {}).catch(() => {}); return; }
+    if (type === "pair") { void lan.loadCfg().then(() => lan.syncTray()); emit("lan-peers-changed", {}).catch(() => {}); return; }
     if (!lan.enabled) return;
     if (type === "peep") {
       if (lan.denied.includes(name)) return;

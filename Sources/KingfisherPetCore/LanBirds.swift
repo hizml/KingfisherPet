@@ -25,7 +25,7 @@ public final class LanBirds {
             let hex = String(format: "%04X", Int.random(in: 0...0xFFFF))
             return "翠鸟-\(hex)"
         }
-        public static let types = ["HELLO", "PING", "PONG", "PEEP", "VISIT", "FISH", "BUSY", "BYE"]
+        public static let types = ["HELLO", "PING", "PONG", "PEEP", "VISIT", "FISH", "BUSY", "BYE", "PAIR", "UNPAIR"]
 
         public static func encode(_ obj: [String: Any]) -> Data? {
             guard JSONSerialization.isValidJSONObject(obj),
@@ -82,19 +82,42 @@ public final class LanBirds {
         case fishReceived(String)               // 收到送鱼
     }
 
-    // MARK: - 配对(隐私红线)
+    // MARK: - 配对(隐私红线)。v1.7.20 全双向:PAIR/UNPAIR 同步"对方允许了我",
+    // 双向配对 = allowed(我允许了对方)&& inbound(对方允许了我)——串门/送鱼按双向放行
 
     private static let kAllowed = "kingfisher.lan.allowed"       // [String]
     private static let kDenied = "kingfisher.lan.denied"         // [String]
+    private static let kInbound = "kingfisher.lan.inbound"       // [String] 对方端已允许了我(PAIR 同步)
     var allowed: [String] { UserDefaults.standard.stringArray(forKey: Self.kAllowed) ?? [] }
     var denied: [String] { UserDefaults.standard.stringArray(forKey: Self.kDenied) ?? [] }
+    var inbound: [String] { UserDefaults.standard.stringArray(forKey: Self.kInbound) ?? [] }
     func allowPeer(_ name: String) {
-        guard !allowed.contains(name) else { return }
-        UserDefaults.standard.set(allowed + [name], forKey: Self.kAllowed)
+        if !allowed.contains(name) {
+            UserDefaults.standard.set(allowed + [name], forKey: Self.kAllowed)
+        }
+        UserDefaults.standard.set(denied.filter { $0 != name }, forKey: Self.kDenied)   // 允许即解除拒绝
+        notifyPair(name, paired: true)
     }
     func denyPeer(_ name: String) {
-        guard !denied.contains(name) else { return }
-        UserDefaults.standard.set(denied + [name], forKey: Self.kDenied)
+        if !denied.contains(name) {
+            UserDefaults.standard.set(denied + [name], forKey: Self.kDenied)
+        }
+        UserDefaults.standard.set(allowed.filter { $0 != name }, forKey: Self.kAllowed)
+        notifyPair(name, paired: false)
+    }
+    /// 名单管理:移除「我已允许」(取消授权;不改变拒绝态)
+    func removePeer(_ name: String) {
+        UserDefaults.standard.set(allowed.filter { $0 != name }, forKey: Self.kAllowed)
+        UserDefaults.standard.set(denied.filter { $0 != name }, forKey: Self.kDenied)
+        UserDefaults.standard.set(inbound.filter { $0 != name }, forKey: Self.kInbound)
+        notifyPair(name, paired: false)
+    }
+    /// 双向已配对(串门/送鱼的放行条件)
+    func isDualPaired(_ name: String) -> Bool { allowed.contains(name) && inbound.contains(name) }
+    /// 我方配对决定 → 在线即通知对端(离线则等重连握手时补发)
+    private func notifyPair(_ name: String, paired: Bool) {
+        guard let p = peers[name] else { return }
+        send(p.conn, obj: ["t": paired ? "PAIR" : "UNPAIR", "v": Lan.protoVersion, "name": myName])
     }
     /// 串门冷却(每邻居名持久化;双向各自记对方名=每对邻居一个冷却)
     private static func visitKey(_ name: String) -> String { "kingfisher.lan.visit.\(name)" }
@@ -280,6 +303,10 @@ public final class LanBirds {
                 send(c, obj: ["t": "HELLO", "v": Lan.protoVersion, "name": myName,
                               "mid": myMid,
                               "theme": SpriteLibrary.shared.currentTheme])
+                // 双向配对状态随握手同步:离线期间点的允许,重连即补报
+                if allowed.contains(n) {
+                    send(c, obj: ["t": "PAIR", "v": Lan.protoVersion, "name": myName])
+                }
                 onEvent?(.peersChanged)
                 kfLog("lan: 邻居上线 \(n)")
             }
@@ -290,6 +317,13 @@ public final class LanBirds {
         switch m.type {
         case "PING": send(c, obj: ["t": "PONG", "v": Lan.protoVersion, "name": myName])
         case "PONG": break
+        case "PAIR", "UNPAIR":
+            let on = m.type == "PAIR"
+            let cur = inbound
+            let next = on ? (cur.contains(n) ? cur : cur + [n]) : cur.filter { $0 != n }
+            UserDefaults.standard.set(next, forKey: Self.kInbound)
+            onEvent?(.peersChanged)   // 菜单/设置窗刷新(对方刚允许了我=单向变双向)
+        
         case "PEEP":
             guard !denied.contains(n) else { send(c, obj: ["t": "BUSY", "v": Lan.protoVersion, "name": myName]); return }
             onEvent?(.peepReceived(n))
@@ -334,19 +368,21 @@ public final class LanBirds {
             send(p.conn, obj: ["t": "PEEP", "v": Lan.protoVersion, "name": myName])
         }
     }
-    /// 请求去对方屏幕串门(对方已配对+冷却过才演)
-    func requestVisit() -> Bool {
-        guard let target = onlineNames.first(where: allowed.contains),
-              visitCooldownPassed(target),
-              let p = peers[target] else { return false }
+    /// 请求去对方屏幕串门(v1.7.20:双向配对才放行;返回 nil=已发出,否则=给人看的失败原因)
+    func requestVisit() -> String? {
+        guard let target = onlineNames.first(where: isDualPaired) else {
+            return onlineNames.contains(where: allowed.contains) ? "visitNeedDual" : "visitNoPeer"
+        }
+        guard visitCooldownPassed(target) else { return "visitCooldown" }
+        guard let p = peers[target] else { return "visitNoPeer" }
         markVisit(target)
         send(p.conn, obj: ["t": "VISIT", "v": Lan.protoVersion, "name": myName])
-        return true
+        return nil
     }
-    /// 给邻居送鱼(菜单)
-    func sendFish() -> Bool {
-        guard let target = onlineNames.first(where: allowed.contains), let p = peers[target] else { return false }
+    /// 给邻居送鱼(菜单;双向配对才放行)
+    func sendFish() -> String? {
+        guard let target = onlineNames.first(where: isDualPaired), let p = peers[target] else { return "fishNoPeer" }
         send(p.conn, obj: ["t": "FISH", "v": Lan.protoVersion, "name": myName])
-        return true
+        return nil
     }
 }
