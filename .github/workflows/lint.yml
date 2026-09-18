@@ -47,6 +47,13 @@ jobs:
             echo "::error::windows/src 出现 as any / : any —— 它绕过类型检查,正是 currentMonitor 幽灵调用活下来的原因。请写正确类型。"
             exit 1
           fi
+      - name: "禁 new URL(x, import.meta.env.BASE_URL)(v1.7.4~24 关于窗无按钮真凶的机器防线)"
+        shell: bash
+        run: |
+          if grep -rnE "new URL\([^)]*import\.meta\.env" windows/*.html windows/src; then
+            echo "::error::new URL 的 base 用 BASE_URL(\"/\") 是非法 base,运行时抛 Invalid URL 静默杀死内联脚本后半段(关于窗按钮全灭潜伏 8 版)。资产路径一律模板串拼接 \${import.meta.env.BASE_URL}…。"
+            exit 1
+          fi
       - name: 纯逻辑单测(node --test,零依赖;版本比较教训:正常流对、边界态错的 bug 靠它拦)
         working-directory: windows
         run: npm ci && npm test
